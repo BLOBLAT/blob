@@ -11,7 +11,7 @@
 ## Repository layout
 
 - `apps/web` — public website and Phaser game client. It renders synchronized state and sends intent only.
-- `apps/game-server` — Colyseus authoritative real-time server and room integration test.
+- `apps/game-server` — Colyseus authoritative real-time server, `/health` endpoint, configured CORS/WebSocket origin checks, and room integration test.
 - `packages/protocol` — shared room names, lifecycle, and message/state types.
 - `packages/validation` — Zod validation at untrusted boundaries.
 - `packages/game-core` — deterministic arena simulation, central tuning constants, and pure game rules.
@@ -32,11 +32,13 @@ See `docs/architecture.md` before introducing a cross-boundary dependency.
 - Do not add blockchain contracts, real payment processing, cloud infrastructure, secrets, or wallet prompts until their scoped product work begins.
 - Add tests with simulation, transport, payment, or settlement behavior. Deterministic simulation tests and real two-client room smoke tests are preferred.
 - Update documentation when a boundary, authority rule, or operational command changes.
+- The browser obtains its server endpoint only from `VITE_GAME_SERVER_URL` (with a local Vite fallback). Never hardcode a production game-server hostname in browser code.
+- The game server must honor `PORT`; configure `BLOB_WEB_ORIGIN` with the exact comma-separated browser origins permitted to use it. Vercel is web-only and must never host the persistent Colyseus process.
 
 ## Required validation before a commit
 
 1. Run `npm run check` and fix every failure.
-2. Run `npm audit` and do not add known avoidable vulnerabilities.
+2. Run `npm audit --omit=dev` and do not add known avoidable vulnerabilities.
 3. Check `git diff --check`, inspect `git status`, and search changed files for credentials, `.env` values, private keys, and build artifacts.
 4. Commit only the intended scope. Push only when the task explicitly requests it.
 

@@ -11,14 +11,14 @@
     "@colyseus/schema": "4.0.30",
     "@colyseus/ws-transport": "0.17.13",
     "cors": "2.8.6",
-    "express": "5.2.1"
+    "express": "5.2.1",
+    "tsx": "4.23.12"
   },
   "devDependencies": {
     "@colyseus/sdk": "0.17.43",
     "@types/cors": "2.8.19",
     "@types/express": "5.0.6",
     "@types/node": "22.10.2",
-    "tsx": "4.23.12",
     "typescript": "5.7.2"
   },
   "scripts": {

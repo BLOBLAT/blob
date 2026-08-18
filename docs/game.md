@@ -15,7 +15,9 @@ The authoritative server implements:
 - server-issued rank, mass, kills, score, and match state;
 - the lifecycle `LOBBY → COUNTDOWN → PLAYING → RESULTS → LOBBY`.
 
-The browser renders Colyseus state with Phaser and sends only the most recent direction intent. It cannot submit a position, collision, score, kill, rank, or result.
+The browser renders Colyseus state with Phaser and sends only the most recent direction intent. Mouse or touch steers toward the pointer; WASD and arrow keys are also supported. It cannot submit a position, collision, score, kill, rank, or result.
+
+The camera follows the local blob and reduces zoom gradually as that blob grows. The HUD and leaderboard are presentation of Colyseus state only: current mass, rank, living player count, food population, and respawn status never originate in the browser.
 
 All tuning values are in `packages/game-core/src/index.ts`. Food and spawn positions are deterministic rather than competitive-outcome RNG.
 
@@ -23,7 +25,7 @@ All tuning values are in `packages/game-core/src/index.ts`. Food and spawn posit
 
 - authentication, durable accounts, and cross-session profiles;
 - persistence, match history, global rankings, achievements, cosmetics, referrals, or tournaments;
-- reconnection policy, spectator mode, bots, touch controls, rate-limit infrastructure, or production observability;
+- spectator mode, bots, account-based reconnect reservation, rate-limit infrastructure, or production observability;
 - skill matchmaking or paid-mode room lifecycle.
 
 The in-match leaderboard is real only for the current authoritative room. No global player counts or fake statistics are shown.

@@ -31,7 +31,10 @@ export function createGameServer(allowedOrigins = resolveAllowedOrigins()): Game
 
   const httpServer = createServer(app);
   const gameServer = new Server({
-    transport: new WebSocketTransport({ server: httpServer }),
+    transport: new WebSocketTransport({
+      server: httpServer,
+      verifyClient: ({ origin }: { origin: string }) => !origin || allowedOrigins.has(origin)
+    }),
     gracefullyShutdown: false
   });
   gameServer.define(ARENA_ROOM_NAME, BlobArenaRoom);

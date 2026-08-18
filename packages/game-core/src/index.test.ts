@@ -24,6 +24,17 @@ describe("arena lifecycle", () => {
 });
 
 describe("authoritative simulation rules", () => {
+  it("server-spawns players and maintains its configured food population", () => {
+    const simulation = new ArenaSimulation({ foodCount: 4, startingMass: 120 }, 0);
+    simulation.addPlayer("one", "Blob One", 0);
+
+    const snapshot = simulation.snapshot(0);
+    expect(snapshot.players).toHaveLength(1);
+    expect(snapshot.players[0]).toMatchObject({ id: "one", mass: 120, alive: true, rank: 1 });
+    expect(snapshot.food).toHaveLength(4);
+    expect(new Set(snapshot.food.map((pellet) => pellet.id)).size).toBe(4);
+  });
+
   it("uses input as intent and calculates movement only at the server tick", () => {
     const simulation = new ArenaSimulation({ countdownMs: 0, foodCount: 0, spawnProtectionMs: 0 }, 0);
     simulation.addPlayer("one", "Blob One", 0);
@@ -35,6 +46,28 @@ describe("authoritative simulation rules", () => {
     simulation.advance(150);
 
     expect(simulation.snapshot(150).players[0]?.x).toBeGreaterThan(initialX);
+  });
+
+  it("keeps server-calculated movement within the arena boundaries", () => {
+    const simulation = new ArenaSimulation({
+      width: 500,
+      height: 400,
+      countdownMs: 0,
+      foodCount: 0,
+      spawnProtectionMs: 0,
+      inputRateLimitMs: 0
+    }, 0);
+    simulation.addPlayer("one", "Blob One", 0);
+    simulation.advance(0);
+    simulation.advance(1);
+    for (let now = 50; now <= 2_000; now += 50) {
+      simulation.setInput("one", { x: 1, y: -1 }, now);
+      simulation.advance(now);
+    }
+
+    const player = simulation.snapshot(2_000).players[0];
+    expect(player?.x).toBeLessThanOrEqual(492);
+    expect(player?.y).toBeGreaterThanOrEqual(8);
   });
 
   it("requires a server-verified mass advantage before one player can eat another", () => {
@@ -70,8 +103,11 @@ describe("authoritative simulation rules", () => {
     const winner = afterCollision.players.find((player) => player.id === "one");
     expect(winner?.kills).toBe(1);
     expect(winner?.mass).toBeGreaterThan(100);
+    expect(winner?.rank).toBe(1);
     expect(victim?.alive).toBe(false);
     expect(victim?.deaths).toBe(1);
+    expect(victim?.rank).toBe(2);
+    expect(afterCollision.food).toHaveLength(1);
 
     simulation.advance(300);
     const respawned = simulation.snapshot(300).players.find((player) => player.id === "two");

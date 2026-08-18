@@ -1,7 +1,7 @@
 import type { Room } from "@colyseus/sdk";
 import Phaser from "phaser";
 
-interface NetworkPlayer {
+export interface NetworkPlayer {
   id: string;
   name: string;
   x: number;
@@ -40,6 +40,8 @@ export interface ArenaUiState {
   matchNumber: number;
   remainingMs: number;
   players: NetworkPlayer[];
+  localPlayer?: NetworkPlayer;
+  foodCount: number;
 }
 
 export class BlobArenaScene extends Phaser.Scene {
@@ -47,6 +49,9 @@ export class BlobArenaScene extends Phaser.Scene {
   private intent = { x: 0, y: 0 };
   private lastUiUpdate = 0;
   private sendIntentEvent?: Phaser.Time.TimerEvent;
+  private keyboard?: Record<"up" | "down" | "left" | "right", Phaser.Input.Keyboard.Key>;
+  private lastLocalMass = 0;
+  private collectPulseUntil = 0;
 
   constructor(
     private readonly room: Room,
@@ -61,6 +66,12 @@ export class BlobArenaScene extends Phaser.Scene {
     this.cameras.main.setZoom(0.82);
     this.input.on("pointermove", this.updateIntent, this);
     this.input.on("pointerdown", this.updateIntent, this);
+    this.keyboard = this.input.keyboard?.addKeys({
+      up: [Phaser.Input.Keyboard.KeyCodes.W, Phaser.Input.Keyboard.KeyCodes.UP],
+      down: [Phaser.Input.Keyboard.KeyCodes.S, Phaser.Input.Keyboard.KeyCodes.DOWN],
+      left: [Phaser.Input.Keyboard.KeyCodes.A, Phaser.Input.Keyboard.KeyCodes.LEFT],
+      right: [Phaser.Input.Keyboard.KeyCodes.D, Phaser.Input.Keyboard.KeyCodes.RIGHT]
+    }) as Record<"up" | "down" | "left" | "right", Phaser.Input.Keyboard.Key> | undefined;
     this.sendIntentEvent = this.time.addEvent({
       delay: 50,
       loop: true,
@@ -81,9 +92,20 @@ export class BlobArenaScene extends Phaser.Scene {
 
     const localPlayer = state.players.get(this.room.sessionId);
     if (localPlayer) {
+      if (localPlayer.alive) {
+        this.applyKeyboardIntent();
+      } else {
+        this.intent = { x: 0, y: 0 };
+      }
       this.cameras.main.centerOn(localPlayer.x, localPlayer.y);
+      const targetZoom = Phaser.Math.Clamp(0.94 - Math.sqrt(Math.max(0, localPlayer.mass)) * 0.012, 0.52, 0.84);
+      this.cameras.main.setZoom(Phaser.Math.Linear(this.cameras.main.zoom, targetZoom, 0.08));
+      if (localPlayer.alive && localPlayer.mass > this.lastLocalMass) {
+        this.collectPulseUntil = time + 180;
+      }
+      this.lastLocalMass = localPlayer.mass;
     }
-    this.drawArena(state, localPlayer?.id);
+    this.drawArena(state, localPlayer?.id, time);
 
     if (time - this.lastUiUpdate >= 100) {
       this.lastUiUpdate = time;
@@ -93,7 +115,9 @@ export class BlobArenaScene extends Phaser.Scene {
         phase: state.phase,
         matchNumber: state.matchNumber,
         remainingMs: state.remainingMs,
-        players: players.sort((left, right) => left.rank - right.rank)
+        players: players.sort((left, right) => left.rank - right.rank),
+        localPlayer: localPlayer ? { ...localPlayer } : undefined,
+        foodCount: countEntries(state.food)
       });
     }
   }
@@ -114,7 +138,20 @@ export class BlobArenaScene extends Phaser.Scene {
       : { x: 0, y: 0 };
   }
 
-  private drawArena(state: NetworkArenaState, localPlayerId: string | undefined): void {
+  private applyKeyboardIntent(): void {
+    if (!this.keyboard) {
+      return;
+    }
+    const x = Number(this.keyboard.right.isDown) - Number(this.keyboard.left.isDown);
+    const y = Number(this.keyboard.down.isDown) - Number(this.keyboard.up.isDown);
+    if (x === 0 && y === 0) {
+      return;
+    }
+    const magnitude = Math.hypot(x, y);
+    this.intent = { x: x / magnitude, y: y / magnitude };
+  }
+
+  private drawArena(state: NetworkArenaState, localPlayerId: string | undefined, time: number): void {
     this.graphics.clear();
     this.graphics.fillStyle(0x160717, 1);
     this.graphics.fillRect(0, 0, 2_400, 1_400);
@@ -131,13 +168,15 @@ export class BlobArenaScene extends Phaser.Scene {
     state.food.forEach((pellet) => {
       this.graphics.fillStyle(0xffd34f, 1);
       this.graphics.fillCircle(pellet.x, pellet.y, 7);
+      this.graphics.fillStyle(0xfff7f2, 0.6);
+      this.graphics.fillCircle(pellet.x - 2, pellet.y - 2, 2);
     });
     state.players.forEach((player) => {
-      this.drawPlayer(player, player.id === localPlayerId);
+      this.drawPlayer(player, player.id === localPlayerId, time);
     });
   }
 
-  private drawPlayer(player: NetworkPlayer, isLocalPlayer: boolean): void {
+  private drawPlayer(player: NetworkPlayer, isLocalPlayer: boolean, time: number): void {
     const radius = Math.max(16, Math.sqrt(Math.max(0, player.mass)) * 5);
     const color = colorForPlayer(player.id);
     this.graphics.fillStyle(color, player.alive ? 1 : 0.25);
@@ -145,6 +184,10 @@ export class BlobArenaScene extends Phaser.Scene {
     if (isLocalPlayer) {
       this.graphics.lineStyle(3, 0xfff7f2, 0.95);
       this.graphics.strokeCircle(player.x, player.y, radius + 5);
+      if (time < this.collectPulseUntil) {
+        this.graphics.lineStyle(3, 0xffd34f, (this.collectPulseUntil - time) / 180);
+        this.graphics.strokeCircle(player.x, player.y, radius + 12);
+      }
     } else if (player.spawnProtectedUntil > Date.now()) {
       this.graphics.lineStyle(2, 0xffd34f, 0.95);
       this.graphics.strokeCircle(player.x, player.y, radius + 3);
@@ -156,6 +199,14 @@ export class BlobArenaScene extends Phaser.Scene {
     this.graphics.fillCircle(player.x - radius * 0.22, player.y - radius * 0.02, Math.max(3, radius * 0.1));
     this.graphics.fillCircle(player.x + radius * 0.22, player.y - radius * 0.02, Math.max(3, radius * 0.1));
   }
+}
+
+function countEntries<T>(collection: NetworkCollection<T>): number {
+  let count = 0;
+  collection.forEach(() => {
+    count += 1;
+  });
+  return count;
 }
 
 function colorForPlayer(id: string): number {

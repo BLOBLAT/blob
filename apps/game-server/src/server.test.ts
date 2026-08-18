@@ -17,6 +17,16 @@ afterAll(async () => {
 });
 
 describe("BLOB arena room", () => {
+  it("serves a health check with the configured local CORS origin", async () => {
+    const response = await fetch(`${endpoint}/health`, {
+      headers: { Origin: "http://127.0.0.1:5173" }
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("access-control-allow-origin")).toBe("http://127.0.0.1:5173");
+    await expect(response.json()).resolves.toEqual({ service: "blob-game-server", status: "ok" });
+  });
+
   it("starts a room where two clients receive authoritative state and input-driven movement", async () => {
     const firstClient = new Client(endpoint);
     const secondClient = new Client(endpoint);
@@ -37,7 +47,16 @@ describe("BLOB arena room", () => {
     });
 
     expect(secondRoom.state.players.get(firstRoom.sessionId)?.x).toBeGreaterThan(originalX);
-    await Promise.all([firstRoom.leave(), secondRoom.leave()]);
+    firstRoom.send("input", { x: 0, y: 0 });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const stoppedAtX = firstRoom.state.players.get(firstRoom.sessionId)?.x;
+    firstRoom.send("input", { x: 2, y: 0 });
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(firstRoom.state.players.get(firstRoom.sessionId)?.x).toBeCloseTo(stoppedAtX ?? originalX, 3);
+
+    await secondRoom.leave();
+    await waitUntil(() => getPlayers(firstRoom.state).length === 1);
+    await firstRoom.leave();
   });
 });
 

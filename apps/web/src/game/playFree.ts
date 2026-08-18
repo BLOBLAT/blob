@@ -14,18 +14,62 @@ export interface StartFreeGameOptions {
 }
 
 export async function startFreeGame(options: StartFreeGameOptions): Promise<FreeGameController> {
-  options.onConnectionStatus("Connecting to the authoritative arena…");
-  const client = new Client(resolveGameServerUrl());
-  const room = await client.joinOrCreate(ARENA_ROOM_NAME, { name: getLocalPlayerName() });
   let disposed = false;
-  const game = createPhaserGame(options.canvasHost, room, options.onUiState);
+  let reconnectAttempts = 0;
+  let reconnectTimer: number | undefined;
+  let activeRoom: Room | undefined;
+  let game: Phaser.Game | undefined;
 
-  room.onLeave(() => {
-    if (!disposed) {
-      options.onConnectionStatus("Connection closed. Refresh to reconnect.");
+  const connect = async (isReconnect = false): Promise<void> => {
+    options.onConnectionStatus(isReconnect
+      ? `Reconnecting to the arena (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})…`
+      : "Connecting to the authoritative arena…");
+
+    const client = new Client(resolveGameServerUrl());
+    const room = await withConnectionTimeout(
+      client.joinOrCreate(ARENA_ROOM_NAME, { name: getLocalPlayerName() })
+    );
+
+    if (disposed) {
+      await room.leave();
+      return;
     }
-  });
-  options.onConnectionStatus("Connected — server state is live.");
+
+    activeRoom = room;
+    game?.destroy(true);
+    game = createPhaserGame(options.canvasHost, room, options.onUiState);
+    reconnectAttempts = 0;
+
+    room.onLeave(() => {
+      if (!disposed && activeRoom === room) {
+        scheduleReconnect();
+      }
+    });
+    options.onConnectionStatus("Connected — server state is live.");
+  };
+
+  const scheduleReconnect = (): void => {
+    if (disposed || reconnectTimer !== undefined) {
+      return;
+    }
+
+    game?.destroy(true);
+    game = undefined;
+    activeRoom = undefined;
+    reconnectAttempts += 1;
+    if (reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
+      options.onConnectionStatus("Server unavailable — use Retry to reconnect.");
+      return;
+    }
+
+    options.onConnectionStatus(`Connection lost — retrying (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})…`);
+    reconnectTimer = window.setTimeout(() => {
+      reconnectTimer = undefined;
+      void connect(true).catch(() => scheduleReconnect());
+    }, RECONNECT_DELAY_MS);
+  };
+
+  await connect();
 
   return {
     async leave(): Promise<void> {
@@ -33,11 +77,18 @@ export async function startFreeGame(options: StartFreeGameOptions): Promise<Free
         return;
       }
       disposed = true;
-      game.destroy(true);
-      await room.leave();
+      if (reconnectTimer !== undefined) {
+        window.clearTimeout(reconnectTimer);
+      }
+      game?.destroy(true);
+      await activeRoom?.leave();
     }
   };
 }
+
+const CONNECTION_TIMEOUT_MS = 8_000;
+const RECONNECT_DELAY_MS = 1_500;
+const MAX_RECONNECT_ATTEMPTS = 3;
 
 function createPhaserGame(canvasHost: HTMLElement, room: Room, onUiState: (state: ArenaUiState) => void): Phaser.Game {
   return new Phaser.Game({
@@ -57,7 +108,31 @@ function createPhaserGame(canvasHost: HTMLElement, room: Room, onUiState: (state
 
 function resolveGameServerUrl(): string {
   const configured = import.meta.env.VITE_GAME_SERVER_URL?.trim();
-  return configured || `${window.location.protocol}//${window.location.hostname}:2567`;
+  if (configured) {
+    return configured.replace(/\/+$/, "");
+  }
+  if (import.meta.env.DEV) {
+    return "http://127.0.0.1:2567";
+  }
+  throw new Error("Game server URL is not configured. Set VITE_GAME_SERVER_URL in Vercel and redeploy.");
+}
+
+function withConnectionTimeout<T>(connection: Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      reject(new Error("Connection timed out after 8 seconds."));
+    }, CONNECTION_TIMEOUT_MS);
+    connection.then(
+      (result) => {
+        window.clearTimeout(timeout);
+        resolve(result);
+      },
+      (error: unknown) => {
+        window.clearTimeout(timeout);
+        reject(error);
+      }
+    );
+  });
 }
 
 function getLocalPlayerName(): string {

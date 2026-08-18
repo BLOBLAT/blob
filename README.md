@@ -8,9 +8,11 @@ Free Mode will be a complete playable experience. Paid competition is planned as
 
 ## Status
 
-The first real Free Mode slice is implemented for local development: two browser clients can join the same Colyseus arena, see server-synchronized state, send movement intent, collect food, grow, eat eligible opponents, respawn, and view a live match leaderboard.
+Free Mode is a real multiplayer vertical slice. Two or more browser clients can join the same Colyseus arena, see server-synchronized state, steer with mouse/touch or WASD/arrow keys, collect food, grow, eat eligible opponents, respawn, and view a live in-match leaderboard.
 
-There is no production deployment, persistent account system, wallet connection, payment processing, global leaderboard, token, or blockchain contract. Paid-mode code is currently limited to pure state-machine and prize-calculation domain modules.
+The public site and the authoritative server are intentionally separate: Vercel deploys `apps/web`, while `apps/game-server` must run on a persistent Node.js/WebSocket host. See [the deployment guide](docs/development.md#production-deployment) before enabling Free Mode in production.
+
+There is no persistent account system, wallet connection, payment processing, global leaderboard, token, or blockchain contract. Paid-mode code is currently limited to pure state-machine and prize-calculation domain modules.
 
 ## Local development
 
@@ -21,7 +23,7 @@ npm install
 npm run dev
 ```
 
-Open the Vite URL (normally `http://127.0.0.1:5173`) in two browser windows, then select **Play Free** in both. The game server runs at `http://127.0.0.1:2567`.
+Open the Vite URL (normally `http://127.0.0.1:5173`) in two browser windows or profiles, then select **Play Free** in both. The game server runs at `http://127.0.0.1:2567`.
 
 Run the full checks with:
 
