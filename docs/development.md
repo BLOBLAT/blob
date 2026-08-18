@@ -40,6 +40,10 @@ VITE_GAME_SERVER_URL=http://127.0.0.1:2567
 
 Do not commit `.env.local`.
 
+## Round manual test
+
+With the default round tuning, the first client remains in matchmaking until a second joins. Both clients then see the server countdown, followed by the shared 10-minute round timer. To manually test control safety, steer briefly with the mouse or touch joystick and stop moving or release: the BLOB must stop within the configured stale-input interval. At round end, verify the same top-three result and personal statistics on both clients, then confirm the room returns to matchmaking.
+
 ## Production topology summary
 
 ```text

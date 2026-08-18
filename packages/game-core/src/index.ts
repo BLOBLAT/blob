@@ -1,150 +1,239 @@
-import { ArenaPhase, type ArenaPhase as ArenaPhaseValue, type ArenaPlayerView, type ArenaSnapshot, type FoodView, type MovementIntent } from "@blob/protocol";
-
-export { ArenaPhase } from "@blob/protocol";
+import {
+  ArenaPhase,
+  type ArenaPlayerView,
+  type ArenaRoundResultView,
+  type ArenaSnapshot,
+  type FoodView,
+  GameMode,
+  type GameMode as GameModeType,
+  type LeaderboardEntry,
+  type MovementIntent,
+  ServerEvent,
+  type ServerEvent as ServerEventType,
+} from "@blob/protocol";
 
 export interface ArenaConfig {
+  mode: GameModeType;
   width: number;
   height: number;
+  maxWorldWidth: number;
+  maxWorldHeight: number;
+  worldSizingGrid: number;
   tickMs: number;
-  maxPlayers: number;
   minPlayersToStart: number;
-  countdownMs: number;
+  maxPlayers: number;
+  matchmakingDurationMs: number;
+  startWhenMinimumPlayersReached: boolean;
+  countdownDurationMs: number;
   matchDurationMs: number;
+  finishedDurationMs: number;
   resultsDurationMs: number;
   startingMass: number;
   foodCount: number;
+  maxFoodCount: number;
   foodMass: number;
   foodRadius: number;
   baseMoveSpeed: number;
-  minMassRatioToEat: number;
-  absorbedMassBps: number;
-  respawnMs: number;
+  minimumMassRatioToEat: number;
+  absorbedMassPercent: number;
+  respawnEnabled: boolean;
+  respawnDelayMs: number;
   spawnProtectionMs: number;
-  inputRateLimitMs: number;
+  safeSpawnDistance: number;
+  inputRateLimitPerSecond: number;
   inputTimeoutMs: number;
 }
 
 export const DEFAULT_ARENA_CONFIG: ArenaConfig = {
-  width: 2_400,
-  height: 1_400,
+  mode: GameMode.FREE,
+  width: 2200,
+  height: 1360,
+  maxWorldWidth: 7200,
+  maxWorldHeight: 4480,
+  worldSizingGrid: 40,
   tickMs: 50,
-  maxPlayers: 20,
-  minPlayersToStart: 1,
-  countdownMs: 3_000,
-  matchDurationMs: 300_000,
-  resultsDurationMs: 8_000,
+  minPlayersToStart: 2,
+  maxPlayers: 32,
+  matchmakingDurationMs: 120_000,
+  startWhenMinimumPlayersReached: true,
+  countdownDurationMs: 10_000,
+  matchDurationMs: 600_000,
+  finishedDurationMs: 1_000,
+  resultsDurationMs: 15_000,
   startingMass: 100,
   foodCount: 140,
+  maxFoodCount: 2_240,
   foodMass: 3,
   foodRadius: 7,
   baseMoveSpeed: 260,
-  minMassRatioToEat: 1.25,
-  absorbedMassBps: 7_500,
-  respawnMs: 3_000,
+  minimumMassRatioToEat: 1.25,
+  absorbedMassPercent: 0.75,
+  respawnEnabled: true,
+  respawnDelayMs: 3_000,
   spawnProtectionMs: 1_500,
-  inputRateLimitMs: 20,
-  inputTimeoutMs: 750
+  safeSpawnDistance: 110,
+  inputRateLimitPerSecond: 25,
+  inputTimeoutMs: 350,
 };
 
-export interface SimulatedPlayer extends ArenaPlayerView {
+export interface WorldSize {
+  width: number;
+  height: number;
+}
+
+export interface SimulationEvent {
+  type: ServerEventType;
+  playerId?: string;
+  targetPlayerId?: string;
+  matchId?: string;
+  roundId?: string;
+}
+
+interface SimulationPlayer extends ArenaPlayerView {
   input: MovementIntent;
   lastInputAt: number;
   respawnAt: number | null;
+  joinSequence: number;
 }
 
-export interface SimulatedFood extends FoodView {}
+interface SimulationFood extends FoodView {}
+
+const ZERO_INPUT: MovementIntent = { x: 0, y: 0 };
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function roundToGrid(value: number, grid: number): number {
+  return Math.round(value / grid) * grid;
+}
+
+function inputLength(input: MovementIntent): number {
+  return Math.hypot(input.x, input.y);
+}
+
+function cloneInput(input: MovementIntent): MovementIntent {
+  return { x: input.x, y: input.y };
+}
+
+function createId(prefix: string, sequence: number, now: number): string {
+  return prefix + "-" + now.toString(36) + "-" + sequence.toString(36);
+}
+
+function requirePositiveNumber(name: string, value: number): void {
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(name + " must be a positive finite number");
+  }
+}
 
 export function createArenaConfig(overrides: Partial<ArenaConfig> = {}): ArenaConfig {
   const config = { ...DEFAULT_ARENA_CONFIG, ...overrides };
 
-  if (config.width <= 0 || config.height <= 0 || config.tickMs <= 0) {
-    throw new RangeError("Arena dimensions and tick duration must be positive.");
+  for (const [name, value] of Object.entries(config)) {
+    if (typeof value === "number") {
+      requirePositiveNumber(name, value);
+    }
   }
-  if (!Number.isInteger(config.maxPlayers) || config.maxPlayers < 1) {
-    throw new RangeError("maxPlayers must be a positive integer.");
+
+  if (config.minPlayersToStart > config.maxPlayers) {
+    throw new Error("minPlayersToStart cannot exceed maxPlayers");
   }
-  if (!Number.isInteger(config.minPlayersToStart) || config.minPlayersToStart < 1 || config.minPlayersToStart > config.maxPlayers) {
-    throw new RangeError("minPlayersToStart must be between 1 and maxPlayers.");
+  if (config.maxWorldWidth < config.width || config.maxWorldHeight < config.height) {
+    throw new Error("maximum world dimensions cannot be smaller than base dimensions");
   }
-  if (config.absorbedMassBps < 1 || config.absorbedMassBps > 10_000) {
-    throw new RangeError("absorbedMassBps must be between 1 and 10000.");
+  if (config.minimumMassRatioToEat <= 1) {
+    throw new Error("minimumMassRatioToEat must be greater than 1");
   }
-  if (config.minMassRatioToEat <= 1) {
-    throw new RangeError("minMassRatioToEat must be greater than one.");
+  if (config.absorbedMassPercent > 1) {
+    throw new Error("absorbedMassPercent cannot exceed 1");
   }
 
   return config;
 }
 
-export function playerRadius(mass: number): number {
-  return Math.max(16, Math.sqrt(Math.max(0, mass)) * 5);
+export function calculateWorldSize(playerCount: number, config: ArenaConfig = DEFAULT_ARENA_CONFIG): WorldSize {
+  const effectivePlayers = clamp(Math.floor(playerCount), 1, config.maxPlayers);
+  const baselinePlayers = Math.max(1, config.minPlayersToStart);
+  const scale = Math.sqrt(Math.max(effectivePlayers, baselinePlayers) / baselinePlayers);
+  if (scale <= 1) {
+    return { width: config.width, height: config.height };
+  }
+
+  return {
+    width: clamp(
+      roundToGrid(config.width * scale, config.worldSizingGrid),
+      config.width,
+      config.maxWorldWidth,
+    ),
+    height: clamp(
+      roundToGrid(config.height * scale, config.worldSizingGrid),
+      config.height,
+      config.maxWorldHeight,
+    ),
+  };
 }
 
-export function normalizeIntent(input: MovementIntent): MovementIntent {
-  const magnitude = Math.hypot(input.x, input.y);
-  if (magnitude === 0) {
-    return { x: 0, y: 0 };
-  }
-
-  return magnitude > 1
-    ? { x: input.x / magnitude, y: input.y / magnitude }
-    : { x: input.x, y: input.y };
+export function calculateFoodTarget(playerCount: number, config: ArenaConfig = DEFAULT_ARENA_CONFIG): number {
+  const effectivePlayers = Math.max(config.minPlayersToStart, Math.floor(playerCount));
+  const scaled = Math.round((config.foodCount * effectivePlayers) / config.minPlayersToStart);
+  return clamp(scaled, config.foodCount, config.maxFoodCount);
 }
 
-export function canPlayerEat(eater: Pick<SimulatedPlayer, "alive" | "mass" | "x" | "y" | "spawnProtectedUntil">, victim: Pick<SimulatedPlayer, "alive" | "mass" | "x" | "y" | "spawnProtectedUntil">, now: number, config: Pick<ArenaConfig, "minMassRatioToEat">): boolean {
-  if (!eater.alive || !victim.alive || now < eater.spawnProtectedUntil || now < victim.spawnProtectedUntil) {
-    return false;
-  }
-  if (eater.mass < victim.mass * config.minMassRatioToEat) {
-    return false;
-  }
-
-  const distance = Math.hypot(eater.x - victim.x, eater.y - victim.y);
-  return distance <= playerRadius(eater.mass) - playerRadius(victim.mass) * 0.25;
+export function radiusFromMass(mass: number): number {
+  return Math.max(18, Math.sqrt(mass) * 3.2);
 }
 
 export class ArenaSimulation {
   readonly config: ArenaConfig;
-  private readonly players = new Map<string, SimulatedPlayer>();
-  private readonly food = new Map<string, SimulatedFood>();
-  private phase: ArenaPhaseValue = ArenaPhase.LOBBY;
+  private readonly players = new Map<string, SimulationPlayer>();
+  private readonly food = new Map<string, SimulationFood>();
+  private readonly events: SimulationEvent[] = [];
+  private phase: ArenaPhase = ArenaPhase.WAITING;
   private phaseEndsAt: number | null = null;
-  private matchStartedAt: number | null = null;
-  private matchNumber = 1;
-  private nextSpawnSlot = 0;
-  private nextFoodSequence = 0;
-  private lastServerTime: number;
+  private now = 0;
+  private lastAdvanceAt: number | null = null;
+  private matchNumber = 0;
+  private matchId = "";
+  private roundId = "";
+  private result: ArenaRoundResultView | null = null;
+  private world: WorldSize;
+  private foodTarget = 0;
+  private joinSequence = 0;
+  private foodSequence = 0;
 
-  constructor(config: Partial<ArenaConfig> = {}, now = Date.now()) {
-    this.config = createArenaConfig(config);
-    this.lastServerTime = now;
-    this.fillFood();
+  constructor(overrides: Partial<ArenaConfig> = {}) {
+    this.config = createArenaConfig(overrides);
+    this.world = calculateWorldSize(this.config.minPlayersToStart, this.config);
   }
 
-  addPlayer(id: string, name: string, now = this.lastServerTime): void {
-    if (this.players.has(id)) {
-      throw new Error("A player with this session id already exists.");
-    }
-    if (this.players.size >= this.config.maxPlayers) {
-      throw new Error("The arena is full.");
+  addPlayer(id: string, name: string, now: number): void {
+    if (this.players.has(id) || this.players.size >= this.config.maxPlayers) {
+      return;
     }
 
-    const position = this.nextSpawnPosition();
-    this.players.set(id, {
+    this.now = now;
+    const player: SimulationPlayer = {
       id,
-      name,
-      ...position,
+      name: name.slice(0, 24),
+      x: this.world.width / 2,
+      y: this.world.height / 2,
       mass: this.config.startingMass,
       score: 0,
       kills: 0,
       deaths: 0,
+      foodCollected: 0,
+      survivalTimeMs: 0,
       rank: this.players.size + 1,
-      alive: true,
-      spawnProtectedUntil: now + this.config.spawnProtectionMs,
-      input: { x: 0, y: 0 },
-      lastInputAt: Number.NEGATIVE_INFINITY,
-      respawnAt: null
-    });
+      alive: false,
+      inRound: false,
+      spawnProtectedUntil: 0,
+      input: cloneInput(ZERO_INPUT),
+      lastInputAt: now,
+      respawnAt: null,
+      joinSequence: ++this.joinSequence,
+    };
+    this.players.set(id, player);
+    this.events.push({ type: ServerEvent.PLAYER_JOINED, playerId: id });
     this.updateRanks();
   }
 
@@ -155,231 +244,436 @@ export class ArenaSimulation {
 
   setInput(id: string, input: MovementIntent, now: number): boolean {
     const player = this.players.get(id);
-    if (!player || !player.alive || now < player.lastInputAt || now - player.lastInputAt < this.config.inputRateLimitMs) {
+    if (!player || this.phase !== ArenaPhase.ACTIVE || !player.alive) {
+      return false;
+    }
+    if (!Number.isFinite(input.x) || !Number.isFinite(input.y) || Math.abs(input.x) > 1 || Math.abs(input.y) > 1) {
+      return false;
+    }
+    if (now - player.lastInputAt < 1_000 / this.config.inputRateLimitPerSecond) {
       return false;
     }
 
-    player.input = normalizeIntent(input);
+    const length = inputLength(input);
+    player.input = length > 1 ? { x: input.x / length, y: input.y / length } : cloneInput(input);
     player.lastInputAt = now;
     return true;
   }
 
   advance(now: number): void {
-    if (now < this.lastServerTime) {
+    if (!Number.isFinite(now)) {
       return;
     }
-    this.lastServerTime = now;
+    const elapsed = this.lastAdvanceAt === null ? 0 : clamp(now - this.lastAdvanceAt, 0, this.config.tickMs * 4);
+    this.now = now;
+    this.lastAdvanceAt = now;
 
     switch (this.phase) {
-      case ArenaPhase.LOBBY:
-        if (this.players.size >= this.config.minPlayersToStart) {
-          this.beginCountdown(now);
+      case ArenaPhase.WAITING:
+        if (this.players.size > 0) {
+          this.beginMatchmaking();
         }
+        break;
+      case ArenaPhase.MATCHMAKING:
+        this.advanceMatchmaking();
         break;
       case ArenaPhase.COUNTDOWN:
-        if (this.players.size < this.config.minPlayersToStart) {
-          this.phase = ArenaPhase.LOBBY;
-          this.phaseEndsAt = null;
-        } else if (this.hasPhaseElapsed(now)) {
-          this.beginMatch(now);
-        }
+        this.advanceCountdown();
         break;
-      case ArenaPhase.PLAYING:
-        this.respawnEligiblePlayers(now);
-        this.applyMovement(now);
-        this.collectFood();
-        this.resolvePlayerCollisions(now);
-        this.updateRanks();
-        if (this.matchStartedAt !== null && now - this.matchStartedAt >= this.config.matchDurationMs) {
-          this.phase = ArenaPhase.RESULTS;
-          this.phaseEndsAt = now + this.config.resultsDurationMs;
+      case ArenaPhase.ACTIVE:
+        this.advanceActive(elapsed);
+        break;
+      case ArenaPhase.FINISHED:
+        if (this.phaseEndsAt !== null && now >= this.phaseEndsAt) {
+          this.beginResults();
         }
         break;
       case ArenaPhase.RESULTS:
-        if (this.hasPhaseElapsed(now)) {
-          this.resetMatch(now);
+        if (this.phaseEndsAt !== null && now >= this.phaseEndsAt) {
+          this.resetToWaiting();
         }
         break;
     }
   }
 
-  snapshot(now = this.lastServerTime): ArenaSnapshot {
-    const players = [...this.players.values()].map(({ input: _input, lastInputAt: _lastInputAt, respawnAt: _respawnAt, ...player }) => ({ ...player }));
-    const leaderboard = [...players].sort(comparePlayers);
+  drainEvents(): SimulationEvent[] {
+    return this.events.splice(0);
+  }
+
+  snapshot(): ArenaSnapshot {
+    const players = [...this.players.values()]
+      .sort((left, right) => left.joinSequence - right.joinSequence)
+      .map((player) => this.toPlayerView(player));
+    const leaderboard = this.getLeaderboard();
+
     return {
       phase: this.phase,
+      mode: this.config.mode,
       matchNumber: this.matchNumber,
-      remainingMs: this.phaseEndsAt === null ? 0 : Math.max(0, this.phaseEndsAt - now),
+      matchId: this.matchId,
+      roundId: this.roundId,
+      serverTime: this.now,
+      remainingMs: this.remainingMs(),
+      matchmakingPlayerCount: this.eligiblePlayerCount(),
+      world: {
+        width: this.world.width,
+        height: this.world.height,
+        foodTarget: this.foodTarget,
+      },
       players,
       food: [...this.food.values()].map((pellet) => ({ ...pellet })),
-      leaderboard
+      leaderboard,
+      result: this.result ? this.cloneResult(this.result) : null,
     };
   }
 
-  private beginCountdown(now: number): void {
-    this.phase = ArenaPhase.COUNTDOWN;
-    this.phaseEndsAt = now + this.config.countdownMs;
-  }
-
-  private beginMatch(now: number): void {
-    this.phase = ArenaPhase.PLAYING;
-    this.matchStartedAt = now;
-    this.phaseEndsAt = now + this.config.matchDurationMs;
-  }
-
-  private resetMatch(now: number): void {
-    this.matchNumber += 1;
-    this.phase = ArenaPhase.LOBBY;
-    this.phaseEndsAt = null;
-    this.matchStartedAt = null;
-    this.nextSpawnSlot = 0;
+  private beginMatchmaking(): void {
+    this.phase = ArenaPhase.MATCHMAKING;
+    this.phaseEndsAt = this.now + this.config.matchmakingDurationMs;
+    this.result = null;
+    this.matchId = "";
+    this.roundId = "";
     this.food.clear();
-    this.fillFood();
-
+    this.foodTarget = 0;
     for (const player of this.players.values()) {
-      const position = this.nextSpawnPosition();
-      player.x = position.x;
-      player.y = position.y;
+      player.alive = false;
+      player.inRound = false;
+      player.input = cloneInput(ZERO_INPUT);
+      player.respawnAt = null;
+    }
+  }
+
+  private advanceMatchmaking(): void {
+    const eligible = this.eligiblePlayerCount();
+    if (eligible === 0) {
+      this.resetToWaiting();
+      return;
+    }
+    const shouldStart = eligible >= this.config.minPlayersToStart && (
+      this.config.startWhenMinimumPlayersReached ||
+      eligible >= this.config.maxPlayers ||
+      (this.phaseEndsAt !== null && this.now >= this.phaseEndsAt)
+    );
+    if (shouldStart) {
+      this.beginCountdown();
+    }
+  }
+
+  private advanceCountdown(): void {
+    if (this.eligiblePlayerCount() < this.config.minPlayersToStart) {
+      this.beginMatchmaking();
+      return;
+    }
+    if (this.phaseEndsAt !== null && this.now >= this.phaseEndsAt) {
+      this.beginActive();
+    }
+  }
+
+  private beginCountdown(): void {
+    this.matchNumber += 1;
+    this.matchId = createId(this.config.mode.toLowerCase() + "-match", this.matchNumber, this.now);
+    this.roundId = createId("round", this.matchNumber, this.now);
+    this.world = calculateWorldSize(this.eligiblePlayerCount(), this.config);
+    this.foodTarget = calculateFoodTarget(this.eligiblePlayerCount(), this.config);
+    this.food.clear();
+    this.foodSequence = 0;
+    this.result = null;
+    this.phase = ArenaPhase.COUNTDOWN;
+    this.phaseEndsAt = this.now + this.config.countdownDurationMs;
+
+    let spawnIndex = 0;
+    for (const player of this.players.values()) {
+      player.inRound = true;
+      player.alive = true;
       player.mass = this.config.startingMass;
       player.score = 0;
       player.kills = 0;
       player.deaths = 0;
-      player.rank = 0;
-      player.alive = true;
+      player.foodCollected = 0;
+      player.survivalTimeMs = 0;
+      player.input = cloneInput(ZERO_INPUT);
+      player.lastInputAt = this.now;
       player.respawnAt = null;
-      player.spawnProtectedUntil = now + this.config.spawnProtectionMs;
-      player.input = { x: 0, y: 0 };
-      player.lastInputAt = Number.NEGATIVE_INFINITY;
+      player.spawnProtectedUntil = this.now + this.config.spawnProtectionMs;
+      this.placeSafely(player, spawnIndex++);
+    }
+    this.replenishFood();
+    this.updateRanks();
+  }
+
+  private beginActive(): void {
+    this.phase = ArenaPhase.ACTIVE;
+    this.phaseEndsAt = this.now + this.config.matchDurationMs;
+    this.events.push({ type: ServerEvent.ROUND_STARTED, matchId: this.matchId, roundId: this.roundId });
+  }
+
+  private advanceActive(elapsed: number): void {
+    if (this.phaseEndsAt !== null && this.now >= this.phaseEndsAt) {
+      this.finalizeRound();
+      return;
+    }
+
+    for (const player of this.players.values()) {
+      if (!player.inRound) {
+        continue;
+      }
+      if (player.alive) {
+        player.survivalTimeMs += elapsed;
+        this.applyMovement(player, elapsed);
+      } else if (this.config.respawnEnabled && player.respawnAt !== null && this.now >= player.respawnAt) {
+        this.respawnPlayer(player);
+      }
+    }
+    this.collectFood();
+    this.resolvePlayerCollisions();
+    this.replenishFood();
+    this.updateRanks();
+  }
+
+  private beginResults(): void {
+    this.phase = ArenaPhase.RESULTS;
+    this.phaseEndsAt = this.now + this.config.resultsDurationMs;
+  }
+
+  private resetToWaiting(): void {
+    this.phase = ArenaPhase.WAITING;
+    this.phaseEndsAt = null;
+    this.matchId = "";
+    this.roundId = "";
+    this.result = null;
+    this.food.clear();
+    this.foodTarget = 0;
+    for (const player of this.players.values()) {
+      player.alive = false;
+      player.inRound = false;
+      player.input = cloneInput(ZERO_INPUT);
+      player.respawnAt = null;
     }
     this.updateRanks();
   }
 
-  private applyMovement(now: number): void {
-    const stepSeconds = this.config.tickMs / 1_000;
-    const margin = 8;
-
-    for (const player of this.players.values()) {
-      if (!player.alive) {
-        continue;
-      }
-      if (now - player.lastInputAt > this.config.inputTimeoutMs) {
-        player.input = { x: 0, y: 0 };
-      }
-      const speed = this.config.baseMoveSpeed / Math.pow(Math.max(1, player.mass / this.config.startingMass), 0.18);
-      player.x = clamp(player.x + player.input.x * speed * stepSeconds, margin, this.config.width - margin);
-      player.y = clamp(player.y + player.input.y * speed * stepSeconds, margin, this.config.height - margin);
+  private applyMovement(player: SimulationPlayer, elapsed: number): void {
+    const stale = this.now - player.lastInputAt > this.config.inputTimeoutMs;
+    const input = stale ? ZERO_INPUT : player.input;
+    const length = inputLength(input);
+    if (length === 0) {
+      return;
     }
+
+    const normalizedX = input.x / length;
+    const normalizedY = input.y / length;
+    const speed = this.config.baseMoveSpeed * Math.pow(this.config.startingMass / Math.max(player.mass, this.config.startingMass), 0.22);
+    player.x += normalizedX * speed * (elapsed / 1_000);
+    player.y += normalizedY * speed * (elapsed / 1_000);
+    this.constrainPlayerToWorld(player);
   }
 
   private collectFood(): void {
-    let collectedFood = 0;
     for (const player of this.players.values()) {
-      if (!player.alive) {
+      if (!player.alive || !player.inRound) {
         continue;
       }
-      for (const pellet of [...this.food.values()]) {
-        if (Math.hypot(player.x - pellet.x, player.y - pellet.y) <= playerRadius(player.mass) + this.config.foodRadius) {
-          this.food.delete(pellet.id);
-          player.mass += pellet.mass;
-          player.score += pellet.mass;
-          collectedFood += 1;
-        }
-      }
-    }
-    if (collectedFood > 0) {
-      this.fillFood();
-    }
-  }
-
-  private resolvePlayerCollisions(now: number): void {
-    const orderedPlayers = [...this.players.values()].sort((left, right) => right.mass - left.mass || left.id.localeCompare(right.id));
-    for (const eater of orderedPlayers) {
-      if (!eater.alive) {
-        continue;
-      }
-      for (const victim of orderedPlayers) {
-        if (eater.id === victim.id || !victim.alive || !canPlayerEat(eater, victim, now, this.config)) {
+      const radius = radiusFromMass(player.mass);
+      for (const [foodId, pellet] of this.food) {
+        if (Math.hypot(player.x - pellet.x, player.y - pellet.y) > radius + pellet.radius) {
           continue;
         }
-        eater.mass += Math.max(1, Math.floor((victim.mass * this.config.absorbedMassBps) / 10_000));
-        eater.score += victim.mass;
-        eater.kills += 1;
-        victim.alive = false;
-        victim.mass = 0;
-        victim.deaths += 1;
-        victim.input = { x: 0, y: 0 };
-        victim.respawnAt = now + this.config.respawnMs;
+        this.food.delete(foodId);
+        player.mass += pellet.mass;
+        player.score += pellet.mass;
+        player.foodCollected += 1;
+        this.constrainPlayerToWorld(player);
+        this.events.push({ type: ServerEvent.FOOD_EATEN, playerId: player.id, matchId: this.matchId, roundId: this.roundId });
       }
     }
   }
 
-  private respawnEligiblePlayers(now: number): void {
-    for (const player of this.players.values()) {
-      if (player.alive || player.respawnAt === null || now < player.respawnAt) {
+  private resolvePlayerCollisions(): void {
+    const activePlayers = [...this.players.values()].filter((player) => player.alive && player.inRound);
+    for (let index = 0; index < activePlayers.length; index += 1) {
+      const first = activePlayers[index];
+      if (!first) {
         continue;
       }
-      const position = this.nextSpawnPosition();
-      player.x = position.x;
-      player.y = position.y;
-      player.mass = this.config.startingMass;
-      player.alive = true;
-      player.respawnAt = null;
-      player.spawnProtectedUntil = now + this.config.spawnProtectionMs;
-      player.lastInputAt = Number.NEGATIVE_INFINITY;
+      for (let otherIndex = index + 1; otherIndex < activePlayers.length; otherIndex += 1) {
+        const second = activePlayers[otherIndex];
+        if (!second) {
+          continue;
+        }
+        if (!first.alive || !second.alive || first.spawnProtectedUntil > this.now || second.spawnProtectedUntil > this.now) {
+          continue;
+        }
+        const firstCanEat = first.mass >= second.mass * this.config.minimumMassRatioToEat;
+        const secondCanEat = second.mass >= first.mass * this.config.minimumMassRatioToEat;
+        if (!firstCanEat && !secondCanEat) {
+          continue;
+        }
+        const winner = firstCanEat ? first : second;
+        const loser = firstCanEat ? second : first;
+        if (Math.hypot(winner.x - loser.x, winner.y - loser.y) > radiusFromMass(winner.mass)) {
+          continue;
+        }
+        winner.mass += loser.mass * this.config.absorbedMassPercent;
+        winner.score += loser.mass * this.config.absorbedMassPercent;
+        winner.kills += 1;
+        this.constrainPlayerToWorld(winner);
+        loser.deaths += 1;
+        loser.alive = false;
+        loser.input = cloneInput(ZERO_INPUT);
+        loser.respawnAt = this.config.respawnEnabled ? this.now + this.config.respawnDelayMs : null;
+        this.events.push({ type: ServerEvent.PLAYER_ELIMINATED, playerId: winner.id, targetPlayerId: loser.id, matchId: this.matchId, roundId: this.roundId });
+        this.events.push({ type: ServerEvent.PLAYER_DIED, playerId: loser.id, targetPlayerId: winner.id, matchId: this.matchId, roundId: this.roundId });
+      }
     }
   }
 
-  private fillFood(): void {
-    while (this.food.size < this.config.foodCount) {
-      const pellet = this.nextFood();
-      this.food.set(pellet.id, pellet);
+  private respawnPlayer(player: SimulationPlayer): void {
+    player.alive = true;
+    player.mass = this.config.startingMass;
+    player.input = cloneInput(ZERO_INPUT);
+    player.lastInputAt = this.now;
+    player.respawnAt = null;
+    player.spawnProtectedUntil = this.now + this.config.spawnProtectionMs;
+    this.placeSafely(player, player.joinSequence + this.matchNumber);
+  }
+
+  private replenishFood(): void {
+    while (this.food.size < this.foodTarget) {
+      const sequence = ++this.foodSequence;
+      const id = "food-" + this.matchNumber + "-" + sequence;
+      const x = this.seededCoordinate(sequence * 17 + 11, this.world.width, this.config.foodRadius);
+      const y = this.seededCoordinate(sequence * 31 + 7, this.world.height, this.config.foodRadius);
+      this.food.set(id, {
+        id,
+        x,
+        y,
+        mass: this.config.foodMass,
+        radius: this.config.foodRadius,
+      });
     }
   }
 
-  private nextFood(): SimulatedFood {
-    const sequence = this.nextFoodSequence++;
-    const columns = 23;
-    const rows = 13;
-    const margin = Math.min(90, this.config.width * 0.08, this.config.height * 0.12);
-    const column = (sequence * 17) % columns;
-    const row = (Math.floor(sequence / columns) * 7 + sequence) % rows;
-    return {
-      id: `food-${sequence}`,
-      x: margin + (column / (columns - 1)) * (this.config.width - margin * 2),
-      y: margin + (row / (rows - 1)) * (this.config.height - margin * 2),
-      mass: this.config.foodMass
-    };
+  private seededCoordinate(seed: number, size: number, padding: number): number {
+    const value = Math.sin(seed * 12.9898 + this.matchNumber * 78.233) * 43_758.5453;
+    const fraction = value - Math.floor(value);
+    return padding + fraction * Math.max(1, size - padding * 2);
   }
 
-  private nextSpawnPosition(): Pick<SimulatedPlayer, "x" | "y"> {
-    const slots = 12;
-    const angle = (this.nextSpawnSlot++ % slots) * (Math.PI * 2 / slots);
-    const radius = Math.min(this.config.width, this.config.height) * 0.26;
-    return {
-      x: this.config.width / 2 + Math.cos(angle) * radius,
-      y: this.config.height / 2 + Math.sin(angle) * radius
-    };
+  private placeSafely(player: SimulationPlayer, seed: number): void {
+    const playerRadius = radiusFromMass(player.mass);
+    for (let attempt = 0; attempt < 32; attempt += 1) {
+      const candidateSeed = (seed + 1) * 97 + attempt * 13;
+      const x = this.seededCoordinate(candidateSeed, this.world.width, playerRadius);
+      const y = this.seededCoordinate(candidateSeed + 41, this.world.height, playerRadius);
+      const safe = [...this.players.values()].every((other) => {
+        if (other.id === player.id || !other.alive || !other.inRound) {
+          return true;
+        }
+        const minimumDistance = this.config.safeSpawnDistance + playerRadius + radiusFromMass(other.mass);
+        return Math.hypot(x - other.x, y - other.y) >= minimumDistance;
+      });
+      if (safe) {
+        player.x = x;
+        player.y = y;
+        return;
+      }
+    }
+    player.x = clamp(this.world.width / 2, playerRadius, this.world.width - playerRadius);
+    player.y = clamp(this.world.height / 2, playerRadius, this.world.height - playerRadius);
   }
 
-  private hasPhaseElapsed(now: number): boolean {
-    return this.phaseEndsAt !== null && now >= this.phaseEndsAt;
+  private constrainPlayerToWorld(player: SimulationPlayer): void {
+    const radius = radiusFromMass(player.mass);
+    const horizontalPadding = Math.min(radius, this.world.width / 2);
+    const verticalPadding = Math.min(radius, this.world.height / 2);
+    player.x = clamp(player.x, horizontalPadding, this.world.width - horizontalPadding);
+    player.y = clamp(player.y, verticalPadding, this.world.height - verticalPadding);
+  }
+
+  private finalizeRound(): void {
+    const ranked = [...this.players.values()]
+      .filter((player) => player.inRound)
+      .sort((left, right) => this.comparePlayers(left, right))
+      .map((player, index) => ({
+        playerId: player.id,
+        name: player.name,
+        rank: index + 1,
+        finalMass: player.mass,
+        foodCollected: player.foodCollected,
+        eliminations: player.kills,
+        deaths: player.deaths,
+        survivalTimeMs: player.survivalTimeMs,
+      }));
+    this.result = Object.freeze({
+      matchId: this.matchId,
+      roundId: this.roundId,
+      mode: this.config.mode,
+      finalizedAt: this.now,
+      rankings: Object.freeze(ranked),
+    });
+    this.phase = ArenaPhase.FINISHED;
+    this.phaseEndsAt = this.now + this.config.finishedDurationMs;
+    this.updateRanks();
+    this.events.push({ type: ServerEvent.ROUND_FINISHED, matchId: this.matchId, roundId: this.roundId });
+    this.events.push({ type: ServerEvent.MATCH_FINALIZED, matchId: this.matchId, roundId: this.roundId });
+  }
+
+  private comparePlayers(left: SimulationPlayer, right: SimulationPlayer): number {
+    if (right.mass !== left.mass) {
+      return right.mass - left.mass;
+    }
+    if (right.survivalTimeMs !== left.survivalTimeMs) {
+      return right.survivalTimeMs - left.survivalTimeMs;
+    }
+    if (left.joinSequence !== right.joinSequence) {
+      return left.joinSequence - right.joinSequence;
+    }
+    return left.id.localeCompare(right.id);
   }
 
   private updateRanks(): void {
-    [...this.players.values()].sort(comparePlayers).forEach((player, index) => {
+    const ranked = [...this.players.values()]
+      .filter((player) => player.inRound)
+      .sort((left, right) => this.comparePlayers(left, right));
+    ranked.forEach((player, index) => {
       player.rank = index + 1;
     });
   }
-}
 
-function comparePlayers(left: ArenaPlayerView, right: ArenaPlayerView): number {
-  return Number(right.alive) - Number(left.alive)
-    || right.mass - left.mass
-    || right.kills - left.kills
-    || right.score - left.score
-    || left.id.localeCompare(right.id);
-}
+  private getLeaderboard(): LeaderboardEntry[] {
+    return [...this.players.values()]
+      .filter((player) => player.inRound && player.alive)
+      .sort((left, right) => this.comparePlayers(left, right))
+      .slice(0, 8)
+      .map((player) => ({
+        playerId: player.id,
+        name: player.name,
+        rank: player.rank,
+        mass: Math.round(player.mass),
+        kills: player.kills,
+      }));
+  }
 
-function clamp(value: number, minimum: number, maximum: number): number {
-  return Math.max(minimum, Math.min(maximum, value));
+  private eligiblePlayerCount(): number {
+    return this.players.size;
+  }
+
+  private remainingMs(): number {
+    if (this.phaseEndsAt === null) {
+      return 0;
+    }
+    return Math.max(0, this.phaseEndsAt - this.now);
+  }
+
+  private toPlayerView(player: SimulationPlayer): ArenaPlayerView {
+    const { input: _input, lastInputAt: _lastInputAt, respawnAt: _respawnAt, joinSequence: _joinSequence, ...view } = player;
+    return { ...view };
+  }
+
+  private cloneResult(result: ArenaRoundResultView): ArenaRoundResultView {
+    return {
+      ...result,
+      rankings: result.rankings.map((ranking) => ({ ...ranking })),
+    };
+  }
 }

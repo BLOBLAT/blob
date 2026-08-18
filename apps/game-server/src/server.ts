@@ -4,14 +4,17 @@ import { WebSocketTransport } from "@colyseus/ws-transport";
 import cors from "cors";
 import express from "express";
 import { createServer, type Server as HttpServer } from "node:http";
-import { BlobArenaRoom } from "./BlobArenaRoom.js";
+import { BlobArenaRoom, type BlobArenaRoomOptions } from "./BlobArenaRoom.js";
 
 export interface GameServerHandle {
   listen(port: number, host?: string): Promise<number>;
   shutdown(): Promise<void>;
 }
 
-export function createGameServer(allowedOrigins = resolveAllowedOrigins()): GameServerHandle {
+export function createGameServer(
+  allowedOrigins = resolveAllowedOrigins(),
+  roomOptions: BlobArenaRoomOptions = {},
+): GameServerHandle {
   const app = express();
   app.disable("x-powered-by");
   app.use(cors({
@@ -37,7 +40,7 @@ export function createGameServer(allowedOrigins = resolveAllowedOrigins()): Game
     }),
     gracefullyShutdown: false
   });
-  gameServer.define(ARENA_ROOM_NAME, BlobArenaRoom);
+  gameServer.define(ARENA_ROOM_NAME, BlobArenaRoom, roomOptions);
 
   return {
     async listen(port: number, host = "0.0.0.0"): Promise<number> {

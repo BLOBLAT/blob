@@ -1,5 +1,5 @@
 import { Client, type Room } from "@colyseus/sdk";
-import { ARENA_ROOM_NAME } from "@blob/protocol";
+import { ARENA_ROOM_NAME, ServerEvent } from "@blob/protocol";
 import Phaser from "phaser";
 import { ArenaUiState, BlobArenaScene } from "./BlobArenaScene.js";
 
@@ -39,6 +39,9 @@ export async function startFreeGame(options: StartFreeGameOptions): Promise<Free
     }
 
     activeRoom = room;
+    for (const event of Object.values(ServerEvent)) {
+      room.onMessage(event, () => undefined);
+    }
     game?.destroy(true);
     game = createPhaserGame(options.canvasHost, room, options.onUiState);
     reconnectAttempts = 0;

@@ -8,6 +8,22 @@
 - Keep paid competition isolated from the game simulation. Payment and chain integrations may validate entry and settlement, but must not alter competitive rules or authoritative results.
 - Competitive gameplay must remain skill-based: no pay-to-win mechanics and no RNG that decides competitive outcomes.
 
+## Free Mode round conventions
+
+- The authoritative lifecycle is WAITING, MATCHMAKING, COUNTDOWN, ACTIVE, FINISHED, RESULTS, then WAITING. Do not infer phase or time from the browser.
+
+- Keep all round tuning, world sizing, food density, input expiry, combat thresholds, and respawn rules centralized in the game-core configuration.
+
+- Generate matchId and roundId only on the server. Finalized results are immutable server records and are the only possible future settlement input.
+
+- A new player joins the next queue during a live round. Do not alter the active round population or fabricate bots to satisfy matchmaking.
+
+- Stopped, released, malformed, over-rate, and stale movement input must become zero intent. Never reintroduce client-side velocity authority.
+
+- The active leaderboard is server-produced and includes living active participants only. HUD food values must be personal collection statistics, never the global food-object count.
+
+- Preserve one shared engine for FREE and PAID configurations. Paid-mode interfaces are future settlement boundaries only; do not add wallet, token, or transfer code to game-core, game-server, or the browser.
+
 ## Repository layout
 
 - `apps/web` — public website and Phaser game client. It renders synchronized state and sends intent only.

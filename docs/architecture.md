@@ -6,6 +6,14 @@ The repository is an npm-workspace monorepo. Local Free Mode is implemented as a
 
 The room uses the deterministic `packages/game-core` simulation for the fixed tick, bounded movement, food, growth, eating, death, respawn, ranking, and match lifecycle. The browser never computes or submits an authoritative position, score, kill, rank, or match result.
 
+## Implemented round and mode model
+
+The authoritative simulation has one explicit Free Mode lifecycle: WAITING, MATCHMAKING, COUNTDOWN, ACTIVE, FINISHED, RESULTS, then WAITING again. The game core generates unique matchId and roundId values server-side at countdown, calculates a bounded world from round population, tracks personal gameplay statistics, and finalizes an immutable ranking at the end of the active round.
+
+The room schema exposes only synchronized server state: phase, remaining time, world dimensions, players, food, active leaderboard, and finalized result. It also emits transient server events for joins, food collection, eliminations, deaths, round start, round finish, and match finalization. The Phaser client uses those state fields for rendering; it never treats a local timer, camera coordinate, or animation as authority.
+
+FREE and PAID are mode values for one shared simulation. Free Mode enables server-configured respawn. Paid Mode has no live room, wallet, entry, or transfer implementation. The shared domain provides configuration and settlement interfaces only, so a future settlement service can consume an immutable result without giving payment code control of gameplay.
+
 ## Target boundaries
 
 | Boundary | Responsibility | Must not own |
@@ -26,11 +34,10 @@ The frontend is never authoritative for competitive results. A future shared pro
 
 ```text
 player input
-  -> authenticated real-time transport
-  -> authoritative game server
-  -> signed/validated match result
-  -> durable database record
-  -> leaderboard and, later, settlement adapters
+  -> validated real-time transport
+  -> authoritative game server and deterministic simulation
+  -> immutable match and round result
+  -> later: durable record and settlement adapters
 ```
 
 For paid modes, entry authorization occurs before matchmaking; settlement consumes completed, server-produced results after the match. Neither payment success nor token ownership changes simulation rules.

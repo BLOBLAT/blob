@@ -36,8 +36,8 @@ export const DEFAULT_PAID_MATCH_CONFIGURATION: PaidMatchConfiguration = {
   platformFeeBps: 500n,
   prizeDistribution: [
     { place: 1, basisPoints: 6_000n },
-    { place: 2, basisPoints: 2_500n },
-    { place: 3, basisPoints: 1_500n }
+    { place: 2, basisPoints: 3_000n },
+    { place: 3, basisPoints: 1_000n }
   ],
   minimumPlayers: 3,
   maximumPlayers: 10,
@@ -126,6 +126,51 @@ export interface FinalizedMatchResult {
   matchId: string;
   rankings: readonly { playerId: string; rank: number }[];
   finalizedAt: Date;
+}
+
+export interface MatchEntry {
+  matchId: string;
+  roundId: string;
+  mode: "FREE" | "PAID";
+  playerId: string;
+  walletAddress?: string;
+  enteredAt: Date;
+}
+
+export interface AuthoritativePlayerResult {
+  playerId: string;
+  walletAddress?: string;
+  finalRank: number;
+  finalMass: number;
+  foodCollected: number;
+  eliminations: number;
+  deaths: number;
+  survivalTimeMs: number;
+}
+
+/**
+ * The game service can publish this immutable record after its authoritative
+ * round is finalized. It does not initiate payment or blockchain transfers.
+ */
+export interface AuthoritativeMatchResult {
+  matchId: string;
+  roundId: string;
+  mode: "FREE" | "PAID";
+  resultTimestamp: Date;
+  players: readonly AuthoritativePlayerResult[];
+}
+
+export interface SettlementRequest {
+  settlementId: string;
+  result: AuthoritativeMatchResult;
+  payoutPlan: readonly PrizePayout[];
+  idempotencyKey: string;
+}
+
+export interface SettlementResult {
+  settlementId: string;
+  transactionReferences: readonly string[];
+  settledAt: Date;
 }
 
 export interface PayoutRequest {

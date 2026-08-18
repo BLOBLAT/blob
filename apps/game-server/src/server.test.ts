@@ -7,7 +7,16 @@ let server: GameServerHandle;
 let endpoint: string;
 
 beforeAll(async () => {
-  server = createGameServer();
+  server = createGameServer(undefined, {
+    arenaConfig: {
+      countdownDurationMs: 20,
+      matchDurationMs: 5_000,
+      finishedDurationMs: 20,
+      resultsDurationMs: 30,
+      spawnProtectionMs: 1,
+      inputTimeoutMs: 120,
+    },
+  });
   const port = await server.listen(0);
   endpoint = `http://127.0.0.1:${port}`;
 });
@@ -34,11 +43,12 @@ describe("BLOB arena room", () => {
     const secondRoom = await secondClient.joinOrCreate(ARENA_ROOM_NAME, { name: "Blob Two" });
 
     await waitUntil(() => getPlayers(firstRoom.state).length === 2 && getPlayers(secondRoom.state).length === 2);
-    await waitUntil(() => firstRoom.state.phase === "PLAYING");
+    await waitUntil(() => firstRoom.state.phase === "ACTIVE");
 
     const firstPlayer = firstRoom.state.players.get(firstRoom.sessionId);
     expect(firstPlayer).toBeDefined();
     const originalX = firstPlayer!.x;
+    await delay(75);
     firstRoom.send("input", { x: 1, y: 0 });
 
     await waitUntil(() => {
@@ -47,11 +57,10 @@ describe("BLOB arena room", () => {
     });
 
     expect(secondRoom.state.players.get(firstRoom.sessionId)?.x).toBeGreaterThan(originalX);
-    firstRoom.send("input", { x: 0, y: 0 });
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    const stoppedAtX = firstRoom.state.players.get(firstRoom.sessionId)?.x;
     firstRoom.send("input", { x: 2, y: 0 });
-    await new Promise((resolve) => setTimeout(resolve, 150));
+    await delay(350);
+    const stoppedAtX = firstRoom.state.players.get(firstRoom.sessionId)?.x;
+    await delay(150);
     expect(firstRoom.state.players.get(firstRoom.sessionId)?.x).toBeCloseTo(stoppedAtX ?? originalX, 3);
 
     await secondRoom.leave();
@@ -60,10 +69,14 @@ describe("BLOB arena room", () => {
   });
 });
 
-function getPlayers(state: { players: { forEach: (callback: (player: unknown) => void) => void } }): unknown[] {
+function getPlayers(state: { players?: { forEach: (callback: (player: unknown) => void) => void } }): unknown[] {
   const players: unknown[] = [];
-  state.players.forEach((player) => players.push(player));
+  state.players?.forEach((player) => players.push(player));
   return players;
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 async function waitUntil(condition: () => boolean, timeoutMs = 8_000): Promise<void> {

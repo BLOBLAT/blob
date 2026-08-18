@@ -1,23 +1,33 @@
-import { ArenaSimulation, DEFAULT_ARENA_CONFIG } from "@blob/game-core";
-import { ARENA_ROOM_NAME, ClientMessage, type ArenaPlayerView } from "@blob/protocol";
+import { ArenaSimulation, DEFAULT_ARENA_CONFIG, type ArenaConfig } from "@blob/game-core";
+import { ARENA_ROOM_NAME, ClientMessage, ServerEvent } from "@blob/protocol";
 import { movementIntentSchema, playerJoinOptionsSchema, type ValidatedPlayerJoinOptions } from "@blob/validation";
-import { MapSchema } from "@colyseus/schema";
+import { MapSchema, Schema } from "@colyseus/schema";
 import { type Client, Room } from "@colyseus/core";
-import { BlobArenaState, BlobPlayerState, FoodState } from "./schema.js";
+import {
+  BlobArenaState,
+  BlobPlayerState,
+  FinalRankingState,
+  FoodState,
+  LeaderboardEntryState,
+} from "./schema.js";
+
+export interface BlobArenaRoomOptions {
+  arenaConfig?: Partial<ArenaConfig>;
+}
 
 export class BlobArenaRoom extends Room<{ state: BlobArenaState }> {
   override maxClients = DEFAULT_ARENA_CONFIG.maxPlayers;
   private simulation!: ArenaSimulation;
 
-  override onCreate(): void {
+  override onCreate(options: BlobArenaRoomOptions = {}): void {
     this.setState(new BlobArenaState());
-    this.simulation = new ArenaSimulation();
-    this.setPatchRate(DEFAULT_ARENA_CONFIG.tickMs);
+    this.simulation = new ArenaSimulation(options.arenaConfig);
+    this.maxClients = this.simulation.config.maxPlayers;
+    this.setPatchRate(this.simulation.config.tickMs);
     this.setSimulationInterval(() => {
-      const now = Date.now();
-      this.simulation.advance(now);
-      this.syncState(now);
-    }, DEFAULT_ARENA_CONFIG.tickMs);
+      this.simulation.advance(Date.now());
+      this.syncState();
+    }, this.simulation.config.tickMs);
     this.onMessage(ClientMessage.INPUT, (client, payload: unknown) => {
       const parsed = movementIntentSchema.safeParse(payload);
       if (!parsed.success) {
@@ -37,16 +47,17 @@ export class BlobArenaRoom extends Room<{ state: BlobArenaState }> {
 
   override onJoin(client: Client, _options: unknown, auth: ValidatedPlayerJoinOptions): void {
     this.simulation.addPlayer(client.sessionId, auth.name, Date.now());
-    this.syncState(Date.now());
+    this.syncState();
   }
 
   override onLeave(client: Client): void {
     this.simulation.removePlayer(client.sessionId);
-    this.syncState(Date.now());
+    this.log("player_disconnected", { playerId: client.sessionId });
+    this.syncState();
   }
 
-  private syncState(now: number): void {
-    const snapshot = this.simulation.snapshot(now);
+  private syncState(): void {
+    const snapshot = this.simulation.snapshot();
     syncCollection(this.state.players, snapshot.players, (player) => {
       const state = new BlobPlayerState();
       state.id = player.id;
@@ -59,8 +70,11 @@ export class BlobArenaRoom extends Room<{ state: BlobArenaState }> {
       state.score = player.score;
       state.kills = player.kills;
       state.deaths = player.deaths;
+      state.foodCollected = player.foodCollected;
+      state.survivalTimeMs = player.survivalTimeMs;
       state.rank = player.rank;
       state.alive = player.alive;
+      state.inRound = player.inRound;
       state.spawnProtectedUntil = player.spawnProtectedUntil;
     });
     syncCollection(this.state.food, snapshot.food, (pellet) => {
@@ -71,30 +85,88 @@ export class BlobArenaRoom extends Room<{ state: BlobArenaState }> {
       state.x = pellet.x;
       state.y = pellet.y;
       state.mass = pellet.mass;
+      state.radius = pellet.radius;
     });
+    syncCollection(this.state.leaderboard, snapshot.leaderboard, (entry) => {
+      const state = new LeaderboardEntryState();
+      state.playerId = entry.playerId;
+      return state;
+    }, (state, entry) => {
+      state.name = entry.name;
+      state.rank = entry.rank;
+      state.mass = entry.mass;
+      state.kills = entry.kills;
+    }, (entry) => entry.playerId);
+
     this.state.phase = snapshot.phase;
+    this.state.mode = snapshot.mode;
     this.state.matchNumber = snapshot.matchNumber;
+    this.state.matchId = snapshot.matchId;
+    this.state.roundId = snapshot.roundId;
+    this.state.serverTime = snapshot.serverTime;
     this.state.remainingMs = snapshot.remainingMs;
+    this.state.matchmakingPlayerCount = snapshot.matchmakingPlayerCount;
+    this.state.worldWidth = snapshot.world.width;
+    this.state.worldHeight = snapshot.world.height;
+    this.state.foodTarget = snapshot.world.foodTarget;
+
+    const result = snapshot.result;
+    this.state.result.available = result !== null;
+    this.state.result.matchId = result?.matchId ?? "";
+    this.state.result.roundId = result?.roundId ?? "";
+    this.state.result.mode = result?.mode ?? snapshot.mode;
+    this.state.result.finalizedAt = result?.finalizedAt ?? 0;
+    syncCollection(this.state.result.rankings, result?.rankings ?? [], (ranking) => {
+      const state = new FinalRankingState();
+      state.playerId = ranking.playerId;
+      return state;
+    }, (state, ranking) => {
+      state.name = ranking.name;
+      state.rank = ranking.rank;
+      state.finalMass = ranking.finalMass;
+      state.foodCollected = ranking.foodCollected;
+      state.eliminations = ranking.eliminations;
+      state.deaths = ranking.deaths;
+      state.survivalTimeMs = ranking.survivalTimeMs;
+    }, (ranking) => ranking.playerId);
+
+    for (const event of this.simulation.drainEvents()) {
+      this.broadcast(event.type, event);
+      if (event.type !== ServerEvent.FOOD_EATEN) {
+        this.log(event.type.toLowerCase(), event);
+      }
+    }
+  }
+
+  private log(event: string, details: object): void {
+    console.info(JSON.stringify({
+      service: "blob-game-server",
+      event,
+      roomId: this.roomId,
+      ...details,
+    }));
   }
 }
 
-function syncCollection<TState extends { id: string }, TView extends { id: string }>(
+function syncCollection<TState extends Schema, TView>(
   collection: MapSchema<TState>,
   entries: readonly TView[],
   create: (entry: TView) => TState,
-  update: (state: TState, entry: TView) => void
+  update: (state: TState, entry: TView) => void,
+  key: (entry: TView) => string = (entry) => (entry as { id: string }).id,
 ): void {
-  const activeIds = new Set(entries.map((entry) => entry.id));
+  const activeIds = new Set(entries.map(key));
   for (const id of collection.keys()) {
     if (!activeIds.has(id)) {
       collection.delete(id);
     }
   }
   for (const entry of entries) {
-    let state = collection.get(entry.id);
+    const entryId = key(entry);
+    let state = collection.get(entryId);
     if (!state) {
       state = create(entry);
-      collection.set(entry.id, state);
+      collection.set(entryId, state);
     }
     update(state, entry);
   }

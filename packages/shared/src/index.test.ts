@@ -29,13 +29,17 @@ describe("integer prize calculation", () => {
     expect(result.payouts).toHaveLength(3);
   });
 
-  it("calculates the specified 10-player, 1 USDC example without floats", () => {
-    const result = calculatePrizeDistribution({ ...DEFAULT_PAID_MATCH_CONFIGURATION, playerCount: 10 });
+  it("calculates the specified 10-player, 10 USDC example without floats", () => {
+    const result = calculatePrizeDistribution({
+      ...DEFAULT_PAID_MATCH_CONFIGURATION,
+      playerCount: 10,
+      entryAmountBaseUnits: 10_000_000n,
+    });
 
-    expect(result.grossPoolBaseUnits).toBe(10_000_000n);
-    expect(result.platformFeeBaseUnits).toBe(500_000n);
-    expect(result.prizePoolBaseUnits).toBe(9_500_000n);
-    expect(result.payouts.map((payout) => payout.amountBaseUnits)).toEqual([5_700_000n, 2_375_000n, 1_425_000n]);
+    expect(result.grossPoolBaseUnits).toBe(100_000_000n);
+    expect(result.platformFeeBaseUnits).toBe(5_000_000n);
+    expect(result.prizePoolBaseUnits).toBe(95_000_000n);
+    expect(result.payouts.map((payout) => payout.amountBaseUnits)).toEqual([57_000_000n, 28_500_000n, 9_500_000n]);
   });
 
   it("assigns rounding remainder to first place deterministically", () => {
