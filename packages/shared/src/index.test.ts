@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_PAID_MATCH_CONFIGURATION,
+  DEFAULT_REBUY_REVIVE_CONFIGURATION,
   PaidMatchState,
+  PaidReviveBlockReason,
+  calculatePaidMatchPool,
   calculatePrizeDistribution,
+  calculatePrizeDistributionFromGrossPool,
   canTransitionPaidMatch,
+  getPaidReviveEligibility,
   transitionPaidMatch
 } from "./index.js";
 
@@ -60,6 +65,70 @@ describe("integer prize calculation", () => {
       playerCount: 3,
       prizeDistribution: [{ place: 1, basisPoints: 9_999n }]
     })).toThrow("10000 basis points");
+  });
+
+  it("includes confirmed paid revives in the final pool before fee and payouts", () => {
+    const pool = calculatePaidMatchPool({
+      entryAmountBaseUnits: 1_000_000n,
+      entryCount: 10,
+      reviveAmountBaseUnits: 500_000n,
+      confirmedReviveCount: 3
+    });
+    const result = calculatePrizeDistributionFromGrossPool({
+      ...DEFAULT_PAID_MATCH_CONFIGURATION,
+      grossPoolBaseUnits: pool.grossPoolBaseUnits
+    });
+
+    expect(pool).toEqual({
+      entryPoolBaseUnits: 10_000_000n,
+      revivePoolBaseUnits: 1_500_000n,
+      grossPoolBaseUnits: 11_500_000n
+    });
+    expect(result.platformFeeBaseUnits).toBe(575_000n);
+    expect(result.prizePoolBaseUnits).toBe(10_925_000n);
+    expect(result.payouts.map((payout) => payout.amountBaseUnits)).toEqual([6_555_000n, 3_277_500n, 1_092_500n]);
+    expect(totalDistributed(result)).toBe(11_500_000n);
+  });
+});
+
+describe("paid revive policy", () => {
+  it("allows one timely revive and closes it at the authoritative final minute", () => {
+    expect(getPaidReviveEligibility(DEFAULT_REBUY_REVIVE_CONFIGURATION, {
+      isPlayerDead: true,
+      revivesUsed: 0,
+      remainingMs: 60_001,
+      millisecondsSinceDeath: 30_000
+    })).toBe(PaidReviveBlockReason.ALLOWED);
+
+    expect(getPaidReviveEligibility(DEFAULT_REBUY_REVIVE_CONFIGURATION, {
+      isPlayerDead: true,
+      revivesUsed: 0,
+      remainingMs: 60_000,
+      millisecondsSinceDeath: 1
+    })).toBe(PaidReviveBlockReason.ROUND_CUTOFF_REACHED);
+  });
+
+  it("rejects a revive from a living player, expired death window, or second purchase", () => {
+    expect(getPaidReviveEligibility(DEFAULT_REBUY_REVIVE_CONFIGURATION, {
+      isPlayerDead: false,
+      revivesUsed: 0,
+      remainingMs: 90_000,
+      millisecondsSinceDeath: 1
+    })).toBe(PaidReviveBlockReason.PLAYER_IS_ALIVE);
+
+    expect(getPaidReviveEligibility(DEFAULT_REBUY_REVIVE_CONFIGURATION, {
+      isPlayerDead: true,
+      revivesUsed: 0,
+      remainingMs: 90_000,
+      millisecondsSinceDeath: 30_001
+    })).toBe(PaidReviveBlockReason.REVIVE_WINDOW_EXPIRED);
+
+    expect(getPaidReviveEligibility(DEFAULT_REBUY_REVIVE_CONFIGURATION, {
+      isPlayerDead: true,
+      revivesUsed: 1,
+      remainingMs: 90_000,
+      millisecondsSinceDeath: 1
+    })).toBe(PaidReviveBlockReason.REVIVE_LIMIT_REACHED);
   });
 });
 

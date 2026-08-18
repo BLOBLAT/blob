@@ -1,0 +1,279 @@
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  generatedFileExtension = "ts"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum PaidMatchStatus {
+  DRAFT
+  OPEN
+  FUNDING
+  READY
+  STARTING
+  LIVE
+  FINALIZING
+  SETTLED
+  CANCELLED
+  REFUNDING
+  REFUNDED
+}
+
+enum PaidRuleset {
+  SKILL
+  REBUY
+}
+
+enum EntryStatus {
+  RESERVED
+  PENDING
+  VERIFIED
+  REJECTED
+  REFUNDING
+  REFUNDED
+}
+
+enum ReviveStatus {
+  OFFERED
+  PAYMENT_PENDING
+  VERIFIED
+  PERMIT_ISSUED
+  EXPIRED
+  REJECTED
+  CONSUMED
+}
+
+enum ChainTransactionKind {
+  ENTRY
+  REVIVE
+  SETTLEMENT
+  REFUND
+}
+
+model User {
+  id                  String       @id @default(uuid())
+  displayName         String
+  displayNameKey      String
+  renamedAt           DateTime?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+  wallets             Wallet[]
+  sessions            Session[]
+  entries             MatchEntry[]
+  deaths              DeathEvent[]
+  reviveRequests      ReviveRequest[]
+  auditEvents         AuditEvent[]
+
+  @@index([displayNameKey])
+}
+
+model Wallet {
+  id                  String       @id @default(uuid())
+  address             String       @unique
+  userId              String
+  user                User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  verifiedAt          DateTime
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+  entries             MatchEntry[]
+  reviveRequests      ReviveRequest[]
+}
+
+model AuthChallenge {
+  id                  String       @id @default(uuid())
+  walletAddress       String
+  nonce               String       @unique
+  nonceHash           String
+  messageHash         String
+  expiresAt           DateTime
+  consumedAt          DateTime?
+  createdAt           DateTime     @default(now())
+
+  @@index([walletAddress, expiresAt])
+}
+
+model Session {
+  id                  String       @id @default(uuid())
+  tokenHash           String       @unique
+  userId              String
+  user                User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  walletAddress       String
+  expiresAt           DateTime
+  createdAt           DateTime     @default(now())
+  revokedAt           DateTime?
+
+  @@index([userId, expiresAt])
+  @@index([walletAddress, expiresAt])
+}
+
+model Match {
+  id                    String            @id
+  roundId               String            @unique
+  status                PaidMatchStatus   @default(DRAFT)
+  ruleset               PaidRuleset
+  rulesVersion          String
+  rulesHash             String
+  settlementAsset       String
+  usdcMint              String
+  entryAmountBaseUnits  BigInt
+  reviveAmountBaseUnits BigInt?
+  maxRevivesPerPlayer   Int               @default(0)
+  reviveWindowMs        Int?
+  reviveCutoffMs        Int?
+  platformFeeBps        Int
+  payoutBps             Int[]
+  minimumPlayers        Int
+  maximumPlayers        Int
+  fundingDeadline       DateTime
+  startsAt              DateTime?
+  endsAt                DateTime?
+  escrowAddress         String            @unique
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+  entries               MatchEntry[]
+  deaths                DeathEvent[]
+  reviveRequests        ReviveRequest[]
+  chainTransactions     ChainTransaction[]
+  settlementAttempts    SettlementAttempt[]
+  payouts               Payout[]
+
+  @@index([status, fundingDeadline])
+}
+
+model MatchEntry {
+  id                  String       @id @default(uuid())
+  matchId             String
+  match               Match        @relation(fields: [matchId], references: [id], onDelete: Restrict)
+  userId              String
+  user                User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  walletId            String
+  wallet              Wallet       @relation(fields: [walletId], references: [id], onDelete: Restrict)
+  status              EntryStatus  @default(RESERVED)
+  amountBaseUnits     BigInt
+  idempotencyKey      String       @unique
+  admissionTokenHash  String?      @unique
+  fundedAt            DateTime?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+  deaths              DeathEvent[]
+  reviveRequests      ReviveRequest[]
+  payouts             Payout[]
+
+  @@unique([matchId, userId])
+  @@index([matchId, status])
+}
+
+model DeathEvent {
+  id                  String       @id
+  matchId             String
+  match               Match        @relation(fields: [matchId], references: [id], onDelete: Restrict)
+  entryId             String
+  entry               MatchEntry   @relation(fields: [entryId], references: [id], onDelete: Restrict)
+  userId              String
+  user                User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  occurredAt          DateTime
+  reviveExpiresAt     DateTime
+  reviveCutoffAt      DateTime
+  createdAt           DateTime     @default(now())
+  reviveRequests      ReviveRequest[]
+
+  @@index([matchId, entryId, occurredAt])
+}
+
+model ReviveRequest {
+  id                  String       @id @default(uuid())
+  matchId             String
+  match               Match        @relation(fields: [matchId], references: [id], onDelete: Restrict)
+  entryId             String
+  entry               MatchEntry   @relation(fields: [entryId], references: [id], onDelete: Restrict)
+  userId              String
+  user                User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  walletId            String
+  wallet              Wallet       @relation(fields: [walletId], references: [id], onDelete: Restrict)
+  deathId             String
+  death               DeathEvent   @relation(fields: [deathId], references: [id], onDelete: Restrict)
+  status              ReviveStatus @default(OFFERED)
+  amountBaseUnits     BigInt
+  expiresAt           DateTime
+  permitHash          String?      @unique
+  idempotencyKey      String       @unique
+  transactionId       String?      @unique
+  transaction         ChainTransaction? @relation("ReviveTransaction", fields: [transactionId], references: [id], onDelete: SetNull)
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  @@unique([entryId, deathId])
+  @@index([matchId, status, expiresAt])
+}
+
+model ChainTransaction {
+  id                  String                @id @default(uuid())
+  matchId             String
+  match               Match                 @relation(fields: [matchId], references: [id], onDelete: Restrict)
+  kind                ChainTransactionKind
+  signature           String                @unique
+  amountBaseUnits     BigInt
+  walletAddress       String
+  confirmedAt         DateTime?
+  finalizedAt         DateTime?
+  verificationError   String?
+  idempotencyKey      String                @unique
+  createdAt           DateTime              @default(now())
+  reviveRequest       ReviveRequest?       @relation("ReviveTransaction")
+  settlementAttempt   SettlementAttempt?   @relation("SettlementTransaction")
+  payouts             Payout[]             @relation("PayoutTransaction")
+
+  @@index([matchId, kind, finalizedAt])
+}
+
+model SettlementAttempt {
+  id                  String       @id @default(uuid())
+  matchId             String
+  match               Match        @relation(fields: [matchId], references: [id], onDelete: Restrict)
+  resultHash          String
+  idempotencyKey      String       @unique
+  transactionId       String?      @unique
+  transaction         ChainTransaction? @relation("SettlementTransaction", fields: [transactionId], references: [id], onDelete: SetNull)
+  attemptedAt         DateTime     @default(now())
+  settledAt           DateTime?
+  error               String?
+
+  @@index([matchId, settledAt])
+}
+
+model Payout {
+  id                  String       @id @default(uuid())
+  matchId             String
+  match               Match        @relation(fields: [matchId], references: [id], onDelete: Restrict)
+  entryId             String
+  entry               MatchEntry   @relation(fields: [entryId], references: [id], onDelete: Restrict)
+  place               Int
+  amountBaseUnits     BigInt
+  transactionId       String?
+  transaction         ChainTransaction? @relation("PayoutTransaction", fields: [transactionId], references: [id], onDelete: SetNull)
+  idempotencyKey      String       @unique
+  createdAt           DateTime     @default(now())
+
+  @@unique([matchId, place])
+  @@index([entryId])
+}
+
+model AuditEvent {
+  id                  String       @id @default(uuid())
+  userId              String?
+  user                User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action              String
+  entityType          String
+  entityId            String
+  requestId           String?
+  metadata            Json?
+  createdAt           DateTime     @default(now())
+
+  @@index([entityType, entityId, createdAt])
+  @@index([userId, createdAt])
+}

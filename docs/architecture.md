@@ -12,7 +12,14 @@ The authoritative simulation has one explicit Free Mode lifecycle: WAITING, MATC
 
 The room schema exposes only synchronized server state: phase, remaining time, world dimensions, players, food, active leaderboard, and finalized result. It also emits transient server events for joins, food collection, eliminations, deaths, round start, round finish, and match finalization. The Phaser client uses those state fields for rendering; it never treats a local timer, camera coordinate, or animation as authority.
 
-FREE and PAID are mode values for one shared simulation. Free Mode enables server-configured respawn. Paid Mode has no live room, wallet, entry, or transfer implementation. The shared domain provides configuration and settlement interfaces only, so a future settlement service can consume an immutable result without giving payment code control of gameplay.
+FREE and PAID are mode values for one shared simulation. Free Mode enables
+server-configured respawn. `services/platform-api` now owns a separate
+PostgreSQL schema, Wallet Standard/Solana message authentication, opaque
+sessions, profile display names, paid-match term hashing, bigint pool and
+payout planning, and independently verified finalized USDC transfer claims.
+It remains unexposed to paid play: no live paid room, deployed escrow program,
+or token transfer is implemented. The service can consume an immutable result
+without giving payment code control of gameplay.
 
 ## Target boundaries
 
@@ -23,6 +30,7 @@ FREE and PAID are mode values for one shared simulation. Free Mode enables serve
 | Shared game core (`packages/game-core`) | Pure server-consumed simulation and central game configuration | Browser authority or payment/chain logic |
 | Protocol and validation (`packages/protocol`, `packages/validation`) | Shared contracts and runtime validation of untrusted payloads | Simulation authority or business logic |
 | Matchmaking (`services/matchmaking`, planned) | Queues, skill/ruleset selection, capacity allocation, and server assignment | Simulation and prize calculation |
+| Platform API (`services/platform-api`) | Wallet proof, profiles, durable match/payment/audit records, term hashing, and chain verification | Real-time simulation authority, game keys, or browser-trusted payments |
 | Database | Accounts, durable match summaries, audit records, and server-produced statistics | Real-time simulation authority |
 | Payment layer | Entry authorization, stablecoin-provider integration, payouts, and audit trail | Gameplay rules and match-result generation |
 | Blockchain adapter | Chain-specific transaction and settlement integration behind an internal interface | Game mechanics and direct client authority |

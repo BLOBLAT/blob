@@ -32,6 +32,13 @@ npm run dev:server
 npm run dev:web
 ```
 
+`services/platform-api` is intentionally not included in `npm run dev`: it
+requires a real PostgreSQL `DATABASE_URL`. Once a local database is provisioned
+and its schema applied, start it separately with `npm run dev:platform`. Set
+`VITE_PLATFORM_API_URL=http://127.0.0.1:3000` in `apps/web/.env.local` to use
+wallet profiles locally. Free Mode does not require the API and remains fully
+playable if it is unavailable.
+
 The web client falls back to `http://127.0.0.1:2567` only while Vite is running in development mode. To point a local browser at another server, create `apps/web/.env.local`:
 
 ```sh
@@ -112,6 +119,36 @@ BLOB_WEB_ORIGIN=https://blob.lat,https://www.blob.lat
 Use the exact deployed Vercel production origin(s), including scheme and no trailing slash. The server applies this allowlist to HTTP CORS responses and WebSocket upgrade requests. Local development defaults only to `http://127.0.0.1:5173` and `http://localhost:5173`.
 
 Terminate TLS at the host or a reverse proxy so the public service is HTTPS and its WebSocket upgrade is WSS. A page served by Vercel over HTTPS cannot connect to an insecure `http://`/`ws://` production game server.
+
+### Deploy `services/platform-api` separately (profiles only)
+
+Do this only after provisioning managed PostgreSQL. This service is separate
+from both Vercel and the authoritative Colyseus server. In Railway, create a
+new persistent service with Root Directory `services/platform-api`; its local
+[`railway.toml`](../services/platform-api/railway.toml) runs workspace-aware
+commands from the repository root. Set:
+
+```sh
+DATABASE_URL=postgresql://<user>:<password>@<host>:5432/<database>?schema=public
+NODE_ENV=production
+PORT=<provided-by-railway>
+PLATFORM_PUBLIC_ORIGIN=https://blob.lat
+PLATFORM_WEB_ORIGIN=https://blob.lat,https://www.blob.lat
+```
+
+Apply a reviewed Prisma migration from
+`services/platform-api/prisma/schema.prisma` before starting the service.
+Confirm `https://<platform-api-host>/health` returns HTTP 200, then set this
+Vercel production variable and redeploy the web client:
+
+```sh
+VITE_PLATFORM_API_URL=https://<platform-api-host>
+```
+
+Leave `SOLANA_RPC_URL`, `SOLANA_USDC_MINT`, and
+`BLOB_ESCROW_PROGRAM_ID` unset until the audited paid-mode escrow rollout.
+They are server-only values, never Vite variables. This does not enable paid
+matches; it only enables opt-in wallet-backed profiles.
 
 ### Verify a deployment
 

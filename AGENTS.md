@@ -32,7 +32,9 @@
 - `packages/validation` — Zod validation at untrusted boundaries.
 - `packages/game-core` — deterministic arena simulation, central tuning constants, and pure game rules.
 - `packages/shared` — paid-match state machine, payment interfaces, and `bigint` prize arithmetic.
-- `services` — future deployable API, payment, and blockchain boundaries; do not create empty services.
+- `services/platform-api` — deployable PostgreSQL-backed wallet/profile and
+  paid-match orchestration boundary. It is never part of the Colyseus game
+  process and must not be configured as a Vite client dependency.
 - `docs` — architecture decisions and operating guidance.
 
 See `docs/architecture.md` before introducing a cross-boundary dependency.
@@ -45,7 +47,15 @@ See `docs/architecture.md` before introducing a cross-boundary dependency.
 - Keep gameplay tuning in `packages/game-core`; do not scatter game constants across room or client code.
 - Use integer base units (`bigint`) and basis points for all money. Never use JavaScript floating point for fees, pools, payouts, balances, or accounting.
 - Payment and chain adapters must remain interfaces/services outside game-core and game-server. Require durable idempotency keys for deposits, payouts, callbacks, and retries.
-- Do not add blockchain contracts, real payment processing, cloud infrastructure, secrets, or wallet prompts until their scoped product work begins.
+- Wallet login uses Wallet Standard plus a server-issued, expiring Solana
+  message challenge; never use a transaction or a browser-only signature as
+  authentication. Sessions are opaque, HTTP-only cookies; only hashed tokens
+  are persisted.
+- Native-USDC transaction verification and settlement orchestration belong in
+  `services/platform-api`, never in game-core, the Colyseus room, or the
+  browser. The current service verifies transfer claims but does not sign,
+  send, or custody transactions. Paid play stays disabled until the escrow
+  program, PostgreSQL, reconciliation, audit, and legal gates are complete.
 - Add tests with simulation, transport, payment, or settlement behavior. Deterministic simulation tests and real two-client room smoke tests are preferred.
 - Update documentation when a boundary, authority rule, or operational command changes.
 - The browser obtains its server endpoint only from `VITE_GAME_SERVER_URL` (with a local Vite fallback). Never hardcode a production game-server hostname in browser code.

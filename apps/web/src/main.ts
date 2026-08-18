@@ -1,5 +1,8 @@
 import "./styles.css";
 import { ACCESS_GATE_ENABLED, hasPrivateBuildAccess, unlockPrivateBuild } from "./accessGate.js";
+import { setProfileGameName } from "./identity.js";
+import { type BlobProfile, PlatformApiError, resolvePlatformApi } from "./platformApi.js";
+import { type AvailableWallet, connectWalletAndCreateProfile, watchAvailableSolanaWallets } from "./wallet.js";
 
 const appRoot = document.querySelector<HTMLDivElement>("#app");
 
@@ -10,6 +13,9 @@ const app: HTMLDivElement = appRoot;
 
 let freeGameController: { leave(): Promise<void> } | undefined;
 let openingFreeArena = false;
+const platformApi = resolvePlatformApi();
+let profile: BlobProfile | null = null;
+let availableWallets: AvailableWallet[] = [];
 
 initializeApplication();
 
@@ -19,6 +25,7 @@ function initializeApplication(): void {
     return;
   }
   renderSite();
+  void initializeProfileExperience();
 }
 
 function renderAccessGate(): void {
@@ -66,10 +73,13 @@ function renderSite(): void {
   <main>
     <nav class="site-nav" aria-label="Primary navigation">
       <a class="wordmark" href="#top" aria-label="BLOB home">BLOB<span>.</span></a>
-      <div class="nav-links">
+      <div class="nav-actions">
+        <div class="nav-links">
         <a href="#about">About</a>
         <a href="#future">Future</a>
         <a href="https://github.com/BLOBLAT/blob" target="_blank" rel="noreferrer">GitHub</a>
+        </div>
+        <button class="wallet-button" id="wallet-trigger" type="button">Connect wallet</button>
       </div>
     </nav>
 
@@ -132,12 +142,223 @@ function renderSite(): void {
         <span>Community channels soon</span>
       </div>
     </footer>
+    <dialog class="profile-dialog" id="profile-dialog" aria-labelledby="profile-dialog-title">
+      <button class="dialog-close" id="profile-dialog-close" type="button" aria-label="Close profile">×</button>
+      <div id="profile-dialog-content"></div>
+    </dialog>
   </main>
 `;
 
   for (const button of document.querySelectorAll<HTMLButtonElement>("[data-play-free]")) {
     button.addEventListener("click", () => void openFreeArena());
   }
+  requiredElement<HTMLButtonElement>("#wallet-trigger").addEventListener("click", () => openProfileDialog());
+  requiredElement<HTMLButtonElement>("#profile-dialog-close").addEventListener("click", () => closeProfileDialog());
+}
+
+async function initializeProfileExperience(): Promise<void> {
+  watchAvailableSolanaWallets((wallets) => {
+    availableWallets = wallets;
+    if (requiredElementOrUndefined<HTMLDialogElement>("#profile-dialog")?.open) {
+      renderProfileDialog();
+    }
+  });
+  if (!platformApi) {
+    renderProfileTrigger();
+    return;
+  }
+  try {
+    profile = await platformApi.getCurrentProfile();
+    setProfileGameName(profile?.displayName);
+  } catch (error) {
+    console.warn("[BLOB] profile session could not be restored", error);
+  }
+  renderProfileTrigger();
+}
+
+function openProfileDialog(): void {
+  const dialog = requiredElement<HTMLDialogElement>("#profile-dialog");
+  renderProfileDialog();
+  if (!dialog.open) {
+    dialog.showModal();
+  }
+}
+
+function closeProfileDialog(): void {
+  requiredElement<HTMLDialogElement>("#profile-dialog").close();
+}
+
+function renderProfileTrigger(): void {
+  const trigger = requiredElementOrUndefined<HTMLButtonElement>("#wallet-trigger");
+  if (!trigger) {
+    return;
+  }
+  trigger.textContent = profile ? profile.displayName : "Connect wallet";
+  trigger.classList.toggle("is-connected", Boolean(profile));
+}
+
+function renderProfileDialog(message?: string): void {
+  const container = requiredElement("#profile-dialog-content");
+  container.replaceChildren();
+  const eyebrow = document.createElement("p");
+  eyebrow.className = "eyebrow";
+  eyebrow.textContent = "BLOB profile";
+  const title = document.createElement("h2");
+  title.id = "profile-dialog-title";
+  title.textContent = profile ? "YOUR PROFILE" : "CONNECT WALLET";
+  const notice = document.createElement("p");
+  notice.className = "profile-notice";
+  if (message) {
+    notice.textContent = message;
+  }
+  container.append(eyebrow, title, notice);
+
+  if (profile) {
+    renderAuthenticatedProfile(container);
+  } else {
+    renderWalletSelection(container);
+  }
+}
+
+function renderWalletSelection(container: HTMLElement): void {
+  const copy = document.createElement("p");
+  copy.className = "profile-copy";
+  copy.textContent = "Connect a Solana wallet and sign a one-time BLOB message. Signing never sends USDC or approves a transaction.";
+  container.append(copy);
+  if (!platformApi) {
+    const unavailable = document.createElement("p");
+    unavailable.className = "profile-state";
+    unavailable.textContent = "Wallet profiles are not configured for this deployment yet.";
+    container.append(unavailable);
+    return;
+  }
+  if (availableWallets.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "profile-state";
+    empty.textContent = "No compatible Solana wallet was detected. Install or unlock a Wallet Standard-compatible wallet, then reopen this panel.";
+    container.append(empty);
+    return;
+  }
+  const list = document.createElement("div");
+  list.className = "wallet-list";
+  for (const wallet of availableWallets) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "wallet-option";
+    const icon = document.createElement("img");
+    icon.src = wallet.icon;
+    icon.alt = "";
+    const label = document.createElement("span");
+    label.textContent = wallet.name;
+    button.append(icon, label);
+    button.addEventListener("click", () => void connectSelectedWallet(wallet, button));
+    list.append(button);
+  }
+  container.append(list);
+}
+
+function renderAuthenticatedProfile(container: HTMLElement): void {
+  if (!profile || !platformApi) {
+    return;
+  }
+  const wallet = document.createElement("p");
+  wallet.className = "profile-wallet";
+  wallet.textContent = "SOLANA · " + shortenWalletAddress(profile.walletAddress);
+  const copy = document.createElement("p");
+  copy.className = "profile-copy";
+  copy.textContent = "Your public display name is used in Free Mode. It may be changed once every 24 hours.";
+  const form = document.createElement("form");
+  form.className = "profile-form";
+  const label = document.createElement("label");
+  label.htmlFor = "profile-display-name";
+  label.textContent = "Display name";
+  const input = document.createElement("input");
+  input.id = "profile-display-name";
+  input.name = "display-name";
+  input.value = profile.displayName;
+  input.maxLength = 16;
+  input.pattern = "[A-Za-z0-9 _-]{3,16}";
+  input.required = true;
+  input.setAttribute("autocomplete", "nickname");
+  const submit = document.createElement("button");
+  submit.className = "play-button";
+  submit.type = "submit";
+  submit.textContent = "Save name";
+  form.append(label, input, submit);
+  form.addEventListener("submit", (event) => void renameProfile(event, input, submit));
+  const signOut = document.createElement("button");
+  signOut.className = "profile-signout";
+  signOut.type = "button";
+  signOut.textContent = "Sign out of BLOB";
+  signOut.addEventListener("click", () => void logoutProfile(signOut));
+  container.append(wallet, copy, form, signOut);
+}
+
+async function connectSelectedWallet(wallet: AvailableWallet, button: HTMLButtonElement): Promise<void> {
+  if (!platformApi) {
+    renderProfileDialog("Wallet profiles are not configured for this deployment yet.");
+    return;
+  }
+  button.disabled = true;
+  button.textContent = "Connecting…";
+  try {
+    profile = await connectWalletAndCreateProfile(platformApi, wallet);
+    setProfileGameName(profile.displayName);
+    renderProfileTrigger();
+    renderProfileDialog("Wallet verified. Your BLOB profile is ready.");
+  } catch (error) {
+    console.warn("[BLOB] wallet sign-in failed", error);
+    renderProfileDialog(describeProfileError(error));
+  }
+}
+
+async function renameProfile(event: SubmitEvent, input: HTMLInputElement, submit: HTMLButtonElement): Promise<void> {
+  event.preventDefault();
+  if (!platformApi || !profile) {
+    return;
+  }
+  submit.disabled = true;
+  try {
+    profile = await platformApi.renameProfile(input.value);
+    setProfileGameName(profile.displayName);
+    renderProfileTrigger();
+    renderProfileDialog("Display name saved. It will be used the next time you join an arena.");
+  } catch (error) {
+    renderProfileDialog(describeProfileError(error));
+  }
+}
+
+async function logoutProfile(button: HTMLButtonElement): Promise<void> {
+  if (!platformApi) {
+    return;
+  }
+  button.disabled = true;
+  try {
+    await platformApi.logout();
+    profile = null;
+    setProfileGameName(undefined);
+    renderProfileTrigger();
+    renderProfileDialog("You are signed out of BLOB. Your wallet itself remains connected in its extension.");
+  } catch (error) {
+    renderProfileDialog(describeProfileError(error));
+  }
+}
+
+function describeProfileError(error: unknown): string {
+  if (error instanceof PlatformApiError) {
+    if (error.code === "PROFILE_RENAME_RATE_LIMITED") {
+      return "Display names can be changed once every 24 hours.";
+    }
+    if (error.code === "DISPLAY_NAME_INVALID") {
+      return "Use 3–16 letters, numbers, spaces, underscores, or hyphens.";
+    }
+    return "BLOB could not verify that request. Please try again.";
+  }
+  return error instanceof Error ? error.message : "The wallet request could not be completed.";
+}
+
+function shortenWalletAddress(walletAddress: string): string {
+  return walletAddress.slice(0, 4) + "…" + walletAddress.slice(-4);
 }
 
 async function openFreeArena(): Promise<void> {
@@ -423,4 +644,8 @@ function requiredElement<T extends HTMLElement = HTMLElement>(selector: string):
     throw new Error(`Missing required BLOB UI element: ${selector}`);
   }
   return element;
+}
+
+function requiredElementOrUndefined<T extends HTMLElement = HTMLElement>(selector: string): T | undefined {
+  return document.querySelector<T>(selector) ?? undefined;
 }

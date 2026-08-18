@@ -2,6 +2,7 @@ import { Client, type Room } from "@colyseus/sdk";
 import { ARENA_ROOM_NAME, ServerEvent } from "@blob/protocol";
 import Phaser from "phaser";
 import { ArenaUiState, BlobArenaScene } from "./BlobArenaScene.js";
+import { getGamePlayerName } from "../identity.js";
 
 export interface FreeGameController {
   leave(): Promise<void>;
@@ -30,7 +31,7 @@ export async function startFreeGame(options: StartFreeGameOptions): Promise<Free
     await verifyGameServerHealth(gameServerUrl);
     const client = new Client(gameServerUrl);
     const room = await withConnectionTimeout(
-      client.joinOrCreate(ARENA_ROOM_NAME, { name: getLocalPlayerName() })
+      client.joinOrCreate(ARENA_ROOM_NAME, { name: getGamePlayerName() })
     );
 
     if (disposed) {
@@ -182,16 +183,4 @@ function withConnectionTimeout<T>(connection: Promise<T>): Promise<T> {
       }
     );
   });
-}
-
-function getLocalPlayerName(): string {
-  const key = "blob.free-player-name";
-  const existing = window.localStorage.getItem(key);
-  if (existing && /^[A-Za-z0-9 _-]{3,16}$/.test(existing)) {
-    return existing;
-  }
-  const suffix = String(Date.now()).slice(-5);
-  const name = `BLOB-${suffix}`;
-  window.localStorage.setItem(key, name);
-  return name;
 }

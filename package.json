@@ -6,7 +6,8 @@
   "packageManager": "npm@11.8.0",
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/*",
+    "services/*"
   ],
   "engines": {
     "node": ">=22.12.0 <23",
@@ -18,6 +19,7 @@
     "dev": "concurrently --kill-others-on-fail --names web,server --prefix-colors magenta,cyan \"npm run dev:web\" \"npm run dev:server\"",
     "dev:web": "npm run dev --workspace=@blob/web",
     "dev:server": "npm run dev --workspace=@blob/game-server",
+    "dev:platform": "npm run dev --workspace=@blob/platform-api",
     "start": "npm run start --workspace=@blob/game-server",
     "test": "vitest run",
     "test:watch": "vitest",

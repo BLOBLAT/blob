@@ -16,7 +16,18 @@ The public site and the authoritative server are intentionally separate: Vercel 
 
 The public build is temporarily protected by a client-side private-build gate. It is a visibility measure only, not authentication; its single removal switch is documented for contributors in `AGENTS.md`.
 
-There is no persistent account system, wallet connection, payment processing, global leaderboard, token, or blockchain contract. Paid-mode code is currently limited to pure state-machine and prize-calculation domain modules.
+Free Mode remains wallet-free. A separate `services/platform-api` now provides
+an opt-in Solana wallet sign-in/profile foundation: the wallet signs an
+off-chain one-time message, the service verifies Ed25519 ownership, and a
+secure session can store a display name. It is not deployed or configured on
+the public site yet. The browser never signs in automatically and no login
+message approves a transaction or transfers funds.
+
+The same isolated service contains an unexposed paid-match domain: bigint
+native-USDC pool accounting, 5% fee calculation, standard Skill vs disclosed
+Rebuy Arena rules, and finalized-chain-transfer verification. It does not
+create a blockchain transaction, custody USDC, or enable paid matches. See
+[paid-mode.md](docs/paid-mode.md) for the gating requirements.
 
 ## Local development
 
