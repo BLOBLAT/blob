@@ -65,6 +65,9 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
 - Installed Rustup, but installing the actual stable Rust compiler stopped
   because the Windows drive reported insufficient free disk space. No Solana
   keypair, Anchor project, contract deployment, or chain transaction exists.
+- Added tests for signed, short-lived, match/round-bound paid admission
+  tickets. These tickets are not yet accepted by a Colyseus room because Paid
+  Mode remains disabled until the escrow and deployment gates are complete.
 
 ## Next safe steps
 
