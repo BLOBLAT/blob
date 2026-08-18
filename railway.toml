@@ -1,0 +1,10 @@
+[build]
+builder = "RAILPACK"
+buildCommand = "npm ci && npm run build --workspace=@blob/game-server"
+
+[deploy]
+startCommand = "npm run start --workspace=@blob/game-server"
+healthcheckPath = "/health"
+healthcheckTimeout = 100
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10

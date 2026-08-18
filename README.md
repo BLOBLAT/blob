@@ -10,7 +10,7 @@ Free Mode will be a complete playable experience. Paid competition is planned as
 
 Free Mode is a real multiplayer vertical slice. Two or more browser clients can join the same Colyseus arena, see server-synchronized state, steer with mouse/touch or WASD/arrow keys, collect food, grow, eat eligible opponents, respawn, and view a live in-match leaderboard.
 
-The public site and the authoritative server are intentionally separate: Vercel deploys `apps/web`, while `apps/game-server` must run on a persistent Node.js/WebSocket host. See [the production deployment guide](docs/deployment.md) before enabling Free Mode in production.
+The public site and the authoritative server are intentionally separate: Vercel deploys `apps/web`, while `apps/game-server` runs on a persistent Node.js/WebSocket host. The root [`railway.toml`](railway.toml) makes this workspace's Railpack build, start command, and `/health` check explicit. See [the production deployment guide](docs/deployment.md) before enabling Free Mode in production.
 
 The public build is temporarily protected by a client-side private-build gate. It is a visibility measure only, not authentication; its single removal switch is documented for contributors in `AGENTS.md`.
 

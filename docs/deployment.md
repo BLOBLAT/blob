@@ -15,6 +15,8 @@ https://blob.lat
 
 GitHub (`BLOBLAT/blob`, `main`) is the source of truth. Vercel deploys only `apps/web`. Railway runs only the persistent `apps/game-server` process, from the repository root so its workspace dependencies resolve. Cloudflare never routes `blob.lat` to the game server.
 
+The repository root contains [`railway.toml`](../railway.toml). Railway/Railpack discovers this file automatically and uses it to run a clean install, build `@blob/game-server`, start that workspace, poll `/health`, and restart only after a process failure. Its explicit start command prevents Railpack from trying—and failing—to infer a root-level start command in this npm-workspaces monorepo.
+
 ## 1. Deploy the persistent game server to Railway
 
 **MANUAL DASHBOARD ACTION REQUIRED:** Railway access is required for these steps.
@@ -23,26 +25,16 @@ GitHub (`BLOBLAT/blob`, `main`) is the source of truth. Vercel deploys only `app
 2. Connect and select `BLOBLAT/blob`; deploy the `main` branch.
 3. Create one service for the game server. Leave Railway's **Root Directory** empty so commands run from the repository root. Do not set it to `apps/game-server`: the server imports workspace packages from `packages/`.
 4. Ensure the service uses Node 22.x. The repository requires `>=22.12.0 <23` and includes `.nvmrc`.
-5. In the Railway service build settings, use:
-
-   ```sh
-   npm ci
-   npm run build --workspace=@blob/game-server
-   ```
-
-   If the Railway UI accepts only one build command, use:
+5. Do not enter a conflicting custom build or start command in the Railway dashboard. The checked-in `railway.toml` is the deployment configuration and takes precedence over dashboard values. Its production commands are:
 
    ```sh
    npm ci && npm run build --workspace=@blob/game-server
-   ```
-
-6. Set the start command exactly to:
-
-   ```sh
    npm run start --workspace=@blob/game-server
    ```
 
-7. Add these Railway service variables:
+   The root `npm start` is also a deliberate fallback for generic Node start-command detection and delegates to that same workspace command.
+
+6. Add these Railway service variables:
 
    ```sh
    NODE_ENV=production
@@ -59,8 +51,8 @@ GitHub (`BLOBLAT/blob`, `main`) is the source of truth. Vercel deploys only `app
 
    Origins include the scheme, have no trailing slash, and are not wildcard patterns.
 
-8. Deploy the Railway service, then generate its public domain. It must be an HTTPS URL such as `https://<railway-generated-host>`.
-9. Test the public service before connecting the browser:
+7. Deploy the Railway service, then generate its public domain. It must be an HTTPS URL such as `https://<railway-generated-host>`.
+8. Test the public service before connecting the browser:
 
    ```sh
    curl -i https://<railway-generated-host>/health
@@ -153,7 +145,8 @@ The client reports these states without exposing server error messages or stack 
 | Vercel build fails to resolve a workspace package | Confirm Root Directory is `apps/web`, run the root workspace install command, and keep imported workspace dependencies in `apps/web/package.json`. |
 | Game says not configured | Set `VITE_GAME_SERVER_URL` in the correct Vercel environment and redeploy. |
 | Game health check fails | Visit `https://<persistent-game-server-host>/health`, inspect Railway deployment logs, and confirm the service is public. |
-| Railway reports it is not listening | Ensure the start command is the workspace command above and that Railway supplies `PORT`; the process binds to `0.0.0.0`. |
+| Railway says “No start command detected” | Confirm the service deploys the `main` revision containing root `railway.toml`, keep Railway Root Directory empty, and remove any dashboard Config-as-Code path that points elsewhere. |
+| Railway reports it is not listening | Confirm `railway.toml` is in the deployed revision, inspect the service logs, and ensure Railway supplies `PORT`; the process binds to `0.0.0.0`. |
 | Browser cannot establish WebSocket | Use an HTTPS game URL, confirm `/health` works, and ensure the browser origin appears exactly in `BLOB_WEB_ORIGIN`. |
 | CORS/origin rejection | Use comma-separated full origins in `BLOB_WEB_ORIGIN`; do not use `*` in production. |
 | `blob.lat` returns Cloudflare 525 | Correct Cloudflare → Vercel DNS/origin/TLS configuration using the Vercel Domain screen; this cannot be repaired in Git. |
