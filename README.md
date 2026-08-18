@@ -10,7 +10,9 @@ Free Mode will be a complete playable experience. Paid competition is planned as
 
 Free Mode is a real multiplayer vertical slice. Two or more browser clients can join the same Colyseus arena, see server-synchronized state, steer with mouse/touch or WASD/arrow keys, collect food, grow, eat eligible opponents, respawn, and view a live in-match leaderboard.
 
-The public site and the authoritative server are intentionally separate: Vercel deploys `apps/web`, while `apps/game-server` must run on a persistent Node.js/WebSocket host. See [the deployment guide](docs/development.md#production-deployment) before enabling Free Mode in production.
+The public site and the authoritative server are intentionally separate: Vercel deploys `apps/web`, while `apps/game-server` must run on a persistent Node.js/WebSocket host. See [the production deployment guide](docs/deployment.md) before enabling Free Mode in production.
+
+The public build is temporarily protected by a client-side private-build gate. It is a visibility measure only, not authentication; its single removal switch is documented for contributors in `AGENTS.md`.
 
 There is no persistent account system, wallet connection, payment processing, global leaderboard, token, or blockchain contract. Paid-mode code is currently limited to pure state-machine and prize-calculation domain modules.
 

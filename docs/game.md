@@ -17,6 +17,8 @@ The authoritative server implements:
 
 The browser renders Colyseus state with Phaser and sends only the most recent direction intent. Mouse or touch steers toward the pointer; WASD and arrow keys are also supported. It cannot submit a position, collision, score, kill, rank, or result.
 
+Before joining a production room, the browser checks the configured server's unauthenticated `/health` endpoint. Production does not fall back to localhost: a missing URL, failed health check, timeout, failed secure connection, reconnecting session, and successful connection all receive separate player-facing status text. See [the deployment guide](deployment.md) for the required environment configuration.
+
 The camera follows the local blob and reduces zoom gradually as that blob grows. The HUD and leaderboard are presentation of Colyseus state only: current mass, rank, living player count, food population, and respawn status never originate in the browser.
 
 All tuning values are in `packages/game-core/src/index.ts`. Food and spawn positions are deterministic rather than competitive-outcome RNG.

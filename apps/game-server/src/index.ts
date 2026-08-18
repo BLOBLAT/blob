@@ -6,7 +6,7 @@ const port = Number.isInteger(configuredPort) && configuredPort > 0 && configure
   : 2567;
 const server = createGameServer();
 
-server.listen(port)
+server.listen(port, "0.0.0.0")
   .then((boundPort) => {
     console.log(`[BLOB game server] listening on port ${boundPort}`);
   })

@@ -7,6 +7,8 @@
 
 Do not deploy this repository with Node 24. The root `engines` range is the source of truth.
 
+For the canonical Vercel, Railway, Cloudflare, custom-domain, and environment-variable instructions, read [the production deployment guide](deployment.md). The temporary client-side private-build gate is enabled by default; contributors can disable it only through the single switch documented in `AGENTS.md`.
+
 ## Run locally
 
 From the repository root:
@@ -38,7 +40,7 @@ VITE_GAME_SERVER_URL=http://127.0.0.1:2567
 
 Do not commit `.env.local`.
 
-## Production topology
+## Production topology summary
 
 ```text
 BLOB.LAT visitor
@@ -47,7 +49,7 @@ BLOB.LAT visitor
   -> Colyseus blob_arena
 ```
 
-Vercel hosts only the Vite frontend. It must not host `apps/game-server`: a normal Vercel frontend deployment does not provide a persistent WebSocket process. Deploy the game server to a Node.js host that supports a continuously running HTTP/WebSocket service and custom environment variables.
+Vercel hosts only the Vite frontend. It must not host `apps/game-server`: a normal Vercel frontend deployment does not provide a persistent WebSocket process. Deploy the game server to a Node.js host that supports a continuously running HTTP/WebSocket service and custom environment variables. Use [the production deployment guide](deployment.md) for the exact Railway and Cloudflare steps.
 
 ### Deploy `apps/web` to Vercel
 
@@ -64,7 +66,7 @@ Configure the existing Vercel project as follows:
 In Vercel **Settings → Environment Variables**, set this for Production (and Preview if preview deployments should connect to the game):
 
 ```sh
-VITE_GAME_SERVER_URL=https://game.your-domain.example
+VITE_GAME_SERVER_URL=https://<persistent-game-server-host>
 ```
 
 Use the public HTTPS URL of the separately deployed game service, without a trailing slash. Colyseus uses this HTTPS endpoint for matchmaker requests and upgrades its live connection to secure WSS automatically. Never hardcode this URL in source code. Changing a `VITE_` variable requires a new Vercel build/deployment because Vite embeds it at build time.
@@ -92,7 +94,7 @@ Set these service environment variables:
 ```sh
 NODE_ENV=production
 PORT=<port supplied by your host>
-BLOB_WEB_ORIGIN=https://your-web-domain.example
+BLOB_WEB_ORIGIN=https://blob.lat,https://<current-vercel-production-host>
 ```
 
 `PORT` is required by most hosting providers; the server reads it and falls back to `2567` only for local operation. `BLOB_WEB_ORIGIN` is required in production and accepts a comma-separated allowlist when more than one known web origin is necessary, for example:
@@ -110,7 +112,7 @@ Terminate TLS at the host or a reverse proxy so the public service is HTTPS and 
 1. Confirm the persistent service is healthy:
 
    ```sh
-   curl -i https://game.your-domain.example/health
+   curl -i https://<persistent-game-server-host>/health
    ```
 
    Expect HTTP 200 and `{"service":"blob-game-server","status":"ok"}`.

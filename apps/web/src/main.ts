@@ -1,12 +1,68 @@
 import "./styles.css";
+import { ACCESS_GATE_ENABLED, hasPrivateBuildAccess, unlockPrivateBuild } from "./accessGate.js";
 
-const app = document.querySelector<HTMLDivElement>("#app");
+const appRoot = document.querySelector<HTMLDivElement>("#app");
 
-if (!app) {
+if (!appRoot) {
   throw new Error("BLOB app root was not found.");
 }
+const app: HTMLDivElement = appRoot;
 
-app.innerHTML = `
+let freeGameController: { leave(): Promise<void> } | undefined;
+let openingFreeArena = false;
+
+initializeApplication();
+
+function initializeApplication(): void {
+  if (ACCESS_GATE_ENABLED && !hasPrivateBuildAccess()) {
+    renderAccessGate();
+    return;
+  }
+  renderSite();
+}
+
+function renderAccessGate(): void {
+  app.innerHTML = `
+    <main class="access-gate">
+      <section class="access-card" aria-labelledby="access-title">
+        <div class="access-orb access-orb-one" aria-hidden="true"></div>
+        <div class="access-orb access-orb-two" aria-hidden="true"></div>
+        <p class="eyebrow">PRIVATE BUILD</p>
+        <p class="access-wordmark" aria-hidden="true">BLOB<span>.</span></p>
+        <h1 id="access-title">Access<br /><em>required.</em></h1>
+        <p class="access-copy">This build is still taking shape. Enter the access code to continue.</p>
+        <form class="access-form" id="access-form">
+          <label for="access-code">Access code</label>
+          <input id="access-code" name="access-code" type="password" autocomplete="current-password" required aria-describedby="access-error" />
+          <p class="access-error" id="access-error" role="alert" aria-live="polite" hidden>That access code is not correct.</p>
+          <button class="play-button access-submit" type="submit">Unlock build <span>→</span></button>
+        </form>
+      </section>
+    </main>
+  `;
+
+  const form = requiredElement<HTMLFormElement>("#access-form");
+  const input = requiredElement<HTMLInputElement>("#access-code");
+  const error = requiredElement("#access-error");
+  input.addEventListener("input", () => {
+    input.removeAttribute("aria-invalid");
+    error.hidden = true;
+  });
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (unlockPrivateBuild(input.value)) {
+      renderSite();
+      return;
+    }
+    input.setAttribute("aria-invalid", "true");
+    error.hidden = false;
+    input.focus();
+    input.select();
+  });
+}
+
+function renderSite(): void {
+  app.innerHTML = `
   <main>
     <nav class="site-nav" aria-label="Primary navigation">
       <a class="wordmark" href="#top" aria-label="BLOB home">BLOB<span>.</span></a>
@@ -79,11 +135,9 @@ app.innerHTML = `
   </main>
 `;
 
-let freeGameController: { leave(): Promise<void> } | undefined;
-let openingFreeArena = false;
-
-for (const button of document.querySelectorAll<HTMLButtonElement>("[data-play-free]")) {
-  button.addEventListener("click", () => void openFreeArena());
+  for (const button of document.querySelectorAll<HTMLButtonElement>("[data-play-free]")) {
+    button.addEventListener("click", () => void openFreeArena());
+  }
 }
 
 async function openFreeArena(): Promise<void> {
@@ -153,10 +207,10 @@ async function openFreeArena(): Promise<void> {
       }
     });
   } catch (error) {
-    const detail = error instanceof Error ? error.message : "Unknown connection error";
-    connection.textContent = "Server unavailable";
-    status.textContent = `Could not join the real game server: ${detail}`;
-    timer.textContent = "Check the game-server URL, then retry.";
+    const failure = describeGameConnectionFailure(error);
+    connection.textContent = failure.connection;
+    status.textContent = failure.detail;
+    timer.textContent = failure.nextStep;
     addRetryButton();
     setPlayButtonsDisabled(false);
   } finally {
@@ -197,6 +251,36 @@ function setPlayButtonsDisabled(disabled: boolean): void {
   for (const button of document.querySelectorAll<HTMLButtonElement>("[data-play-free]")) {
     button.disabled = disabled;
   }
+}
+
+function describeGameConnectionFailure(error: unknown): { connection: string; detail: string; nextStep: string } {
+  const message = error instanceof Error ? error.message : "";
+  if (message === "The game server is not configured for this deployment.") {
+    return {
+      connection: "Game server not configured",
+      detail: "This deployment does not have a game-server URL yet.",
+      nextStep: "Set VITE_GAME_SERVER_URL, redeploy, then retry."
+    };
+  }
+  if (message === "The game server health check failed.") {
+    return {
+      connection: "Game server unavailable",
+      detail: "The authoritative arena did not pass its health check.",
+      nextStep: "Please retry in a moment."
+    };
+  }
+  if (message === "Connection timed out after 8 seconds.") {
+    return {
+      connection: "Connection timed out",
+      detail: "The authoritative arena did not respond in time.",
+      nextStep: "Please retry in a moment."
+    };
+  }
+  return {
+    connection: "Could not connect",
+    detail: "The secure connection to the authoritative arena could not be completed.",
+    nextStep: "Please retry in a moment."
+  };
 }
 
 function phaseLabel(phase: string): string {

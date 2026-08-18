@@ -25,7 +25,10 @@ export async function startFreeGame(options: StartFreeGameOptions): Promise<Free
       ? `Reconnecting to the arena (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})…`
       : "Connecting to the authoritative arena…");
 
-    const client = new Client(resolveGameServerUrl());
+    const gameServerUrl = resolveGameServerUrl();
+    options.onConnectionStatus("Checking the game server…");
+    await verifyGameServerHealth(gameServerUrl);
+    const client = new Client(gameServerUrl);
     const room = await withConnectionTimeout(
       client.joinOrCreate(ARENA_ROOM_NAME, { name: getLocalPlayerName() })
     );
@@ -90,6 +93,18 @@ const CONNECTION_TIMEOUT_MS = 8_000;
 const RECONNECT_DELAY_MS = 1_500;
 const MAX_RECONNECT_ATTEMPTS = 3;
 
+export class GameServerConfigurationError extends Error {
+  constructor() {
+    super("The game server is not configured for this deployment.");
+  }
+}
+
+export class GameServerHealthError extends Error {
+  constructor() {
+    super("The game server health check failed.");
+  }
+}
+
 function createPhaserGame(canvasHost: HTMLElement, room: Room, onUiState: (state: ArenaUiState) => void): Phaser.Game {
   return new Phaser.Game({
     type: Phaser.AUTO,
@@ -114,7 +129,38 @@ function resolveGameServerUrl(): string {
   if (import.meta.env.DEV) {
     return "http://127.0.0.1:2567";
   }
-  throw new Error("Game server URL is not configured. Set VITE_GAME_SERVER_URL in Vercel and redeploy.");
+  throw new GameServerConfigurationError();
+}
+
+async function verifyGameServerHealth(gameServerUrl: string): Promise<void> {
+  let response: Response;
+  try {
+    response = await withConnectionTimeout(fetch(new URL("/health", `${gameServerUrl}/`), {
+      headers: { Accept: "application/json" }
+    }));
+  } catch {
+    throw new GameServerHealthError();
+  }
+
+  if (!response.ok) {
+    throw new GameServerHealthError();
+  }
+
+  try {
+    const body: unknown = await response.json();
+    if (!isHealthyResponse(body)) {
+      throw new GameServerHealthError();
+    }
+  } catch (error) {
+    if (error instanceof GameServerHealthError) {
+      throw error;
+    }
+    throw new GameServerHealthError();
+  }
+}
+
+function isHealthyResponse(value: unknown): value is { status: "ok" } {
+  return typeof value === "object" && value !== null && "status" in value && value.status === "ok";
 }
 
 function withConnectionTimeout<T>(connection: Promise<T>): Promise<T> {

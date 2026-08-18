@@ -7,7 +7,7 @@ import { createServer, type Server as HttpServer } from "node:http";
 import { BlobArenaRoom } from "./BlobArenaRoom.js";
 
 export interface GameServerHandle {
-  listen(port: number): Promise<number>;
+  listen(port: number, host?: string): Promise<number>;
   shutdown(): Promise<void>;
 }
 
@@ -40,8 +40,8 @@ export function createGameServer(allowedOrigins = resolveAllowedOrigins()): Game
   gameServer.define(ARENA_ROOM_NAME, BlobArenaRoom);
 
   return {
-    async listen(port: number): Promise<number> {
-      await gameServer.listen(port);
+    async listen(port: number, host = "0.0.0.0"): Promise<number> {
+      await gameServer.listen(port, host);
       const address = httpServer.address();
       if (!address || typeof address === "string") {
         throw new Error("Game server did not bind to a TCP port.");
