@@ -1,6 +1,6 @@
 [build]
 builder = "RAILPACK"
-buildCommand = "npm ci && npm run build --workspace=@blob/game-server"
+buildCommand = "npm run build --workspace=@blob/game-server"
 
 [deploy]
 startCommand = "npm run start --workspace=@blob/game-server"

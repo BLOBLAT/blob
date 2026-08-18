@@ -15,7 +15,7 @@ https://blob.lat
 
 GitHub (`BLOBLAT/blob`, `main`) is the source of truth. Vercel deploys only `apps/web`. Railway runs only the persistent `apps/game-server` process, from the repository root so its workspace dependencies resolve. Cloudflare never routes `blob.lat` to the game server.
 
-The repository root contains [`railway.toml`](../railway.toml). Railway/Railpack discovers this file automatically and uses it to run a clean install, build `@blob/game-server`, start that workspace, poll `/health`, and restart only after a process failure. Its explicit start command prevents Railpack from trying—and failing—to infer a root-level start command in this npm-workspaces monorepo.
+The repository root contains [`railway.toml`](../railway.toml). Railway/Railpack discovers this file automatically, installs workspace dependencies, builds `@blob/game-server`, starts that workspace, polls `/health`, and restarts only after a process failure. Its explicit start command prevents Railpack from trying—and failing—to infer a root-level start command in this npm-workspaces monorepo. The custom build command deliberately does not run a second `npm ci`: Railpack already installs dependencies before it runs that command.
 
 ## 1. Deploy the persistent game server to Railway
 
@@ -28,7 +28,7 @@ The repository root contains [`railway.toml`](../railway.toml). Railway/Railpack
 5. Do not enter a conflicting custom build or start command in the Railway dashboard. The checked-in `railway.toml` is the deployment configuration and takes precedence over dashboard values. Its production commands are:
 
    ```sh
-   npm ci && npm run build --workspace=@blob/game-server
+   npm run build --workspace=@blob/game-server
    npm run start --workspace=@blob/game-server
    ```
 
