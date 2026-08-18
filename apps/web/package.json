@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@blob/protocol": "file:../../packages/protocol",
     "@colyseus/sdk": "0.17.43",
     "phaser": "3.90.0"
   },
