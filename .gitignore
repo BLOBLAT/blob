@@ -1,0 +1,19 @@
+# Dependencies and package-manager files
+node_modules/
+.npm/
+
+# Build output
+dist/
+coverage/
+
+# Local environment configuration
+.env
+.env.*
+!.env.example
+
+# Editor and operating-system files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
