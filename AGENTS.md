@@ -16,7 +16,7 @@
 
 - Generate matchId and roundId only on the server. Finalized results are immutable server records and are the only possible future settlement input.
 
-- A new player joins the next queue during a live round. Do not alter the active round population or fabricate bots to satisfy matchmaking.
+- Free Mode may admit a late player to an active round only through the game-core configuration: use a server-selected safe spawn and spawn protection, while keeping that round's world dimensions fixed. Future Paid Mode can retain a next-round queue. Do not fabricate bots to satisfy matchmaking.
 
 - Stopped, released, malformed, over-rate, and stale movement input must become zero intent. Never reintroduce client-side velocity authority.
 

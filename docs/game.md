@@ -20,7 +20,7 @@ The default tuning lives only in packages/game-core/src/index.ts:
 | Results screen | 15 seconds |
 | Simulation tick | 50 ms |
 
-One player waits in matchmaking. When at least two players are queued, the server creates a unique matchId and roundId, freezes movement for the countdown, safely spawns participants, then starts the active round. Players connecting after countdown remain queued for the next round rather than changing a live round's population.
+One player waits in matchmaking. When at least two players are queued, the server creates a unique matchId and roundId, freezes movement for the countdown, safely spawns participants, then starts the active round. Free Mode also admits players who arrive during an active round: they receive a server-selected safe spawn and temporary spawn protection immediately. The active world's size remains fixed for that round. This Free Mode policy is configuration-driven; future Paid Mode can retain a next-round queue instead.
 
 At 00:00 the server stops progression, freezes a single immutable final result, enters FINISHED, then exposes it during RESULTS. After the results interval, the same room returns to matchmaking.
 

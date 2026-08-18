@@ -126,6 +126,29 @@ describe("authoritative round lifecycle", () => {
     expect(player(simulation, "one").x).toBe(moving);
   });
 
+  it("admits a Free Mode player into an active round with a safe protected spawn", () => {
+    const simulation = new ArenaSimulation({ ...testConfig, foodMass: 1 });
+    simulation.addPlayer("one", "Blob One", 0);
+    simulation.addPlayer("two", "Blob Two", 0);
+    const now = startActive(simulation);
+
+    simulation.addPlayer("late", "Late Blob", now);
+    const latePlayer = player(simulation, "late");
+
+    expect(simulation.snapshot().phase).toBe(ArenaPhase.ACTIVE);
+    expect(latePlayer).toMatchObject({
+      alive: true,
+      inRound: true,
+      mass: simulation.config.startingMass,
+      foodCollected: 0,
+      kills: 0,
+    });
+    expect(latePlayer.spawnProtectedUntil).toBeGreaterThan(now);
+    expect(latePlayer.x).toBeGreaterThanOrEqual(radiusFromMass(latePlayer.mass));
+    expect(latePlayer.y).toBeGreaterThanOrEqual(radiusFromMass(latePlayer.mass));
+    expect(simulation.setInput("late", { x: 1, y: 0 }, now + 50)).toBe(true);
+  });
+
   it("keeps server-calculated movement within world bounds", () => {
     const simulation = new ArenaSimulation({ ...testConfig, foodMass: 1 });
     simulation.addPlayer("one", "Blob One", 0);

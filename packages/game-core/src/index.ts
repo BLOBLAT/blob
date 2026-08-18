@@ -233,6 +233,9 @@ export class ArenaSimulation {
       joinSequence: ++this.joinSequence,
     };
     this.players.set(id, player);
+    if (this.phase === ArenaPhase.ACTIVE && this.config.mode === GameMode.FREE) {
+      this.activatePlayerForRound(player, player.joinSequence);
+    }
     this.events.push({ type: ServerEvent.PLAYER_JOINED, playerId: id });
     this.updateRanks();
   }
@@ -383,22 +386,26 @@ export class ArenaSimulation {
 
     let spawnIndex = 0;
     for (const player of this.players.values()) {
-      player.inRound = true;
-      player.alive = true;
-      player.mass = this.config.startingMass;
-      player.score = 0;
-      player.kills = 0;
-      player.deaths = 0;
-      player.foodCollected = 0;
-      player.survivalTimeMs = 0;
-      player.input = cloneInput(ZERO_INPUT);
-      player.lastInputAt = this.now;
-      player.respawnAt = null;
-      player.spawnProtectedUntil = this.now + this.config.spawnProtectionMs;
-      this.placeSafely(player, spawnIndex++);
+      this.activatePlayerForRound(player, spawnIndex++);
     }
     this.replenishFood();
     this.updateRanks();
+  }
+
+  private activatePlayerForRound(player: SimulationPlayer, spawnSeed: number): void {
+    player.inRound = true;
+    player.alive = true;
+    player.mass = this.config.startingMass;
+    player.score = 0;
+    player.kills = 0;
+    player.deaths = 0;
+    player.foodCollected = 0;
+    player.survivalTimeMs = 0;
+    player.input = cloneInput(ZERO_INPUT);
+    player.lastInputAt = this.now;
+    player.respawnAt = null;
+    player.spawnProtectedUntil = this.now + this.config.spawnProtectionMs;
+    this.placeSafely(player, spawnSeed);
   }
 
   private beginActive(): void {

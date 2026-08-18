@@ -221,7 +221,13 @@ async function openFreeArena(): Promise<void> {
         rank.textContent = state.localPlayer?.rank ? "#" + state.localPlayer.rank : "—";
         alive.textContent = String(state.players.filter((player) => player.alive).length);
         foodEaten.textContent = String(state.localPlayer?.foodCollected ?? 0);
-        death.hidden = state.phase !== "ACTIVE" || state.localPlayer?.alive !== false;
+        if (state.phase === "ACTIVE" && state.localPlayer?.inRound === false) {
+          death.textContent = "Waiting for the next round…";
+          death.hidden = false;
+        } else {
+          death.textContent = "You were eaten — respawning…";
+          death.hidden = state.phase !== "ACTIVE" || state.localPlayer?.alive !== false;
+        }
         renderLeaderboard(leaderboard, state.leaderboard, state.localPlayer?.id);
         renderRoundResults(results, podium, personalResult, nextRound, state.result, state.localPlayer?.id, state.phase);
       }
