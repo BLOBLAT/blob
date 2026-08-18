@@ -136,8 +136,11 @@ PLATFORM_PUBLIC_ORIGIN=https://blob.lat
 PLATFORM_WEB_ORIGIN=https://blob.lat,https://www.blob.lat
 ```
 
-Apply a reviewed Prisma migration from
-`services/platform-api/prisma/schema.prisma` before starting the service.
+Apply the committed baseline before starting the service:
+
+```sh
+npm run prisma:migrate:deploy --workspace=@blob/platform-api
+```
 Confirm `https://<platform-api-host>/health` returns HTTP 200, then set this
 Vercel production variable and redeploy the web client:
 

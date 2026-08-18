@@ -44,8 +44,10 @@ death event and a verified payment, and it must be consumed by the room once.
 
 ## Required before enabling paid play
 
-1. Provision PostgreSQL for `services/platform-api` and apply a reviewed
-   Prisma schema migration from `services/platform-api/prisma/schema.prisma`.
+1. Provision PostgreSQL for `services/platform-api` and apply the reviewed
+   baseline Prisma migration in
+   `services/platform-api/prisma/migrations/20260819000000_init` with
+   `npm run prisma:migrate:deploy --workspace=@blob/platform-api`.
 2. Deploy the platform API as a separate persistent service with an HTTPS
    origin, `DATABASE_URL`, `PLATFORM_PUBLIC_ORIGIN`, and the exact
    comma-separated `PLATFORM_WEB_ORIGIN` allowlist.

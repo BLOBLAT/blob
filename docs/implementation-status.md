@@ -59,14 +59,21 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
 - `npm audit --omit=dev` currently reports three high findings through
   Prisma 7.9.1's `@prisma/config` -> `deepmerge-ts`. Its only offered fix is
   the breaking downgrade to Prisma 6.12.0, so it was not applied blindly.
+- Added a committed baseline PostgreSQL migration at
+  `services/platform-api/prisma/migrations/20260819000000_init`; it has not
+  been run because no managed PostgreSQL connection exists in this session.
+- Installed Rustup, but installing the actual stable Rust compiler stopped
+  because the Windows drive reported insufficient free disk space. No Solana
+  keypair, Anchor project, contract deployment, or chain transaction exists.
 
 ## Next safe steps
 
-1. Provision a managed PostgreSQL instance, generate/review/apply the initial
-   Prisma migration, then deploy `services/platform-api` separately.
+1. Provision a managed PostgreSQL instance, apply the committed baseline
+   migration, then deploy `services/platform-api` separately.
 2. Configure `VITE_PLATFORM_API_URL` in Vercel after that service is healthy.
 3. Install Rust/Solana/Anchor only when beginning the audited escrow-program
-   phase; actual mint, program, multisig, and RPC values remain external.
+   phase (this Windows disk needs free space before Rust can be installed);
+   actual mint, program, multisig, and RPC values remain external.
 
 ## External actions that will eventually be required
 
