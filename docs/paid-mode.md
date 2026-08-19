@@ -103,7 +103,12 @@ ranking authority.
    `npm run prisma:migrate:deploy --workspace=@blob/platform-api`.
 2. Deploy the platform API as a separate persistent service with an HTTPS
    origin, `DATABASE_URL`, `PLATFORM_PUBLIC_ORIGIN`, and the exact
-   comma-separated `PLATFORM_WEB_ORIGIN` allowlist.
+   comma-separated `PLATFORM_WEB_ORIGIN` allowlist. Give the API a same-site
+   HTTPS domain such as `https://api.blob.lat` before connecting it to the
+   browser: its opaque HTTP-only session cookie must not rely on a third-party
+   Railway hostname, which modern browsers can block. Keep
+   `PLATFORM_PUBLIC_ORIGIN=https://blob.lat` because that is the human-facing
+   origin embedded in the wallet sign-in message.
 3. Configure `VITE_PLATFORM_API_URL` in Vercel and redeploy the web client.
 4. Decide and configure the production Solana RPC endpoint, native USDC mint,
    audited escrow program ID, escrow derivation, treasury, and multisig

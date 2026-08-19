@@ -39,6 +39,9 @@ export function loadPlatformApiConfig(environment: NodeJS.ProcessEnv = process.e
   if (nodeEnv === "production" && allowedWebOrigins.size === 0) {
     throw new Error("PLATFORM_WEB_ORIGIN is required in production.");
   }
+  if (nodeEnv === "production" && [...allowedWebOrigins].some((origin) => !origin.startsWith("https://"))) {
+    throw new Error("PLATFORM_WEB_ORIGIN must contain only HTTPS origins in production.");
+  }
 
   return {
     databaseUrl,
@@ -70,7 +73,7 @@ function normalizeOrigin(value: string): string {
 }
 
 function parsePort(value: string | undefined): number {
-  const port = Number.parseInt(value ?? "3000", 10);
+  const port = parseInteger(value ?? "3000");
   return Number.isInteger(port) && port > 0 && port <= 65_535 ? port : 3000;
 }
 
@@ -78,9 +81,13 @@ function parsePositiveInteger(value: string | undefined, fallback: number, name:
   if (value === undefined) {
     return fallback;
   }
-  const parsed = Number.parseInt(value, 10);
+  const parsed = parseInteger(value);
   if (!Number.isSafeInteger(parsed) || parsed <= 0) {
     throw new Error(name + " must be a positive integer.");
   }
   return parsed;
+}
+
+function parseInteger(value: string): number {
+  return /^\d+$/.test(value) ? Number(value) : Number.NaN;
 }

@@ -60,6 +60,10 @@ See `docs/architecture.md` before introducing a cross-boundary dependency.
   browser. The current service verifies transfer claims but does not sign,
   send, or custody transactions. Paid play stays disabled until the escrow
   program, PostgreSQL, reconciliation, audit, and legal gates are complete.
+- The platform API must establish a real PostgreSQL query before listening and
+  its `/health` check must probe that durable store. Before browser wallet
+  profiles are enabled, serve the API from a same-site HTTPS host such as
+  `api.blob.lat`; do not depend on third-party Railway cookies.
 - The escrow program accepts only the native-USDC mint stored in its one
   governance configuration PDA. It records immutable match/round/rules and
   final-result hashes, exact entry/revive contributions, and deterministic

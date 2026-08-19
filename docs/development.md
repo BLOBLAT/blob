@@ -141,11 +141,16 @@ Apply the committed baseline before starting the service:
 ```sh
 npm run prisma:migrate:deploy --workspace=@blob/platform-api
 ```
-Confirm `https://<platform-api-host>/health` returns HTTP 200, then set this
+Before exposing browser profiles, attach a same-site HTTPS custom domain such
+as `https://api.blob.lat` to the platform API. Do not point
+`VITE_PLATFORM_API_URL` at a third-party Railway hostname: modern browsers can
+block the opaque HTTP-only profile session cookie in that cross-site setup.
+The API starts only after PostgreSQL accepts a real query, and `/health`
+returns HTTP 503 whenever that probe fails. Once it returns HTTP 200, set this
 Vercel production variable and redeploy the web client:
 
 ```sh
-VITE_PLATFORM_API_URL=https://<platform-api-host>
+VITE_PLATFORM_API_URL=https://api.blob.lat
 ```
 
 Leave `SOLANA_RPC_URL`, `SOLANA_USDC_MINT`, and

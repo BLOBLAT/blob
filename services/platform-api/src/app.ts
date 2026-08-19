@@ -23,6 +23,8 @@ const profileRequestSchema = z.object({
 export interface PlatformAppOptions {
   config: PlatformApiConfig;
   repository: PlatformAuthRepository;
+  /** The production entrypoint supplies a durable-store readiness probe. */
+  healthCheck: () => Promise<void>;
 }
 
 export function createPlatformApp(options: PlatformAppOptions): express.Express {
@@ -57,9 +59,15 @@ export function createPlatformApp(options: PlatformAppOptions): express.Express 
   app.use(express.json({ limit: "16kb", strict: true, type: "application/json" }));
   app.use(cookieParser());
 
-  app.get("/health", (_request, response) => {
-    response.status(200).json({ service: "blob-platform-api", status: "ok" });
-  });
+  app.get("/health", asyncRoute(async (_request, response) => {
+    try {
+      await options.healthCheck();
+      response.status(200).json({ service: "blob-platform-api", status: "ok" });
+    } catch (error) {
+      console.error("[BLOB platform API] health check failed", error);
+      response.status(503).json({ service: "blob-platform-api", status: "unavailable" });
+    }
+  }));
 
   app.post("/v1/auth/challenge", asyncRoute(async (request, response) => {
     const body = challengeRequestSchema.parse(request.body);

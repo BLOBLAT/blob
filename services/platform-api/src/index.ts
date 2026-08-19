@@ -1,14 +1,16 @@
 import { createServer } from "node:http";
 import { createPlatformApp } from "./app.js";
 import { loadPlatformApiConfig } from "./config.js";
-import { createPrismaClient } from "./prisma.js";
+import { createPrismaClient, verifyPrismaConnection } from "./prisma.js";
 import { PrismaAuthRepository } from "./prisma-auth-repository.js";
 
 const config = loadPlatformApiConfig();
 const prisma = createPrismaClient(config.databaseUrl);
+await verifyPrismaConnection(prisma);
 const app = createPlatformApp({
   config,
-  repository: new PrismaAuthRepository(prisma)
+  repository: new PrismaAuthRepository(prisma),
+  healthCheck: () => verifyPrismaConnection(prisma)
 });
 const server = createServer(app);
 
