@@ -136,6 +136,11 @@ PLATFORM_PUBLIC_ORIGIN=https://blob.lat
 PLATFORM_WEB_ORIGIN=https://blob.lat,https://www.blob.lat
 ```
 
+Production uses a host-only `__Host-blob_session` cookie by default and rejects
+a weaker custom cookie name. The API also applies a bounded process-local
+limit to repeated wallet challenge and verification calls; retain an edge/WAF
+limit when the service becomes public.
+
 Apply the committed baseline before starting the service:
 
 ```sh

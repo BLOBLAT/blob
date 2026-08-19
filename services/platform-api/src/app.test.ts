@@ -13,7 +13,10 @@ const config: PlatformApiConfig = {
   sessionCookieName: "blob_session",
   sessionTtlMs: 60_000,
   challengeTtlMs: 60_000,
-  renameCooldownMs: 60_000
+  renameCooldownMs: 60_000,
+  authChallengeRateLimit: 2,
+  authVerifyRateLimit: 2,
+  authRateLimitWindowMs: 60_000
 };
 
 const servers: ReturnType<typeof createServer>[] = [];
@@ -37,6 +40,32 @@ describe("platform API health", () => {
     });
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({ service: "blob-platform-api", status: "unavailable" });
+  });
+
+  it("limits repeated wallet challenge creation", async () => {
+    const app = createPlatformApp({
+      config,
+      repository: { createChallenge: async () => undefined } as unknown as PlatformAuthRepository,
+      healthCheck: async () => undefined
+    });
+    const server = createServer(app);
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("Could not start test HTTP server.");
+    }
+    const url = "http://127.0.0.1:" + address.port + "/v1/auth/challenge";
+    const request = () => fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ walletAddress: "11111111111111111111111111111111" })
+    });
+    expect((await request()).status).toBe(201);
+    expect((await request()).status).toBe(201);
+    const limited = await request();
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("retry-after")).toBe("60");
   });
 });
 

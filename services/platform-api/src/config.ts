@@ -8,6 +8,9 @@ export interface PlatformApiConfig {
   sessionTtlMs: number;
   challengeTtlMs: number;
   renameCooldownMs: number;
+  authChallengeRateLimit: number;
+  authVerifyRateLimit: number;
+  authRateLimitWindowMs: number;
 }
 
 const LOCAL_WEB_ORIGINS = ["http://127.0.0.1:5173", "http://localhost:5173"];
@@ -42,6 +45,11 @@ export function loadPlatformApiConfig(environment: NodeJS.ProcessEnv = process.e
   if (nodeEnv === "production" && [...allowedWebOrigins].some((origin) => !origin.startsWith("https://"))) {
     throw new Error("PLATFORM_WEB_ORIGIN must contain only HTTPS origins in production.");
   }
+  const sessionCookieName = environment.PLATFORM_SESSION_COOKIE_NAME
+    ?? (nodeEnv === "production" ? "__Host-blob_session" : "blob_session");
+  if (nodeEnv === "production" && !/^__Host-[A-Za-z0-9_-]+$/.test(sessionCookieName)) {
+    throw new Error("PLATFORM_SESSION_COOKIE_NAME must use the __Host- prefix in production.");
+  }
 
   return {
     databaseUrl,
@@ -49,10 +57,13 @@ export function loadPlatformApiConfig(environment: NodeJS.ProcessEnv = process.e
     nodeEnv,
     publicOrigin,
     allowedWebOrigins,
-    sessionCookieName: environment.PLATFORM_SESSION_COOKIE_NAME ?? "blob_session",
+    sessionCookieName,
     sessionTtlMs: parsePositiveInteger(environment.PLATFORM_SESSION_TTL_MS, 7 * 24 * 60 * 60 * 1_000, "PLATFORM_SESSION_TTL_MS"),
     challengeTtlMs: parsePositiveInteger(environment.PLATFORM_CHALLENGE_TTL_MS, 5 * 60 * 1_000, "PLATFORM_CHALLENGE_TTL_MS"),
-    renameCooldownMs: parsePositiveInteger(environment.PLATFORM_RENAME_COOLDOWN_MS, 24 * 60 * 60 * 1_000, "PLATFORM_RENAME_COOLDOWN_MS")
+    renameCooldownMs: parsePositiveInteger(environment.PLATFORM_RENAME_COOLDOWN_MS, 24 * 60 * 60 * 1_000, "PLATFORM_RENAME_COOLDOWN_MS"),
+    authChallengeRateLimit: parsePositiveInteger(environment.PLATFORM_AUTH_CHALLENGE_RATE_LIMIT, 6, "PLATFORM_AUTH_CHALLENGE_RATE_LIMIT"),
+    authVerifyRateLimit: parsePositiveInteger(environment.PLATFORM_AUTH_VERIFY_RATE_LIMIT, 12, "PLATFORM_AUTH_VERIFY_RATE_LIMIT"),
+    authRateLimitWindowMs: parsePositiveInteger(environment.PLATFORM_AUTH_RATE_LIMIT_WINDOW_MS, 10 * 60 * 1_000, "PLATFORM_AUTH_RATE_LIMIT_WINDOW_MS")
   };
 }
 

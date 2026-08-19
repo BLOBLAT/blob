@@ -32,5 +32,16 @@ describe("platform API production configuration", () => {
     });
     expect(config.port).toBe(3001);
     expect([...config.allowedWebOrigins]).toEqual(["https://blob.lat", "https://www.blob.lat"]);
+    expect(config.sessionCookieName).toBe("__Host-blob_session");
+  });
+
+  it("requires a host-only cookie name in production", () => {
+    expect(() => loadPlatformApiConfig({
+      NODE_ENV: "production",
+      DATABASE_URL,
+      PLATFORM_PUBLIC_ORIGIN: "https://blob.lat",
+      PLATFORM_WEB_ORIGIN: "https://blob.lat",
+      PLATFORM_SESSION_COOKIE_NAME: "blob_session"
+    })).toThrow("PLATFORM_SESSION_COOKIE_NAME must use the __Host- prefix");
   });
 });

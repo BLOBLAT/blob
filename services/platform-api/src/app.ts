@@ -5,6 +5,7 @@ import { z } from "zod";
 import { AuthError, AuthService } from "./auth.js";
 import type { PlatformAuthRepository } from "./auth-types.js";
 import type { PlatformApiConfig } from "./config.js";
+import { FixedWindowRateLimiter } from "./rate-limit.js";
 
 const challengeRequestSchema = z.object({
   walletAddress: z.string().min(32).max(64)
@@ -29,6 +30,14 @@ export interface PlatformAppOptions {
 
 export function createPlatformApp(options: PlatformAppOptions): express.Express {
   const app = express();
+  const challengeRateLimiter = new FixedWindowRateLimiter(
+    options.config.authChallengeRateLimit,
+    options.config.authRateLimitWindowMs
+  );
+  const verifyRateLimiter = new FixedWindowRateLimiter(
+    options.config.authVerifyRateLimit,
+    options.config.authRateLimitWindowMs
+  );
   const auth = new AuthService(options.repository, {
     publicOrigin: options.config.publicOrigin,
     challengeTtlMs: options.config.challengeTtlMs,
@@ -40,6 +49,7 @@ export function createPlatformApp(options: PlatformAppOptions): express.Express 
   app.use((request, response, next) => {
     response.setHeader("Cache-Control", "no-store");
     response.setHeader("X-Content-Type-Options", "nosniff");
+    response.setHeader("X-Frame-Options", "DENY");
     response.setHeader("Referrer-Policy", "same-origin");
     next();
   });
@@ -71,6 +81,9 @@ export function createPlatformApp(options: PlatformAppOptions): express.Express 
 
   app.post("/v1/auth/challenge", asyncRoute(async (request, response) => {
     const body = challengeRequestSchema.parse(request.body);
+    if (!consumeRateLimit(response, challengeRateLimiter, "challenge:" + body.walletAddress)) {
+      return;
+    }
     const challenge = await auth.issueChallenge(body.walletAddress);
     response.status(201).json({
       challengeId: challenge.challengeId,
@@ -81,6 +94,9 @@ export function createPlatformApp(options: PlatformAppOptions): express.Express 
 
   app.post("/v1/auth/verify", asyncRoute(async (request, response) => {
     const body = verifyRequestSchema.parse(request.body);
+    if (!consumeRateLimit(response, verifyRateLimiter, "verify:" + body.walletAddress)) {
+      return;
+    }
     const session = await auth.verifyChallenge(body);
     writeSessionCookie(response, options.config, session.token, session.expiresAt);
     response.status(200).json({ user: toPublicUser(session.user), expiresAt: session.expiresAt.toISOString() });
@@ -123,6 +139,16 @@ export function createPlatformApp(options: PlatformAppOptions): express.Express 
   });
 
   return app;
+}
+
+function consumeRateLimit(response: Response, limiter: FixedWindowRateLimiter, key: string): boolean {
+  const decision = limiter.consume(key);
+  if (decision.allowed) {
+    return true;
+  }
+  response.setHeader("Retry-After", decision.retryAfterSeconds.toString());
+  response.status(429).json({ error: "RATE_LIMITED", message: "Please wait before trying again." });
+  return false;
 }
 
 function asyncRoute(handler: (request: Request, response: Response) => Promise<void>): (request: Request, response: Response, next: NextFunction) => void {
