@@ -70,6 +70,17 @@ describe("wallet sign-in", () => {
     await expect(auth.rename(renamed, "Next Blob", new Date(NOW.getTime() + 1_000))).rejects.toMatchObject({ code: "PROFILE_RENAME_RATE_LIMITED" });
     await expect(auth.rename(renamed, "<>", new Date(NOW.getTime() + OPTIONS.renameCooldownMs + 1))).rejects.toBeInstanceOf(AuthError);
   });
+
+  it("does not consume a rename cooldown when the canonical display name is unchanged", async () => {
+    const repository = new InMemoryAuthRepository();
+    const auth = new AuthService(repository, OPTIONS);
+    const wallet = await createTestWallet();
+    const session = await authenticate(auth, wallet);
+    const unchanged = await auth.rename(session.user, "  " + session.user.displayName.toLowerCase() + "  ", NOW);
+    expect(unchanged).toEqual(session.user);
+
+    await expect(auth.rename(unchanged, "Blob Prime", NOW)).resolves.toMatchObject({ displayName: "Blob Prime" });
+  });
 });
 
 async function authenticate(auth: AuthService, wallet: TestWallet) {

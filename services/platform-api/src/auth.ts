@@ -129,13 +129,18 @@ export class AuthService {
 
   async rename(user: AuthenticatedUser, displayName: string, now = new Date()): Promise<AuthenticatedUser> {
     assertDisplayName(displayName);
+    const normalizedDisplayName = displayName.trim();
+    const displayNameKey = canonicalizeDisplayName(normalizedDisplayName);
+    if (displayNameKey === canonicalizeDisplayName(user.displayName)) {
+      return user;
+    }
     if (user.renamedAt && now.getTime() - user.renamedAt.getTime() < this.options.renameCooldownMs) {
       throw new AuthError("PROFILE_RENAME_RATE_LIMITED", "Display name can only be changed once per day.");
     }
     const renamed = await this.repository.renameUser({
       userId: user.userId,
-      displayName: displayName.trim(),
-      displayNameKey: canonicalizeDisplayName(displayName),
+      displayName: normalizedDisplayName,
+      displayNameKey,
       renamedAt: now
     });
     await this.repository.recordAuditEvent({
