@@ -115,16 +115,19 @@ function isExpectedUsdcTransfer(
   expectedAmount: string
 ): boolean {
   const record = instruction as {
+    programId?: unknown;
     parsed?: { type?: unknown; info?: Record<string, unknown> };
   };
   if (record.parsed?.type !== "transferChecked") {
     return false;
   }
   const info = record.parsed.info;
-  const tokenAmount = info?.tokenAmount as { amount?: unknown } | undefined;
-  return info?.authority === input.senderWalletAddress
+  const tokenAmount = info?.tokenAmount as { amount?: unknown; decimals?: unknown } | undefined;
+  return record.programId === "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+    && info?.authority === input.senderWalletAddress
     && info.destination === input.expectedDestinationTokenAccount
     && info.mint === input.expectedMint
+    && tokenAmount?.decimals === 6
     && tokenAmount?.amount === expectedAmount;
 }
 

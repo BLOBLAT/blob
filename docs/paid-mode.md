@@ -16,6 +16,14 @@ required before it can be enabled.
 - The remaining 95% is paid by a configuration-driven 60/30/10 default split.
 - All arithmetic uses `bigint` atomic USDC units and basis points; no float is
   used for money.
+- Before any terms can be persisted, the platform domain rejects values that
+  the escrow program would reject: exactly three positive payout places
+  (1/2/3) totaling 10,000 basis points, the fixed 5% fee, at most 32 players,
+  and the current ten-minute round.
+- A Standard Skill policy is represented by canonical zero Rebuy fields. A
+  Rebuy Arena policy is exactly one 0.50 USDC revive, a 30-second death window,
+  and a final-60-second cutoff. This prevents a late on-chain configuration
+  failure after an entry has been accepted.
 
 `services/platform-api/src/paid-match.ts` verifies the immutable rules,
 participant set, authoritative final ranking, final pool, and payout plan.
@@ -29,7 +37,7 @@ the Colyseus server. Its currently committed program ID is intentionally the
 non-deployable all-zero system address; no program has been deployed.
 
 The program's one-time `PlatformConfig` PDA is initialized by a governance
-authority and fixes the legacy SPL native-USDC mint, future-match controller,
+authority and fixes a six-decimal legacy SPL native-USDC mint, future-match controller,
 independent result authority, and treasury owner. Each newly created escrow
 copies those values along with immutable match ID hash, round ID hash, rules
 hash, fee, payout, and Rebuy configuration. Changing future platform roles

@@ -4,6 +4,9 @@ import {
   DEFAULT_REBUY_REVIVE_CONFIGURATION,
   PaidMatchState,
   PaidReviveBlockReason,
+  PaidRuleset,
+  assertPaidMatchConfiguration,
+  assertPaidReviveConfiguration,
   calculatePaidMatchPool,
   calculatePrizeDistribution,
   calculatePrizeDistributionFromGrossPool,
@@ -64,7 +67,7 @@ describe("integer prize calculation", () => {
       ...DEFAULT_PAID_MATCH_CONFIGURATION,
       playerCount: 3,
       prizeDistribution: [{ place: 1, basisPoints: 9_999n }]
-    })).toThrow("10000 basis points");
+    })).toThrow("exactly three prize places");
   });
 
   it("includes confirmed paid revives in the final pool before fee and payouts", () => {
@@ -129,6 +132,28 @@ describe("paid revive policy", () => {
       remainingMs: 90_000,
       millisecondsSinceDeath: 1
     })).toBe(PaidReviveBlockReason.REVIVE_LIMIT_REACHED);
+  });
+
+  it("keeps canonical Skill and Rebuy policy shapes compatible with escrow", () => {
+    expect(() => assertPaidMatchConfiguration(DEFAULT_PAID_MATCH_CONFIGURATION)).not.toThrow();
+    expect(() => assertPaidReviveConfiguration(DEFAULT_REBUY_REVIVE_CONFIGURATION)).not.toThrow();
+    expect(() => assertPaidReviveConfiguration({
+      enabled: false,
+      reviveAmountBaseUnits: 0n,
+      maxRevivesPerPlayer: 0,
+      reviveWindowMs: 0,
+      reviveCutoffMs: 0,
+      spawnProtectionMs: 0
+    })).not.toThrow();
+    expect(() => assertPaidReviveConfiguration({
+      ...DEFAULT_REBUY_REVIVE_CONFIGURATION,
+      enabled: false
+    })).toThrow("canonical zero values");
+    expect(() => assertPaidMatchConfiguration({
+      ...DEFAULT_PAID_MATCH_CONFIGURATION,
+      ruleset: PaidRuleset.SKILL,
+      maximumPlayers: 33
+    })).toThrow("player limits");
   });
 });
 

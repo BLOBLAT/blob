@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PaidReviveBlockReason, PaidRuleset, type AuthoritativeMatchResult } from "@blob/shared";
+import { DEFAULT_PAID_MATCH_CONFIGURATION, PaidReviveBlockReason, PaidRuleset, type AuthoritativeMatchResult } from "@blob/shared";
 import { createPaidMatchTerms, finalizePaidMatch, getRebuyOffer } from "./paid-match.js";
 
 const NOW = new Date("2026-08-19T12:00:00.000Z");
@@ -33,6 +33,14 @@ describe("paid-match finalization", () => {
 
   it("does not allow paid revives for a standard Skill match", () => {
     const terms = createPaidMatchTerms({ usdcMint: USDC_MINT, escrowAddress: ESCROW, ruleset: PaidRuleset.SKILL, now: NOW });
+    expect(terms.reviveConfiguration).toEqual({
+      enabled: false,
+      reviveAmountBaseUnits: 0n,
+      maxRevivesPerPlayer: 0,
+      reviveWindowMs: 0,
+      reviveCutoffMs: 0,
+      spawnProtectionMs: 0
+    });
     const offer = getRebuyOffer({
       terms,
       playerIsDead: true,
@@ -57,6 +65,28 @@ describe("paid-match finalization", () => {
     const malformed: AuthoritativeMatchResult = { ...result, players: result.players.slice(0, 2) };
     expect(() => finalizePaidMatch({ terms, result: malformed, verifiedParticipants: participants(), confirmedRevives: [] }))
       .toThrow("Final result does not include every verified entry");
+  });
+
+  it("rejects off-chain rules that the native-USDC escrow would reject before entries are accepted", () => {
+    expect(() => createPaidMatchTerms({
+      usdcMint: USDC_MINT,
+      escrowAddress: ESCROW,
+      now: NOW,
+      configuration: {
+        ...DEFAULT_PAID_MATCH_CONFIGURATION,
+        prizeDistribution: [
+          { place: 1, basisPoints: 7_000n },
+          { place: 2, basisPoints: 3_000n }
+        ]
+      }
+    })).toThrow("exactly three prize places");
+
+    expect(() => createPaidMatchTerms({
+      usdcMint: USDC_MINT,
+      escrowAddress: ESCROW,
+      now: NOW,
+      configuration: { ...DEFAULT_PAID_MATCH_CONFIGURATION, maximumPlayers: 33 }
+    })).toThrow("player limits");
   });
 });
 

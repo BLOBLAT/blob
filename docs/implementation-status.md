@@ -79,6 +79,16 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   renders actual active browser sessions plus connected arena BLOBs. No
   historical visitor analytics, account data, wallet data, IP address, or
   tracking service was added.
+- Aligned the off-chain paid terms validator with the escrow program before
+  entry acceptance: canonical disabled Skill-match Rebuy fields are all zero;
+  the active ruleset fixes the 10-minute round, 5% fee, max 32 players, exactly
+  three positive payouts, and one 0.50 USDC Rebuy with 30-second/final-minute
+  timing. The Solana RPC verifier also requires a six-decimal legacy SPL
+  `transferChecked` instruction, matching the on-chain mint guard.
+- Added an append-only Prisma migration that persists the immutable
+  `roundDurationMs` and revive spawn-protection values alongside canonical
+  zero Standard Skill revive fields; it is not applied because no PostgreSQL
+  instance has been provisioned in this session.
 
 ## Next safe steps
 

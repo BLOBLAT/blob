@@ -11,6 +11,7 @@ const BASIS_POINTS: u64 = 10_000;
 const PLATFORM_FEE_BPS: u16 = 500;
 pub const DEFAULT_PAYOUT_BPS: [u16; 3] = [6_000, 3_000, 1_000];
 const REBUY_AMOUNT_BASE_UNITS: u64 = 500_000;
+const NATIVE_USDC_DECIMALS: u8 = 6;
 const MAX_PLAYERS: u16 = 32;
 const WINNER_COUNT: usize = 3;
 
@@ -26,10 +27,8 @@ pub mod blob_escrow {
         result_authority: Pubkey,
         treasury: Pubkey,
     ) -> Result<()> {
-        require!(
-            match_controller != result_authority,
-            EscrowError::AuthoritySeparationRequired
-        );
+        validate_platform_roles(match_controller, result_authority, treasury)?;
+        validate_native_usdc_decimals(ctx.accounts.native_usdc_mint.decimals)?;
         let platform_config = &mut ctx.accounts.platform_config;
         platform_config.authority = ctx.accounts.authority.key();
         platform_config.match_controller = match_controller;
@@ -48,10 +47,7 @@ pub mod blob_escrow {
         result_authority: Pubkey,
         treasury: Pubkey,
     ) -> Result<()> {
-        require!(
-            match_controller != result_authority,
-            EscrowError::AuthoritySeparationRequired
-        );
+        validate_platform_roles(match_controller, result_authority, treasury)?;
         let platform_config = &mut ctx.accounts.platform_config;
         platform_config.match_controller = match_controller;
         platform_config.result_authority = result_authority;
@@ -77,6 +73,7 @@ pub mod blob_escrow {
         revive_window_seconds: i64,
         revive_cutoff_seconds: i64,
     ) -> Result<()> {
+        validate_native_usdc_decimals(ctx.accounts.native_usdc_mint.decimals)?;
         validate_match_configuration(
             entry_amount,
             revive_enabled,
@@ -744,6 +741,32 @@ fn validate_match_configuration(
     Ok(())
 }
 
+fn validate_platform_roles(
+    match_controller: Pubkey,
+    result_authority: Pubkey,
+    treasury: Pubkey,
+) -> Result<()> {
+    require!(
+        match_controller != Pubkey::default()
+            && result_authority != Pubkey::default()
+            && treasury != Pubkey::default(),
+        EscrowError::InvalidAuthority
+    );
+    require!(
+        match_controller != result_authority,
+        EscrowError::AuthoritySeparationRequired
+    );
+    Ok(())
+}
+
+fn validate_native_usdc_decimals(decimals: u8) -> Result<()> {
+    require!(
+        decimals == NATIVE_USDC_DECIMALS,
+        EscrowError::NativeUsdcOnly
+    );
+    Ok(())
+}
+
 fn calculate_settlement(
     total_contributions: u64,
     fee_bps: u16,
@@ -890,6 +913,8 @@ pub enum EscrowError {
     InvalidIdentifierHash,
     #[msg("The match controller and result authority must be distinct.")]
     AuthoritySeparationRequired,
+    #[msg("The platform controller, result authority, and treasury must be configured.")]
+    InvalidAuthority,
     #[msg("Only legacy SPL native USDC is accepted.")]
     NativeUsdcOnly,
     #[msg("The supplied mint does not match this escrow.")]
@@ -1037,5 +1062,17 @@ mod tests {
         assert!(validate_rebuy_window(131, 100, 600, 30, 60).is_err());
         assert!(validate_rebuy_window(540, 530, 600, 30, 60).is_err());
         assert!(validate_rebuy_window(99, 100, 600, 30, 60).is_err());
+    }
+
+    #[test]
+    fn requires_configured_distinct_roles_and_six_decimal_native_usdc() {
+        let controller = Pubkey::new_from_array([1; 32]);
+        let result_authority = Pubkey::new_from_array([2; 32]);
+        let treasury = Pubkey::new_from_array([3; 32]);
+        assert!(validate_platform_roles(controller, result_authority, treasury).is_ok());
+        assert!(validate_platform_roles(controller, controller, treasury).is_err());
+        assert!(validate_platform_roles(controller, result_authority, Pubkey::default()).is_err());
+        assert!(validate_native_usdc_decimals(NATIVE_USDC_DECIMALS).is_ok());
+        assert!(validate_native_usdc_decimals(9).is_err());
     }
 }

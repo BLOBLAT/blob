@@ -121,14 +121,16 @@ model Match {
   settlementAsset       String
   usdcMint              String
   entryAmountBaseUnits  BigInt
-  reviveAmountBaseUnits BigInt?
+  reviveAmountBaseUnits BigInt            @default(0)
   maxRevivesPerPlayer   Int               @default(0)
-  reviveWindowMs        Int?
-  reviveCutoffMs        Int?
+  reviveWindowMs        Int               @default(0)
+  reviveCutoffMs        Int               @default(0)
+  reviveSpawnProtectionMs Int              @default(0)
   platformFeeBps        Int
   payoutBps             Int[]
   minimumPlayers        Int
   maximumPlayers        Int
+  roundDurationMs       Int               @default(600000)
   fundingDeadline       DateTime
   startsAt              DateTime?
   endsAt                DateTime?

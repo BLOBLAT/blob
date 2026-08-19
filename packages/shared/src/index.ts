@@ -1,6 +1,14 @@
 export const BASIS_POINTS = 10_000n;
 export const USDC_DECIMALS = 6;
 export const USDC_BASE_UNITS = 1_000_000n;
+export const PAID_MATCH_PLATFORM_FEE_BPS = 500n;
+export const PAID_MATCH_WINNER_COUNT = 3;
+export const PAID_MATCH_MAX_PLAYERS = 32;
+export const PAID_MATCH_ROUND_DURATION_MS = 10 * 60 * 1_000;
+export const REBUY_AMOUNT_BASE_UNITS = 500_000n;
+export const REBUY_WINDOW_MS = 30_000;
+export const REBUY_CUTOFF_MS = 60_000;
+export const REBUY_SPAWN_PROTECTION_MS = 1_500;
 
 /**
  * Paid matches use native USDC on Solana. The actual mint is a deployment
@@ -49,6 +57,7 @@ export interface PaidMatchConfiguration {
   prizeDistribution: readonly PrizeDistribution[];
   minimumPlayers: number;
   maximumPlayers: number;
+  roundDurationMs: number;
   fundingTimeoutMs: number;
   refundRule: "IF_MATCH_DOES_NOT_START";
 }
@@ -57,7 +66,7 @@ export const DEFAULT_PAID_MATCH_CONFIGURATION: PaidMatchConfiguration = {
   ruleset: PaidRuleset.SKILL,
   settlementAsset: SettlementAsset.NATIVE_SOLANA_USDC,
   entryAmountBaseUnits: USDC_BASE_UNITS,
-  platformFeeBps: 500n,
+  platformFeeBps: PAID_MATCH_PLATFORM_FEE_BPS,
   prizeDistribution: [
     { place: 1, basisPoints: 6_000n },
     { place: 2, basisPoints: 3_000n },
@@ -65,6 +74,7 @@ export const DEFAULT_PAID_MATCH_CONFIGURATION: PaidMatchConfiguration = {
   ],
   minimumPlayers: 3,
   maximumPlayers: 10,
+  roundDurationMs: PAID_MATCH_ROUND_DURATION_MS,
   fundingTimeoutMs: 300_000,
   refundRule: "IF_MATCH_DOES_NOT_START"
 };
@@ -85,11 +95,11 @@ export interface PaidReviveConfiguration {
 
 export const DEFAULT_REBUY_REVIVE_CONFIGURATION: PaidReviveConfiguration = {
   enabled: true,
-  reviveAmountBaseUnits: 500_000n,
+  reviveAmountBaseUnits: REBUY_AMOUNT_BASE_UNITS,
   maxRevivesPerPlayer: 1,
-  reviveWindowMs: 30_000,
-  reviveCutoffMs: 60_000,
-  spawnProtectionMs: 1_500
+  reviveWindowMs: REBUY_WINDOW_MS,
+  reviveCutoffMs: REBUY_CUTOFF_MS,
+  spawnProtectionMs: REBUY_SPAWN_PROTECTION_MS
 };
 
 export interface PrizePayout {
@@ -145,7 +155,7 @@ export function getPaidReviveEligibility(
   configuration: PaidReviveConfiguration,
   eligibility: PaidReviveEligibility
 ): PaidReviveBlockReason {
-  assertReviveConfiguration(configuration);
+  assertPaidReviveConfiguration(configuration);
   if (!configuration.enabled) {
     return PaidReviveBlockReason.DISABLED;
   }
@@ -166,11 +176,14 @@ export function getPaidReviveEligibility(
 
 export function calculatePaidMatchPool(input: PaidPoolInput): PaidPoolCalculation {
   assertContributionInput(input.entryAmountBaseUnits, input.entryCount, "entry");
-  if (input.reviveAmountBaseUnits < 0n) {
-    throw new RangeError("reviveAmountBaseUnits cannot be negative.");
-  }
   if (!Number.isSafeInteger(input.confirmedReviveCount) || input.confirmedReviveCount < 0) {
     throw new RangeError("confirmedReviveCount must be a non-negative safe integer.");
+  }
+  if (input.confirmedReviveCount > 0 && input.reviveAmountBaseUnits <= 0n) {
+    throw new RangeError("reviveAmountBaseUnits must be positive when revives are confirmed.");
+  }
+  if (input.confirmedReviveCount === 0 && input.reviveAmountBaseUnits < 0n) {
+    throw new RangeError("reviveAmountBaseUnits cannot be negative.");
   }
   const entryPoolBaseUnits = input.entryAmountBaseUnits * BigInt(input.entryCount);
   const revivePoolBaseUnits = input.reviveAmountBaseUnits * BigInt(input.confirmedReviveCount);
@@ -229,6 +242,72 @@ export function calculatePrizeDistributionFromGrossPool(input: Pick<PaidMatchCon
     payouts,
     roundingRemainderBaseUnits
   };
+}
+
+/**
+ * Validates paid terms before they are persisted or an entry is accepted.
+ * These constraints intentionally mirror the checked-in native-USDC escrow:
+ * three prizes, a fixed 5% fee, at most 32 entrants, and a ten-minute round.
+ */
+export function assertPaidMatchConfiguration(configuration: PaidMatchConfiguration): void {
+  if (configuration.ruleset !== PaidRuleset.SKILL && configuration.ruleset !== PaidRuleset.REBUY) {
+    throw new RangeError("ruleset must be SKILL or REBUY.");
+  }
+  if (configuration.settlementAsset !== SettlementAsset.NATIVE_SOLANA_USDC) {
+    throw new RangeError("Only native Solana USDC is supported.");
+  }
+  if (!Number.isSafeInteger(configuration.minimumPlayers)
+    || !Number.isSafeInteger(configuration.maximumPlayers)
+    || configuration.minimumPlayers < PAID_MATCH_WINNER_COUNT
+    || configuration.maximumPlayers < configuration.minimumPlayers
+    || configuration.maximumPlayers > PAID_MATCH_MAX_PLAYERS) {
+    throw new RangeError("Paid match player limits are invalid.");
+  }
+  if (!Number.isSafeInteger(configuration.roundDurationMs) || configuration.roundDurationMs !== PAID_MATCH_ROUND_DURATION_MS) {
+    throw new RangeError("Paid match roundDurationMs must match the current ten-minute ruleset.");
+  }
+  if (!Number.isSafeInteger(configuration.fundingTimeoutMs) || configuration.fundingTimeoutMs <= 0) {
+    throw new RangeError("Paid match fundingTimeoutMs must be a positive safe integer.");
+  }
+  assertPrizeInput({
+    entryAmountBaseUnits: configuration.entryAmountBaseUnits,
+    playerCount: configuration.minimumPlayers,
+    platformFeeBps: configuration.platformFeeBps,
+    prizeDistribution: configuration.prizeDistribution
+  });
+}
+
+/**
+ * Disabled Skill-match revive values are canonical zeros. Rebuy Arena has one
+ * fixed 0.50 USDC revive and the disclosed 30-second/final-minute timing.
+ */
+export function assertPaidReviveConfiguration(configuration: PaidReviveConfiguration): void {
+  const numericFields = [
+    configuration.maxRevivesPerPlayer,
+    configuration.reviveWindowMs,
+    configuration.reviveCutoffMs,
+    configuration.spawnProtectionMs
+  ];
+  if (!numericFields.every(Number.isSafeInteger) || numericFields.some((value) => value < 0)) {
+    throw new RangeError("Paid revive configuration contains an invalid numeric value.");
+  }
+  if (!configuration.enabled) {
+    if (configuration.reviveAmountBaseUnits !== 0n
+      || configuration.maxRevivesPerPlayer !== 0
+      || configuration.reviveWindowMs !== 0
+      || configuration.reviveCutoffMs !== 0
+      || configuration.spawnProtectionMs !== 0) {
+      throw new RangeError("Disabled paid revive configuration must use canonical zero values.");
+    }
+    return;
+  }
+  if (configuration.reviveAmountBaseUnits !== REBUY_AMOUNT_BASE_UNITS
+    || configuration.maxRevivesPerPlayer !== 1
+    || configuration.reviveWindowMs !== REBUY_WINDOW_MS
+    || configuration.reviveCutoffMs !== REBUY_CUTOFF_MS
+    || configuration.spawnProtectionMs !== REBUY_SPAWN_PROTECTION_MS) {
+    throw new RangeError("Paid revive configuration does not match the current Rebuy Arena ruleset.");
+  }
 }
 
 export function canTransitionPaidMatch(from: PaidMatchState, to: PaidMatchState): boolean {
@@ -392,24 +471,10 @@ function assertPrizeInput(input: Pick<PaidMatchConfiguration, "entryAmountBaseUn
   if (input.entryAmountBaseUnits <= 0n) {
     throw new RangeError("entryAmountBaseUnits must be positive.");
   }
-  if (input.platformFeeBps < 0n || input.platformFeeBps > BASIS_POINTS) {
-    throw new RangeError("platformFeeBps must be between 0 and 10000.");
+  if (input.platformFeeBps !== PAID_MATCH_PLATFORM_FEE_BPS) {
+    throw new RangeError("platformFeeBps must be the fixed 5% platform fee.");
   }
-  const places = new Set<number>();
-  let distributionTotal = 0n;
-  for (const distribution of input.prizeDistribution) {
-    if (!Number.isSafeInteger(distribution.place) || distribution.place < 1 || places.has(distribution.place)) {
-      throw new RangeError("Prize places must be unique positive integers.");
-    }
-    if (distribution.basisPoints < 0n) {
-      throw new RangeError("Prize basis points cannot be negative.");
-    }
-    places.add(distribution.place);
-    distributionTotal += distribution.basisPoints;
-  }
-  if (distributionTotal !== BASIS_POINTS) {
-    throw new RangeError("Prize distribution must total exactly 10000 basis points.");
-  }
+  assertThreePlacePrizeDistribution(input.prizeDistribution);
 }
 
 function assertContributionInput(amountBaseUnits: bigint, count: number, name: string): void {
@@ -421,20 +486,21 @@ function assertContributionInput(amountBaseUnits: bigint, count: number, name: s
   }
 }
 
-function assertReviveConfiguration(configuration: PaidReviveConfiguration): void {
-  if (configuration.enabled && configuration.reviveAmountBaseUnits <= 0n) {
-    throw new RangeError("reviveAmountBaseUnits must be positive when revive is enabled.");
+function assertThreePlacePrizeDistribution(prizeDistribution: readonly PrizeDistribution[]): void {
+  if (prizeDistribution.length !== PAID_MATCH_WINNER_COUNT) {
+    throw new RangeError("Paid matches must have exactly three prize places.");
   }
-  if (!Number.isSafeInteger(configuration.maxRevivesPerPlayer) || configuration.maxRevivesPerPlayer < 0) {
-    throw new RangeError("maxRevivesPerPlayer must be a non-negative safe integer.");
-  }
-  for (const [name, value] of Object.entries({
-    reviveWindowMs: configuration.reviveWindowMs,
-    reviveCutoffMs: configuration.reviveCutoffMs,
-    spawnProtectionMs: configuration.spawnProtectionMs
-  })) {
-    if (!Number.isFinite(value) || value <= 0) {
-      throw new RangeError(name + " must be a positive finite number.");
+  let distributionTotal = 0n;
+  for (const [index, distribution] of prizeDistribution.entries()) {
+    if (!Number.isSafeInteger(distribution.place) || distribution.place !== index + 1) {
+      throw new RangeError("Prize places must be exactly 1, 2, and 3.");
     }
+    if (typeof distribution.basisPoints !== "bigint" || distribution.basisPoints <= 0n) {
+      throw new RangeError("Prize basis points must be positive integers.");
+    }
+    distributionTotal += distribution.basisPoints;
+  }
+  if (distributionTotal !== BASIS_POINTS) {
+    throw new RangeError("Prize distribution must total exactly 10000 basis points.");
   }
 }

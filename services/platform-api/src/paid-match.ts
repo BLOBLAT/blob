@@ -5,6 +5,8 @@ import {
   PaidReviveBlockReason,
   PaidRuleset,
   SettlementAsset,
+  assertPaidMatchConfiguration,
+  assertPaidReviveConfiguration,
   calculatePaidMatchPool,
   calculatePrizeDistributionFromGrossPool,
   getPaidReviveEligibility,
@@ -81,15 +83,12 @@ export function createPaidMatchTerms(input: CreatePaidMatchTermsInput): PaidMatc
   };
   const reviveConfiguration = ruleset === PaidRuleset.REBUY
     ? { ...(input.reviveConfiguration ?? DEFAULT_REBUY_REVIVE_CONFIGURATION) }
-    : disabledReviveConfiguration(input.reviveConfiguration ?? DEFAULT_REBUY_REVIVE_CONFIGURATION);
-  if (ruleset === PaidRuleset.REBUY && !reviveConfiguration.enabled) {
-    throw new PaidMatchDomainError("REBUY_CONFIGURATION_INVALID", "Rebuy Arena requires an enabled revive policy.");
-  }
+    : disabledReviveConfiguration();
   const fundingDeadline = input.fundingDeadline ?? new Date(now.getTime() + configuration.fundingTimeoutMs);
   if (fundingDeadline <= now) {
     throw new PaidMatchDomainError("FUNDING_DEADLINE_INVALID", "Funding deadline must be in the future.");
   }
-  assertPaidConfiguration(configuration);
+  assertEscrowCompatibleTerms(configuration, reviveConfiguration);
   const matchId = "paid-match-" + randomUUID();
   const roundId = "paid-round-" + randomUUID();
   const rulesHash = hashTerms({
@@ -157,6 +156,7 @@ export function finalizePaidMatch(input: {
   confirmedRevives: readonly ConfirmedRevive[];
   settlementId?: string;
 }): FinalizedPaidMatch {
+  assertEscrowCompatibleTerms(input.terms.configuration, input.terms.reviveConfiguration);
   if (input.result.mode !== "PAID" || input.result.matchId !== input.terms.matchId || input.result.roundId !== input.terms.roundId) {
     throw new PaidMatchDomainError("RESULT_MISMATCH", "Result does not belong to this paid match.");
   }
@@ -196,27 +196,30 @@ export class PaidMatchDomainError extends Error {
   }
 }
 
-function disabledReviveConfiguration(source: PaidReviveConfiguration): PaidReviveConfiguration {
+function disabledReviveConfiguration(): PaidReviveConfiguration {
   return {
-    ...source,
     enabled: false,
-    maxRevivesPerPlayer: 0
+    reviveAmountBaseUnits: 0n,
+    maxRevivesPerPlayer: 0,
+    reviveWindowMs: 0,
+    reviveCutoffMs: 0,
+    spawnProtectionMs: 0
   };
 }
 
-function assertPaidConfiguration(configuration: PaidMatchConfiguration): void {
-  if (configuration.settlementAsset !== SettlementAsset.NATIVE_SOLANA_USDC) {
-    throw new PaidMatchDomainError("SETTLEMENT_ASSET_INVALID", "Only native Solana USDC is supported.");
-  }
-  if (!Number.isSafeInteger(configuration.minimumPlayers) || !Number.isSafeInteger(configuration.maximumPlayers)
-    || configuration.minimumPlayers < 3 || configuration.maximumPlayers < configuration.minimumPlayers) {
-    throw new PaidMatchDomainError("PLAYER_LIMITS_INVALID", "Paid match player limits are invalid.");
-  }
-  if (!Number.isSafeInteger(configuration.fundingTimeoutMs) || configuration.fundingTimeoutMs <= 0) {
-    throw new PaidMatchDomainError("FUNDING_TIMEOUT_INVALID", "Paid match funding timeout is invalid.");
-  }
-  if (configuration.entryAmountBaseUnits <= 0n || configuration.platformFeeBps !== 500n) {
-    throw new PaidMatchDomainError("ECONOMICS_INVALID", "Paid match economics are invalid.");
+function assertEscrowCompatibleTerms(
+  configuration: PaidMatchConfiguration,
+  reviveConfiguration: PaidReviveConfiguration
+): void {
+  try {
+    assertPaidMatchConfiguration(configuration);
+    assertPaidReviveConfiguration(reviveConfiguration);
+    if ((configuration.ruleset === PaidRuleset.REBUY) !== reviveConfiguration.enabled) {
+      throw new RangeError("The selected ruleset and revive policy disagree.");
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Paid match terms are invalid.";
+    throw new PaidMatchDomainError("ESCROW_TERMS_INVALID", message);
   }
 }
 
@@ -300,6 +303,7 @@ function hashTerms(input: {
     prizeDistribution: input.configuration.prizeDistribution.map((payout) => [payout.place, payout.basisPoints.toString()]),
     minimumPlayers: input.configuration.minimumPlayers,
     maximumPlayers: input.configuration.maximumPlayers,
+    roundDurationMs: input.configuration.roundDurationMs,
     fundingTimeoutMs: input.configuration.fundingTimeoutMs,
     revive: {
       enabled: input.reviveConfiguration.enabled,

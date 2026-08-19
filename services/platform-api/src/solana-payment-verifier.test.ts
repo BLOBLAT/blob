@@ -19,6 +19,13 @@ describe("Solana USDC verification", () => {
     await expect(unsigned.verifyFinalizedUsdcTransfer(input())).rejects.toBeInstanceOf(SolanaPaymentVerificationError);
   });
 
+  it("rejects a transfer that is not a six-decimal legacy SPL USDC instruction", async () => {
+    const wrongDecimals = createVerifier(createTransaction("1000000", 9));
+    await expect(wrongDecimals.verifyFinalizedUsdcTransfer(input())).rejects.toMatchObject({ code: "PAYMENT_TRANSFER_INVALID" });
+    const wrongProgram = createVerifier(createTransaction("1000000", 6, "TokenzQdYndQqF8HhXjYTa2tTe9mipM9K6o6nqR3GmW"));
+    await expect(wrongProgram.verifyFinalizedUsdcTransfer(input())).rejects.toMatchObject({ code: "PAYMENT_TRANSFER_INVALID" });
+  });
+
   it("rejects a transaction that failed or has not reached finalized transaction data", async () => {
     const failed = createVerifier({ ...createTransaction(), meta: { err: { InstructionError: [0, "Custom"] } } });
     await expect(failed.verifyFinalizedUsdcTransfer(input())).rejects.toMatchObject({ code: "PAYMENT_NOT_FINALIZED" });
@@ -42,7 +49,11 @@ function createVerifier(transaction: unknown): SolanaPaymentVerifier {
   });
 }
 
-function createTransaction(amount = "1000000") {
+function createTransaction(
+  amount = "1000000",
+  decimals = 6,
+  programId = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+) {
   return {
     slot: 321,
     meta: { err: null },
@@ -50,13 +61,14 @@ function createTransaction(amount = "1000000") {
       message: {
         accountKeys: [{ pubkey: PAYER, signer: true }],
         instructions: [{
+          programId,
           parsed: {
             type: "transferChecked",
             info: {
               authority: PAYER,
               destination: DESTINATION,
               mint: USDC_MINT,
-              tokenAmount: { amount }
+              tokenAmount: { amount, decimals }
             }
           }
         }]
