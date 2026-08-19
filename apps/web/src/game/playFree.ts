@@ -3,6 +3,7 @@ import { ARENA_ROOM_NAME, ServerEvent } from "@blob/protocol";
 import Phaser from "phaser";
 import { ArenaUiState, BlobArenaScene } from "./BlobArenaScene.js";
 import { getGamePlayerName } from "../identity.js";
+import { GameServerConfigurationError, resolveGameServerUrl } from "./serverUrl.js";
 
 export interface FreeGameController {
   leave(): Promise<void>;
@@ -97,12 +98,6 @@ const CONNECTION_TIMEOUT_MS = 8_000;
 const RECONNECT_DELAY_MS = 1_500;
 const MAX_RECONNECT_ATTEMPTS = 3;
 
-export class GameServerConfigurationError extends Error {
-  constructor() {
-    super("The game server is not configured for this deployment.");
-  }
-}
-
 export class GameServerHealthError extends Error {
   constructor() {
     super("The game server health check failed.");
@@ -123,17 +118,6 @@ function createPhaserGame(canvasHost: HTMLElement, room: Room, onUiState: (state
     },
     audio: { noAudio: true }
   });
-}
-
-function resolveGameServerUrl(): string {
-  const configured = import.meta.env.VITE_GAME_SERVER_URL?.trim();
-  if (configured) {
-    return configured.replace(/\/+$/, "");
-  }
-  if (import.meta.env.DEV) {
-    return "http://127.0.0.1:2567";
-  }
-  throw new GameServerConfigurationError();
 }
 
 async function verifyGameServerHealth(gameServerUrl: string): Promise<void> {

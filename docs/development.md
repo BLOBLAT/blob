@@ -190,3 +190,41 @@ npm audit --omit=dev
 ```
 
 `npm test` includes deterministic simulation checks plus a real two-client Colyseus smoke test. The server test binds an ephemeral local port, joins two SDK clients to the same room, validates state/input propagation, rejects an invalid movement command, and verifies disconnect cleanup.
+
+## Live landing-page metrics
+
+The footer's **LIVE VISITORS** and **BLOBS IN THE PIT** counters are live,
+ephemeral server values, not analytics. After a gated page is opened, the
+browser sends a random per-tab ID to `POST /presence` every 30 seconds while
+visible. The game server retains that ID only in memory for 75 seconds and
+does not store accounts, wallet addresses, IP addresses, user agents, cookies,
+or historical traffic. `GET /metrics` returns the current `{ liveVisitors,
+arenaPlayers }` snapshot. Both endpoints use the same strict
+`BLOB_WEB_ORIGIN` CORS allowlist as the game client.
+
+These values reset when the game-server process restarts and are deliberately
+bounded to 10,000 recent browser sessions. Do not relabel them as an all-time
+visitor count without a separate privacy-reviewed persistence design.
+
+## Escrow-program host tests
+
+`programs/blob-escrow` is not an npm workspace and is never launched with the
+web or game server. It has an isolated Anchor/Rust dependency graph. The
+host-side test suite validates its real program types and pure on-chain
+accounting without creating a keypair, starting a validator, or contacting a
+Solana cluster.
+
+On this Windows workspace, use a temporary Cargo target directory so compiled
+artifacts do not appear in the repository:
+
+```powershell
+$env:CARGO_TARGET_DIR = Join-Path $env:TEMP "blob-escrow-cargo-target"
+& "$env:USERPROFILE\.cargo\bin\cargo.exe" test --manifest-path programs\blob-escrow\programs\blob_escrow\Cargo.toml
+```
+
+The committed program source pins Anchor 0.32.1. Official Solana/Anchor
+guidance requires WSL for the full Solana CLI, SBF/BPF build, local validator,
+and `anchor test` flow on Windows. Do not generate a deployer keypair or run a
+devnet deployment from this repository. A controlled external deployment
+procedure must first replace the intentionally non-deployable program ID,
+fund the deployment signer on devnet, and run integration tests.

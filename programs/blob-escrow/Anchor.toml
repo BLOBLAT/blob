@@ -1,0 +1,18 @@
+[toolchain]
+anchor_version = "0.32.1"
+solana_version = "2.3.0"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+# Non-deployable placeholder. Replace through the controlled deployment
+# procedure described in programs/README.md; never commit its private key.
+blob_escrow = "11111111111111111111111111111111"
+
+[provider]
+cluster = "localnet"
+
+[workspace]
+types = "target/types"

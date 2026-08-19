@@ -3,6 +3,7 @@ import { ACCESS_GATE_ENABLED, hasPrivateBuildAccess, unlockPrivateBuild } from "
 import { setProfileGameName } from "./identity.js";
 import { type BlobProfile, PlatformApiError, resolvePlatformApi } from "./platformApi.js";
 import { type AvailableWallet, connectWalletAndCreateProfile, watchAvailableSolanaWallets } from "./wallet.js";
+import { startLiveMetrics, type LiveMetricsController, type LiveMetricsSnapshot } from "./liveMetrics.js";
 
 const appRoot = document.querySelector<HTMLDivElement>("#app");
 
@@ -16,6 +17,7 @@ let openingFreeArena = false;
 const platformApi = resolvePlatformApi();
 let profile: BlobProfile | null = null;
 let availableWallets: AvailableWallet[] = [];
+let liveMetricsController: LiveMetricsController | undefined;
 
 initializeApplication();
 
@@ -59,6 +61,7 @@ function renderAccessGate(): void {
     event.preventDefault();
     if (unlockPrivateBuild(input.value)) {
       renderSite();
+      void initializeProfileExperience();
       return;
     }
     input.setAttribute("aria-invalid", "true");
@@ -69,6 +72,7 @@ function renderAccessGate(): void {
 }
 
 function renderSite(): void {
+  liveMetricsController?.stop();
   app.innerHTML = `
   <main>
     <nav class="site-nav" aria-label="Primary navigation">
@@ -135,6 +139,18 @@ function renderSite(): void {
       </article>
     </section>
 
+    <section class="live-metrics" aria-label="Live BLOB activity" aria-live="polite">
+      <div>
+        <strong id="live-visitor-count">—</strong>
+        <span>LIVE VISITORS</span>
+      </div>
+      <div>
+        <strong id="live-arena-count">—</strong>
+        <span>BLOBS IN THE PIT</span>
+      </div>
+      <p id="live-metrics-status">Live activity updates from the game server.</p>
+    </section>
+
     <footer>
       <p>© ${new Date().getFullYear()} BLOB</p>
       <div>
@@ -154,6 +170,25 @@ function renderSite(): void {
   }
   requiredElement<HTMLButtonElement>("#wallet-trigger").addEventListener("click", () => openProfileDialog());
   requiredElement<HTMLButtonElement>("#profile-dialog-close").addEventListener("click", () => closeProfileDialog());
+  liveMetricsController = startLiveMetrics(renderLiveMetrics);
+}
+
+function renderLiveMetrics(metrics: LiveMetricsSnapshot | undefined): void {
+  const visitorCount = requiredElementOrUndefined<HTMLElement>("#live-visitor-count");
+  const arenaCount = requiredElementOrUndefined<HTMLElement>("#live-arena-count");
+  const status = requiredElementOrUndefined<HTMLElement>("#live-metrics-status");
+  if (!visitorCount || !arenaCount || !status) {
+    return;
+  }
+  if (!metrics) {
+    visitorCount.textContent = "—";
+    arenaCount.textContent = "—";
+    status.textContent = "Live activity is unavailable while the game server is offline.";
+    return;
+  }
+  visitorCount.textContent = String(metrics.liveVisitors);
+  arenaCount.textContent = String(metrics.arenaPlayers);
+  status.textContent = "Live presence only — no historical visitor tracking.";
 }
 
 async function initializeProfileExperience(): Promise<void> {

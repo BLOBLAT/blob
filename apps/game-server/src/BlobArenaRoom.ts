@@ -10,16 +10,20 @@ import {
   FoodState,
   LeaderboardEntryState,
 } from "./schema.js";
+import type { LiveMetrics } from "./liveMetrics.js";
 
 export interface BlobArenaRoomOptions {
   arenaConfig?: Partial<ArenaConfig>;
+  liveMetrics?: LiveMetrics;
 }
 
 export class BlobArenaRoom extends Room<{ state: BlobArenaState }> {
   override maxClients = DEFAULT_ARENA_CONFIG.maxPlayers;
   private simulation!: ArenaSimulation;
+  private liveMetrics: LiveMetrics | undefined;
 
   override onCreate(options: BlobArenaRoomOptions = {}): void {
+    this.liveMetrics = options.liveMetrics;
     this.setState(new BlobArenaState());
     this.simulation = new ArenaSimulation(options.arenaConfig);
     this.maxClients = this.simulation.config.maxPlayers;
@@ -47,11 +51,13 @@ export class BlobArenaRoom extends Room<{ state: BlobArenaState }> {
 
   override onJoin(client: Client, _options: unknown, auth: ValidatedPlayerJoinOptions): void {
     this.simulation.addPlayer(client.sessionId, auth.name, Date.now());
+    this.liveMetrics?.recordArenaJoin(client.sessionId);
     this.syncState();
   }
 
   override onLeave(client: Client): void {
     this.simulation.removePlayer(client.sessionId);
+    this.liveMetrics?.recordArenaLeave(client.sessionId);
     this.log("player_disconnected", { playerId: client.sessionId });
     this.syncState();
   }

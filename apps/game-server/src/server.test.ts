@@ -36,6 +36,29 @@ describe("BLOB arena room", () => {
     await expect(response.json()).resolves.toEqual({ service: "blob-game-server", status: "ok" });
   });
 
+  it("reports privacy-minimal live visitors and rejects malformed presence", async () => {
+    const before = await fetch(`${endpoint}/metrics`, {
+      headers: { Origin: "http://127.0.0.1:5173" }
+    });
+    expect(before.status).toBe(200);
+    await expect(before.json()).resolves.toEqual({ liveVisitors: 0, arenaPlayers: 0 });
+
+    const invalidPresence = await fetch(`${endpoint}/presence`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: "http://127.0.0.1:5173" },
+      body: JSON.stringify({ visitorId: "not-valid" })
+    });
+    expect(invalidPresence.status).toBe(400);
+
+    const presence = await fetch(`${endpoint}/presence`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: "http://127.0.0.1:5173" },
+      body: JSON.stringify({ visitorId: "abcdefghijklmnopqrstuv" })
+    });
+    expect(presence.headers.get("access-control-allow-origin")).toBe("http://127.0.0.1:5173");
+    await expect(presence.json()).resolves.toEqual({ liveVisitors: 1, arenaPlayers: 0 });
+  });
+
   it("starts a room where two clients receive authoritative state and input-driven movement", async () => {
     const firstClient = new Client(endpoint);
     const secondClient = new Client(endpoint);
@@ -43,6 +66,7 @@ describe("BLOB arena room", () => {
     const secondRoom = await secondClient.joinOrCreate(ARENA_ROOM_NAME, { name: "Blob Two" });
 
     await waitUntil(() => getPlayers(firstRoom.state).length === 2 && getPlayers(secondRoom.state).length === 2);
+    await waitUntil(async () => (await getLiveMetrics()).arenaPlayers === 2);
     await waitUntil(() => firstRoom.state.phase === "ACTIVE");
 
     const firstPlayer = firstRoom.state.players.get(firstRoom.sessionId);
@@ -66,6 +90,7 @@ describe("BLOB arena room", () => {
     await secondRoom.leave();
     await waitUntil(() => getPlayers(firstRoom.state).length === 1);
     await firstRoom.leave();
+    await waitUntil(async () => (await getLiveMetrics()).arenaPlayers === 0);
   });
 });
 
@@ -79,9 +104,14 @@ function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-async function waitUntil(condition: () => boolean, timeoutMs = 8_000): Promise<void> {
+async function getLiveMetrics(): Promise<{ liveVisitors: number; arenaPlayers: number }> {
+  const response = await fetch(`${endpoint}/metrics`);
+  return response.json() as Promise<{ liveVisitors: number; arenaPlayers: number }>;
+}
+
+async function waitUntil(condition: () => boolean | Promise<boolean>, timeoutMs = 8_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
-  while (!condition()) {
+  while (!(await condition())) {
     if (Date.now() >= deadline) {
       throw new Error("Timed out waiting for authoritative room state.");
     }

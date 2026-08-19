@@ -5,6 +5,7 @@ import cors from "cors";
 import express from "express";
 import { createServer, type Server as HttpServer } from "node:http";
 import { BlobArenaRoom, type BlobArenaRoomOptions } from "./BlobArenaRoom.js";
+import { isValidVisitorId, LiveMetrics } from "./liveMetrics.js";
 
 export interface GameServerHandle {
   listen(port: number, host?: string): Promise<number>;
@@ -16,7 +17,9 @@ export function createGameServer(
   roomOptions: BlobArenaRoomOptions = {},
 ): GameServerHandle {
   const app = express();
+  const liveMetrics = new LiveMetrics();
   app.disable("x-powered-by");
+  app.use(express.json({ limit: "1kb", strict: true }));
   app.use(cors({
     origin(origin, callback) {
       if (!origin || allowedOrigins.has(origin)) {
@@ -31,6 +34,19 @@ export function createGameServer(
   app.get("/health", (_request, response) => {
     response.status(200).json({ service: "blob-game-server", status: "ok" });
   });
+  app.get("/metrics", (_request, response) => {
+    response.status(200).json(liveMetrics.snapshot());
+  });
+  app.post("/presence", (request, response) => {
+    const visitorId = request.body && typeof request.body === "object"
+      ? (request.body as { visitorId?: unknown }).visitorId
+      : undefined;
+    if (!isValidVisitorId(visitorId)) {
+      response.status(400).json({ error: "INVALID_VISITOR_ID" });
+      return;
+    }
+    response.status(200).json(liveMetrics.recordVisitor(visitorId));
+  });
 
   const httpServer = createServer(app);
   const gameServer = new Server({
@@ -40,7 +56,7 @@ export function createGameServer(
     }),
     gracefullyShutdown: false
   });
-  gameServer.define(ARENA_ROOM_NAME, BlobArenaRoom, roomOptions);
+  gameServer.define(ARENA_ROOM_NAME, BlobArenaRoom, { ...roomOptions, liveMetrics });
 
   return {
     async listen(port: number, host = "0.0.0.0"): Promise<number> {

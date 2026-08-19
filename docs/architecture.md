@@ -17,20 +17,25 @@ server-configured respawn. `services/platform-api` now owns a separate
 PostgreSQL schema, Wallet Standard/Solana message authentication, opaque
 sessions, profile display names, paid-match term hashing, bigint pool and
 payout planning, and independently verified finalized USDC transfer claims.
-It remains unexposed to paid play: no live paid room, deployed escrow program,
-or token transfer is implemented. The service can consume an immutable result
-without giving payment code control of gameplay.
+`programs/blob-escrow` is an isolated Anchor 0.32.1 native-USDC escrow source
+with host-side Rust tests. It fixes platform configuration, entry/refund
+amounts, Rebuy timing, the 5% fee and immutable per-match payout split, and the finalized
+result hash on-chain. It remains unexposed to paid play: there is no live paid
+room, deployed program, configured program ID, or token transfer. The service
+can consume an immutable result without giving payment code control of
+gameplay.
 
 ## Target boundaries
 
 | Boundary | Responsibility | Must not own |
 | --- | --- | --- |
 | Browser client (`apps/web`) | Phaser rendering, mouse intent, presentation, and Colyseus session transport | Competitive state, collision decisions, scores, balances, and settlement decisions |
-| Game server (`apps/game-server`) | Deterministic authoritative simulation, validation, collisions, deaths, respawns, score, and match result | Wallet custody, blockchain transactions, and client-trusted decisions |
+| Game server (`apps/game-server`) | Deterministic authoritative simulation, validation, collisions, deaths, respawns, score, match result, and privacy-minimal live presence | Wallet custody, blockchain transactions, historical analytics, and client-trusted decisions |
 | Shared game core (`packages/game-core`) | Pure server-consumed simulation and central game configuration | Browser authority or payment/chain logic |
 | Protocol and validation (`packages/protocol`, `packages/validation`) | Shared contracts and runtime validation of untrusted payloads | Simulation authority or business logic |
 | Matchmaking (`services/matchmaking`, planned) | Queues, skill/ruleset selection, capacity allocation, and server assignment | Simulation and prize calculation |
 | Platform API (`services/platform-api`) | Wallet proof, profiles, durable match/payment/audit records, term hashing, and chain verification | Real-time simulation authority, game keys, or browser-trusted payments |
+| Escrow program (`programs/blob-escrow`) | Immutable native-USDC match terms, deposited token custody, authority-gated revives, refunds, and deterministic payout execution | Gameplay simulation, browser trust, private keys, or automatic result selection |
 | Database | Accounts, durable match summaries, audit records, and server-produced statistics | Real-time simulation authority |
 | Payment layer | Entry authorization, stablecoin-provider integration, payouts, and audit trail | Gameplay rules and match-result generation |
 | Blockchain adapter | Chain-specific transaction and settlement integration behind an internal interface | Game mechanics and direct client authority |
@@ -45,7 +50,7 @@ player input
   -> validated real-time transport
   -> authoritative game server and deterministic simulation
   -> immutable match and round result
-  -> later: durable record and settlement adapters
+  -> durable record, auditable result hash, and later: settlement adapters
 ```
 
 For paid modes, entry authorization occurs before matchmaking; settlement consumes completed, server-produced results after the match. Neither payment success nor token ownership changes simulation rules.
@@ -56,7 +61,11 @@ For paid modes, entry authorization occurs before matchmaking; settlement consum
 - **Web application:** TypeScript, Vite, and Phaser 3.90.0 for browser rendering/input.
 - **Real-time transport:** Colyseus core with its WebSocket transport and built-in `joinOrCreate` matchmaking. No custom socket or matchmaking framework is used.
 - **Validation:** Zod validates join names and each movement intent at the game-server boundary.
-- **Database, chain, payment provider, hosting:** deliberately not implemented. PostgreSQL/Prisma are the planned persistence choice when durable accounts/matches are introduced.
+- **Profiles and paid orchestration:** PostgreSQL/Prisma and a separate
+  platform API are implemented but not deployed.
+- **Escrow:** isolated Anchor 0.32.1 source with host-side tests; its native
+  USDC mint, governance keys, program ID, deployment, and audit remain
+  intentionally external and incomplete.
 
 ## Security baseline
 

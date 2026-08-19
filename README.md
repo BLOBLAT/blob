@@ -16,6 +16,11 @@ The public site and the authoritative server are intentionally separate: Vercel 
 
 The public build is temporarily protected by a client-side private-build gate. It is a visibility measure only, not authentication; its single removal switch is documented for contributors in `AGENTS.md`.
 
+The footer also shows two intentionally small, real-time metrics from the
+authoritative game server: active browser presence and BLOBs currently in the
+arena. They are in-memory live values, not historical analytics or a claimed
+all-time visitor count.
+
 Free Mode remains wallet-free. A separate `services/platform-api` now provides
 an opt-in Solana wallet sign-in/profile foundation: the wallet signs an
 off-chain one-time message, the service verifies Ed25519 ownership, and a
@@ -25,9 +30,14 @@ message approves a transaction or transfers funds.
 
 The same isolated service contains an unexposed paid-match domain: bigint
 native-USDC pool accounting, 5% fee calculation, standard Skill vs disclosed
-Rebuy Arena rules, and finalized-chain-transfer verification. It does not
-create a blockchain transaction, custody USDC, or enable paid matches. See
-[paid-mode.md](docs/paid-mode.md) for the gating requirements.
+Rebuy Arena rules, and finalized-chain-transfer verification. The separate
+[`programs/blob-escrow`](programs/blob-escrow) Anchor source fixes native-USDC,
+match terms, result hash recording, entry/refund handling, authority-attested
+revives, and deterministic 5% settlement with an immutable per-match top-three
+payout split on-chain. It has host-side
+tests only: no program ID, keypair, devnet deployment, blockchain transaction,
+USDC custody, or paid match is enabled. See [paid-mode.md](docs/paid-mode.md)
+for the required security and deployment gates.
 
 ## Local development
 
@@ -55,6 +65,7 @@ npm run check
 - `packages/game-core` — deterministic simulation and game configuration
 - `packages/shared` — paid-match state machine and integer prize domain
 - `services` — future API, payment, and chain deployables
+- `programs/blob-escrow` — isolated Anchor native-USDC escrow source; never a Free Mode dependency
 - `docs` — architecture and engineering decisions
 
 Read [the architecture guide](docs/architecture.md) and [contributor guide](AGENTS.md) before extending the platform.

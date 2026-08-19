@@ -35,6 +35,10 @@
 - `services/platform-api` — deployable PostgreSQL-backed wallet/profile and
   paid-match orchestration boundary. It is never part of the Colyseus game
   process and must not be configured as a Vite client dependency.
+- `programs/blob-escrow` — isolated Anchor source for future native-USDC
+  escrow. It must never become a dependency of Free Mode, Vite, or the game
+  server. Its checked-in program ID is intentionally non-deployable until a
+  controlled external deployment keypair supplies the replacement public ID.
 - `docs` — architecture decisions and operating guidance.
 
 See `docs/architecture.md` before introducing a cross-boundary dependency.
@@ -56,6 +60,13 @@ See `docs/architecture.md` before introducing a cross-boundary dependency.
   browser. The current service verifies transfer claims but does not sign,
   send, or custody transactions. Paid play stays disabled until the escrow
   program, PostgreSQL, reconciliation, audit, and legal gates are complete.
+- The escrow program accepts only the native-USDC mint stored in its one
+  governance configuration PDA. It records immutable match/round/rules and
+  final-result hashes, exact entry/revive contributions, and deterministic
+  fee/payout math. Only separate controller and result-authority roles may
+  start/cancel or attest revive/result actions. Never add private keys,
+  program keypairs, wallet seed phrases, or real mint/program/treasury values
+  to source control.
 - Add tests with simulation, transport, payment, or settlement behavior. Deterministic simulation tests and real two-client room smoke tests are preferred.
 - Update documentation when a boundary, authority rule, or operational command changes.
 - The browser obtains its server endpoint only from `VITE_GAME_SERVER_URL` (with a local Vite fallback). Never hardcode a production game-server hostname in browser code.
