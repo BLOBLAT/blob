@@ -67,9 +67,10 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
 - Added `programs/blob-escrow`, an isolated Anchor 0.32.1 native-USDC escrow
   source. It has platform-mint/authority configuration, immutable
   match/round/rules/result hashes, exact entry/revive contribution accounting,
-  controller-gated start/cancel, one-revive Rebuy enforcement, 30-second death
-  window, final-minute cutoff, exact refunds, and on-chain 5% fee plus
-  immutable configuration-validated payout logic. Host-side Rust tests pass (7/7); target artifacts are kept
+  controller-gated start/cancel, one-revive Rebuy enforcement, an immutable
+  ten-minute round with a 30-second death window and final-minute cutoff,
+  exact refunds, and on-chain 5% fee plus immutable configuration-validated
+  payout logic. Host-side Rust tests pass (9/9); target artifacts are kept
   in the OS temporary directory and ignored by Git.
 - Added tests for signed, short-lived, match/round-bound paid admission
   tickets. These tickets are not yet accepted by a Colyseus room because Paid

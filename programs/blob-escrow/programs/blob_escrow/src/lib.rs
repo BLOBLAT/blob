@@ -14,6 +14,9 @@ const REBUY_AMOUNT_BASE_UNITS: u64 = 500_000;
 const NATIVE_USDC_DECIMALS: u8 = 6;
 const MAX_PLAYERS: u16 = 32;
 const WINNER_COUNT: usize = 3;
+const ROUND_DURATION_SECONDS: i64 = 10 * 60;
+const REBUY_WINDOW_SECONDS: i64 = 30;
+const REBUY_CUTOFF_SECONDS: i64 = 60;
 
 #[program]
 pub mod blob_escrow {
@@ -718,11 +721,7 @@ fn validate_match_configuration(
         EscrowError::InvalidConfiguration
     );
     require!(
-        round_duration_seconds > 0,
-        EscrowError::InvalidConfiguration
-    );
-    require!(
-        revive_cutoff_seconds >= 0 && revive_cutoff_seconds < round_duration_seconds,
+        round_duration_seconds == ROUND_DURATION_SECONDS,
         EscrowError::InvalidConfiguration
     );
     validate_payout_bps(payout_bps)?;
@@ -731,7 +730,11 @@ fn validate_match_configuration(
             revive_amount == REBUY_AMOUNT_BASE_UNITS,
             EscrowError::InvalidConfiguration
         );
-        require!(revive_window_seconds > 0, EscrowError::InvalidConfiguration);
+        require!(
+            revive_window_seconds == REBUY_WINDOW_SECONDS
+                && revive_cutoff_seconds == REBUY_CUTOFF_SECONDS,
+            EscrowError::InvalidConfiguration
+        );
     } else {
         require!(
             revive_amount == 0 && revive_window_seconds == 0 && revive_cutoff_seconds == 0,
@@ -1054,6 +1057,46 @@ mod tests {
             60
         )
         .is_ok());
+    }
+
+    #[test]
+    fn keeps_round_and_rebuy_timers_immutable() {
+        assert!(validate_match_configuration(
+            1_000_000,
+            false,
+            0,
+            DEFAULT_PAYOUT_BPS,
+            3,
+            10,
+            ROUND_DURATION_SECONDS + 1,
+            0,
+            0
+        )
+        .is_err());
+        assert!(validate_match_configuration(
+            1_000_000,
+            true,
+            REBUY_AMOUNT_BASE_UNITS,
+            DEFAULT_PAYOUT_BPS,
+            3,
+            10,
+            ROUND_DURATION_SECONDS,
+            REBUY_WINDOW_SECONDS + 1,
+            REBUY_CUTOFF_SECONDS
+        )
+        .is_err());
+        assert!(validate_match_configuration(
+            1_000_000,
+            true,
+            REBUY_AMOUNT_BASE_UNITS,
+            DEFAULT_PAYOUT_BPS,
+            3,
+            10,
+            ROUND_DURATION_SECONDS,
+            REBUY_WINDOW_SECONDS,
+            REBUY_CUTOFF_SECONDS - 1
+        )
+        .is_err());
     }
 
     #[test]
