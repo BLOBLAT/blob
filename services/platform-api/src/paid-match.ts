@@ -95,6 +95,7 @@ export function createPaidMatchTerms(input: CreatePaidMatchTermsInput): PaidMatc
     ruleset,
     usdcMint: input.usdcMint,
     escrowAddress: input.escrowAddress,
+    fundingDeadline,
     configuration,
     reviveConfiguration
   });
@@ -291,6 +292,7 @@ function hashTerms(input: {
   ruleset: PaidRuleset;
   usdcMint: string;
   escrowAddress: string;
+  fundingDeadline: Date;
   configuration: PaidMatchConfiguration;
   reviveConfiguration: PaidReviveConfiguration;
 }): string {
@@ -298,6 +300,7 @@ function hashTerms(input: {
     ruleset: input.ruleset,
     usdcMint: input.usdcMint,
     escrowAddress: input.escrowAddress,
+    fundingDeadline: input.fundingDeadline.toISOString(),
     entryAmountBaseUnits: input.configuration.entryAmountBaseUnits.toString(),
     platformFeeBps: input.configuration.platformFeeBps.toString(),
     prizeDistribution: input.configuration.prizeDistribution.map((payout) => [payout.place, payout.basisPoints.toString()]),

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_PAID_MATCH_CONFIGURATION, PaidReviveBlockReason, PaidRuleset, type AuthoritativeMatchResult } from "@blob/shared";
+import {
+  DEFAULT_PAID_MATCH_CONFIGURATION,
+  PAID_MATCH_MAX_FUNDING_TIMEOUT_MS,
+  PaidReviveBlockReason,
+  PaidRuleset,
+  type AuthoritativeMatchResult
+} from "@blob/shared";
 import { createPaidMatchTerms, finalizePaidMatch, getRebuyOffer } from "./paid-match.js";
 
 const NOW = new Date("2026-08-19T12:00:00.000Z");
@@ -87,6 +93,33 @@ describe("paid-match finalization", () => {
       now: NOW,
       configuration: { ...DEFAULT_PAID_MATCH_CONFIGURATION, maximumPlayers: 33 }
     })).toThrow("player limits");
+
+    expect(() => createPaidMatchTerms({
+      usdcMint: USDC_MINT,
+      escrowAddress: ESCROW,
+      now: NOW,
+      configuration: {
+        ...DEFAULT_PAID_MATCH_CONFIGURATION,
+        fundingTimeoutMs: PAID_MATCH_MAX_FUNDING_TIMEOUT_MS + 1
+      }
+    })).toThrow("funding window");
+  });
+
+  it("commits the pre-game funding deadline into immutable terms", () => {
+    const early = createPaidMatchTerms({
+      usdcMint: USDC_MINT,
+      escrowAddress: ESCROW,
+      now: NOW,
+      fundingDeadline: new Date("2026-08-19T12:05:00.000Z")
+    });
+    const late = createPaidMatchTerms({
+      usdcMint: USDC_MINT,
+      escrowAddress: ESCROW,
+      now: NOW,
+      fundingDeadline: new Date("2026-08-19T12:06:00.000Z")
+    });
+
+    expect(early.rulesHash).not.toBe(late.rulesHash);
   });
 });
 

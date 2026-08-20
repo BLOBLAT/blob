@@ -48,7 +48,11 @@ The implemented instructions are deliberately narrow:
 - `enter_match` creates one PDA entry per wallet and transfers exactly the
   immutable entry amount to the match PDA's native-USDC token account.
 - `start_match` is controller-only and records the authoritative on-chain
-  round end timestamp after the configured minimum funded count is reached.
+  round end timestamp after the configured minimum funded count is reached,
+  but only before its immutable 15-minute maximum funding deadline.
+- `expire_funding` is permissionless after the recorded funding deadline. It
+  moves a never-started match to per-player refunds, so an unavailable
+  controller cannot leave pre-game USDC locked indefinitely.
 - `purchase_revive` needs both the player and result-authority signatures,
   records an unreusable authoritative death hash, accepts exactly one 0.50
   USDC contribution only for a disclosed Rebuy match, and enforces both the

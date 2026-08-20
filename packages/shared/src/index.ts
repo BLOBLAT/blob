@@ -5,6 +5,11 @@ export const PAID_MATCH_PLATFORM_FEE_BPS = 500n;
 export const PAID_MATCH_WINNER_COUNT = 3;
 export const PAID_MATCH_MAX_PLAYERS = 32;
 export const PAID_MATCH_ROUND_DURATION_MS = 10 * 60 * 1_000;
+/**
+ * Funds must not remain in a pre-game escrow indefinitely. This cap is shared
+ * with the escrow program's permissionless funding-expiry path.
+ */
+export const PAID_MATCH_MAX_FUNDING_TIMEOUT_MS = 15 * 60 * 1_000;
 export const REBUY_AMOUNT_BASE_UNITS = 500_000n;
 export const REBUY_WINDOW_MS = 30_000;
 export const REBUY_CUTOFF_MS = 60_000;
@@ -266,8 +271,10 @@ export function assertPaidMatchConfiguration(configuration: PaidMatchConfigurati
   if (!Number.isSafeInteger(configuration.roundDurationMs) || configuration.roundDurationMs !== PAID_MATCH_ROUND_DURATION_MS) {
     throw new RangeError("Paid match roundDurationMs must match the current ten-minute ruleset.");
   }
-  if (!Number.isSafeInteger(configuration.fundingTimeoutMs) || configuration.fundingTimeoutMs <= 0) {
-    throw new RangeError("Paid match fundingTimeoutMs must be a positive safe integer.");
+  if (!Number.isSafeInteger(configuration.fundingTimeoutMs)
+    || configuration.fundingTimeoutMs <= 0
+    || configuration.fundingTimeoutMs > PAID_MATCH_MAX_FUNDING_TIMEOUT_MS) {
+    throw new RangeError("Paid match fundingTimeoutMs must be a positive safe integer within the funding window.");
   }
   assertPrizeInput({
     entryAmountBaseUnits: configuration.entryAmountBaseUnits,

@@ -14,6 +14,7 @@ const REBUY_AMOUNT_BASE_UNITS: u64 = 500_000;
 const NATIVE_USDC_DECIMALS: u8 = 6;
 const MAX_PLAYERS: u16 = 32;
 const WINNER_COUNT: usize = 3;
+const MAX_FUNDING_DURATION_SECONDS: i64 = 15 * 60;
 const ROUND_DURATION_SECONDS: i64 = 10 * 60;
 const REBUY_WINDOW_SECONDS: i64 = 30;
 const REBUY_CUTOFF_SECONDS: i64 = 60;
@@ -72,6 +73,7 @@ pub mod blob_escrow {
         payout_bps: [u16; 3],
         minimum_players: u16,
         maximum_players: u16,
+        funding_deadline_at: i64,
         round_duration_seconds: i64,
         revive_window_seconds: i64,
         revive_cutoff_seconds: i64,
@@ -88,6 +90,7 @@ pub mod blob_escrow {
             revive_window_seconds,
             revive_cutoff_seconds,
         )?;
+        validate_funding_deadline(Clock::get()?.unix_timestamp, funding_deadline_at)?;
         require!(
             match_id_hash != [0; 32] && round_id_hash != [0; 32] && rules_hash != [0; 32],
             EscrowError::InvalidIdentifierHash
@@ -113,6 +116,7 @@ pub mod blob_escrow {
         escrow.round_duration_seconds = round_duration_seconds;
         escrow.revive_window_seconds = revive_window_seconds;
         escrow.revive_cutoff_seconds = revive_cutoff_seconds;
+        escrow.funding_deadline_at = funding_deadline_at;
         escrow.round_ends_at = 0;
         escrow.participant_count = 0;
         escrow.confirmed_revives = 0;
@@ -177,6 +181,7 @@ pub mod blob_escrow {
             EscrowError::MinimumPlayersNotMet
         );
         let now = Clock::get()?.unix_timestamp;
+        require!(now < escrow.funding_deadline_at, EscrowError::FundingDeadlineExpired);
         escrow.round_ends_at = now
             .checked_add(escrow.round_duration_seconds)
             .ok_or(EscrowError::ArithmeticOverflow)?;
@@ -332,6 +337,23 @@ pub mod blob_escrow {
         Ok(())
     }
 
+    /// Lets anyone unlock a failed funding round after its disclosed deadline.
+    /// This does not refund anyone automatically: every player still withdraws
+    /// only their recorded contribution through `claim_refund`.
+    pub fn expire_funding(ctx: Context<ExpireFunding>) -> Result<()> {
+        let escrow = &mut ctx.accounts.match_escrow;
+        require!(
+            escrow.lifecycle == MatchLifecycle::Funding,
+            EscrowError::MatchNotFunding
+        );
+        require!(
+            Clock::get()?.unix_timestamp >= escrow.funding_deadline_at,
+            EscrowError::FundingDeadlineNotReached
+        );
+        escrow.lifecycle = MatchLifecycle::Refunding;
+        Ok(())
+    }
+
     pub fn claim_refund(ctx: Context<ClaimRefund>) -> Result<()> {
         let escrow = &mut ctx.accounts.match_escrow;
         require!(
@@ -459,6 +481,12 @@ pub struct EnterMatch<'info> {
 pub struct ControlMatch<'info> {
     #[account(address = match_escrow.controller @ EscrowError::Unauthorized)]
     pub controller: Signer<'info>,
+    #[account(mut, seeds = [b"match", match_escrow.match_id_hash.as_ref()], bump = match_escrow.bump)]
+    pub match_escrow: Account<'info, MatchEscrow>,
+}
+
+#[derive(Accounts)]
+pub struct ExpireFunding<'info> {
     #[account(mut, seeds = [b"match", match_escrow.match_id_hash.as_ref()], bump = match_escrow.bump)]
     pub match_escrow: Account<'info, MatchEscrow>,
 }
@@ -627,6 +655,7 @@ pub struct MatchEscrow {
     pub round_duration_seconds: i64,
     pub revive_window_seconds: i64,
     pub revive_cutoff_seconds: i64,
+    pub funding_deadline_at: i64,
     pub round_ends_at: i64,
     pub participant_count: u16,
     pub confirmed_revives: u16,
@@ -740,6 +769,18 @@ fn validate_match_configuration(
     Ok(())
 }
 
+fn validate_funding_deadline(now: i64, funding_deadline_at: i64) -> Result<()> {
+    require!(funding_deadline_at > now, EscrowError::FundingDeadlineInvalid);
+    let maximum_deadline = now
+        .checked_add(MAX_FUNDING_DURATION_SECONDS)
+        .ok_or(EscrowError::ArithmeticOverflow)?;
+    require!(
+        funding_deadline_at <= maximum_deadline,
+        EscrowError::FundingDeadlineInvalid
+    );
+    Ok(())
+}
+
 fn validate_platform_roles(
     match_controller: Pubkey,
     result_authority: Pubkey,
@@ -752,7 +793,9 @@ fn validate_platform_roles(
         EscrowError::InvalidAuthority
     );
     require!(
-        match_controller != result_authority,
+        match_controller != result_authority
+            && match_controller != treasury
+            && result_authority != treasury,
         EscrowError::AuthoritySeparationRequired
     );
     Ok(())
@@ -931,6 +974,12 @@ pub enum EscrowError {
     IncorrectMint,
     #[msg("The match is not accepting entries.")]
     MatchNotFunding,
+    #[msg("The funding deadline is invalid.")]
+    FundingDeadlineInvalid,
+    #[msg("The funding deadline has expired.")]
+    FundingDeadlineExpired,
+    #[msg("The funding deadline has not been reached.")]
+    FundingDeadlineNotReached,
     #[msg("The match is not live.")]
     MatchNotLive,
     #[msg("The match has reached its player limit.")]
@@ -1109,6 +1158,13 @@ mod tests {
     }
 
     #[test]
+    fn bounds_the_funding_deadline() {
+        assert!(validate_funding_deadline(1_000, 1_001).is_ok());
+        assert!(validate_funding_deadline(1_000, 1_000).is_err());
+        assert!(validate_funding_deadline(1_000, 1_000 + MAX_FUNDING_DURATION_SECONDS + 1).is_err());
+    }
+
+    #[test]
     fn enforces_authoritative_rebuy_timing() {
         assert!(validate_rebuy_window(130, 100, 600, 30, 60).is_ok());
         assert!(validate_rebuy_window(131, 100, 600, 30, 60).is_err());
@@ -1132,6 +1188,8 @@ mod tests {
         let treasury = Pubkey::new_from_array([3; 32]);
         assert!(validate_platform_roles(controller, result_authority, treasury).is_ok());
         assert!(validate_platform_roles(controller, controller, treasury).is_err());
+        assert!(validate_platform_roles(controller, result_authority, controller).is_err());
+        assert!(validate_platform_roles(controller, result_authority, result_authority).is_err());
         assert!(validate_platform_roles(controller, result_authority, Pubkey::default()).is_err());
         assert!(validate_native_usdc_decimals(NATIVE_USDC_DECIMALS).is_ok());
         assert!(validate_native_usdc_decimals(9).is_err());

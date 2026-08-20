@@ -45,10 +45,10 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   local tooling.
 - Confirmed Node 22.12.0 and npm 11.8.0 for the JavaScript workspaces.
 - The escrow source passes its host-side Rust tests with the locally installed
-  Rust/Cargo toolchain. This Windows environment still lacks Anchor, Solana
-  CLI, WSL, a validator, a keypair, wallet, devnet deployment, and chain
-  transaction; do not claim an on-chain build from this machine without
-  installing and verifying those tools first.
+  Rust/Cargo toolchain. This Windows environment still lacks a registered WSL
+  Ubuntu distribution, Solana CLI, a validator, a keypair, wallet, devnet
+  deployment, and chain transaction; do not claim an on-chain build from this
+  machine without installing and verifying those tools first.
 - Queried current package versions: Wallet Standard 1.1.1, Solana Wallet
   Standard features 1.4.0, Prisma 7.9.1, noble ed25519 3.1.0.
 - Extended packages/shared with native-USDC constants, explicit SKILL vs
@@ -80,8 +80,8 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   controller-gated start/cancel, one-revive Rebuy enforcement, an immutable
   ten-minute round with a 30-second death window and final-minute cutoff,
   exact refunds, and on-chain 5% fee plus immutable configuration-validated
-  payout logic. Host-side Rust tests pass (9/9); target artifacts are kept
-  in the OS temporary directory and ignored by Git.
+  payout logic. Host-side Rust tests are kept current below; target artifacts
+  are kept in the OS temporary directory and ignored by Git.
 - Added tests for signed, short-lived, match/round-bound paid admission
   tickets. These tickets are not yet accepted by a Colyseus room because Paid
   Mode remains disabled until the escrow and deployment gates are complete.
@@ -112,8 +112,13 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
 - Matched the shared paid-match state machine to that same invariant: only
   pre-game `FUNDING`, `READY`, and `STARTING` states can reach `REFUNDING`;
   `LIVE` and `FINALIZING` can only settle a result.
+- Added an immutable maximum-15-minute pre-game funding deadline to paid terms
+  and the escrow. It is included in the rules hash; the controller cannot
+  start a paid round after it, while anyone can transition a never-started
+  escrow to individual refunds after expiry. The controller, result authority,
+  and treasury must now be distinct roles.
 - Ran `cargo test --manifest-path programs/blob-escrow/Cargo.toml --locked`:
-  10 escrow host-side tests passed. Build output was kept in and removed from
+  11 escrow host-side tests passed. Build output was kept in and removed from
   the Windows temporary directory.
 
 ## Next safe steps
