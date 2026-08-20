@@ -453,13 +453,15 @@ export interface PayoutSettlementGateway {
 const PAID_MATCH_TRANSITIONS: Readonly<Record<PaidMatchState, readonly PaidMatchState[]>> = {
   [PaidMatchState.DRAFT]: [PaidMatchState.OPEN, PaidMatchState.CANCELLED],
   [PaidMatchState.OPEN]: [PaidMatchState.FUNDING, PaidMatchState.CANCELLED],
-  [PaidMatchState.FUNDING]: [PaidMatchState.READY, PaidMatchState.REFUNDING, PaidMatchState.CANCELLED],
-  [PaidMatchState.READY]: [PaidMatchState.STARTING, PaidMatchState.REFUNDING, PaidMatchState.CANCELLED],
-  [PaidMatchState.STARTING]: [PaidMatchState.LIVE, PaidMatchState.REFUNDING, PaidMatchState.CANCELLED],
-  [PaidMatchState.LIVE]: [PaidMatchState.FINALIZING, PaidMatchState.REFUNDING],
-  [PaidMatchState.FINALIZING]: [PaidMatchState.SETTLED, PaidMatchState.REFUNDING],
+  // A refund is a pre-game funding failure path. It cannot replace an
+  // already-live round's result; the escrow program enforces the same rule.
+  [PaidMatchState.FUNDING]: [PaidMatchState.READY, PaidMatchState.REFUNDING],
+  [PaidMatchState.READY]: [PaidMatchState.STARTING, PaidMatchState.REFUNDING],
+  [PaidMatchState.STARTING]: [PaidMatchState.LIVE, PaidMatchState.REFUNDING],
+  [PaidMatchState.LIVE]: [PaidMatchState.FINALIZING],
+  [PaidMatchState.FINALIZING]: [PaidMatchState.SETTLED],
   [PaidMatchState.SETTLED]: [],
-  [PaidMatchState.CANCELLED]: [PaidMatchState.REFUNDING],
+  [PaidMatchState.CANCELLED]: [],
   [PaidMatchState.REFUNDING]: [PaidMatchState.REFUNDED],
   [PaidMatchState.REFUNDED]: []
 };

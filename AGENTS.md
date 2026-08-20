@@ -82,6 +82,10 @@ See `docs/architecture.md` before introducing a cross-boundary dependency.
   start/cancel or attest revive/result actions. Never add private keys,
   program keypairs, wallet seed phrases, or real mint/program/treasury values
   to source control.
+- Refunds are a pre-game funding-failure path only. Once a paid match is
+  `LIVE`, its outcome may move only through finalization and settlement; never
+  add a controller, API, or off-chain state transition that turns a live round
+  into blanket refunds.
 - Add tests with simulation, transport, payment, or settlement behavior. Deterministic simulation tests and real two-client room smoke tests are preferred.
 - Update documentation when a boundary, authority rule, or operational command changes.
 - The browser obtains its server endpoint only from `VITE_GAME_SERVER_URL` (with a local Vite fallback). Never hardcode a production game-server hostname in browser code.

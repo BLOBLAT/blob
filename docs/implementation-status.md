@@ -109,6 +109,9 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   in-memory messages. It has no durable history or direct messages.
 - Restricted the escrow cancellation path to `Funding` only, so the match
   controller cannot replace an already-live paid round with blanket refunds.
+- Matched the shared paid-match state machine to that same invariant: only
+  pre-game `FUNDING`, `READY`, and `STARTING` states can reach `REFUNDING`;
+  `LIVE` and `FINALIZING` can only settle a result.
 - Ran `cargo test --manifest-path programs/blob-escrow/Cargo.toml --locked`:
   10 escrow host-side tests passed. Build output was kept in and removed from
   the Windows temporary directory.

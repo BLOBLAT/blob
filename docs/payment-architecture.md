@@ -6,11 +6,13 @@
 
 ```text
 DRAFT → OPEN → FUNDING → READY → STARTING → LIVE → FINALIZING → SETTLED
-                         ↘                     ↘
+                 ↘          ↘           ↘
                        REFUNDING → REFUNDED
 ```
 
-Invalid transitions throw. The package also defines, but does not implement:
+Invalid transitions throw. A refund is allowed only before a paid round becomes
+`LIVE`; it cannot replace a live or finalizing round's result. The package also
+defines, but does not implement:
 
 - `EntryPaymentVerifier` for independently verified entry deposits;
 - `PayoutSettlementGateway` for winner payouts;

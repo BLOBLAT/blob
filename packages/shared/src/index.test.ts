@@ -160,8 +160,12 @@ describe("paid revive policy", () => {
 describe("paid-match state machine", () => {
   it("allows only explicit financial lifecycle transitions", () => {
     expect(canTransitionPaidMatch(PaidMatchState.FUNDING, PaidMatchState.READY)).toBe(true);
+    expect(canTransitionPaidMatch(PaidMatchState.READY, PaidMatchState.REFUNDING)).toBe(true);
     expect(transitionPaidMatch(PaidMatchState.FINALIZING, PaidMatchState.SETTLED)).toBe(PaidMatchState.SETTLED);
     expect(canTransitionPaidMatch(PaidMatchState.OPEN, PaidMatchState.LIVE)).toBe(false);
+    expect(canTransitionPaidMatch(PaidMatchState.LIVE, PaidMatchState.REFUNDING)).toBe(false);
+    expect(canTransitionPaidMatch(PaidMatchState.FINALIZING, PaidMatchState.REFUNDING)).toBe(false);
+    expect(canTransitionPaidMatch(PaidMatchState.CANCELLED, PaidMatchState.REFUNDING)).toBe(false);
     expect(() => transitionPaidMatch(PaidMatchState.OPEN, PaidMatchState.SETTLED)).toThrow("Invalid paid-match transition");
   });
 });
