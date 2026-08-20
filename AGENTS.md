@@ -86,7 +86,10 @@ See `docs/architecture.md` before introducing a cross-boundary dependency.
 - Update documentation when a boundary, authority rule, or operational command changes.
 - The browser obtains its server endpoint only from `VITE_GAME_SERVER_URL` (with a local Vite fallback). Never hardcode a production game-server hostname in browser code.
 - The game server must honor `PORT`; configure `BLOB_WEB_ORIGIN` with the exact comma-separated browser origins permitted to use it. Vercel is web-only and must never host the persistent Colyseus process.
-- `railway.toml` is the repository-owned Railway configuration for the one persistent game-server service. Keep it rooted at the repository, build from the workspace root, and keep its start command targeting `@blob/game-server`.
+- `railway.toml` is the repository-owned Railway configuration for the shared
+  monorepo. Keep it rooted at the repository and route by
+  `RAILWAY_SERVICE_NAME`: `blob` targets `@blob/game-server`; `platform-api`
+  targets `@blob/platform-api` and runs its migration before startup.
 - The temporary browser-only private-build gate is centralized in `apps/web/src/accessGate.ts`. Change `ACCESS_GATE_ENABLED` there to `false` to remove it cleanly; never copy its access credential into comments or documentation.
 - Treat `docs/deployment.md` as the canonical Vercel, Railway, Cloudflare, custom-domain, and environment-variable runbook. Do not commit dashboard values, `.env` files, host secrets, or deployment-specific preview origins as source defaults.
 

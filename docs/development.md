@@ -131,9 +131,9 @@ Terminate TLS at the host or a reverse proxy so the public service is HTTPS and 
 
 Do this only after provisioning managed PostgreSQL. This service is separate
 from both Vercel and the authoritative Colyseus server. In Railway, create a
-new persistent service with Root Directory `services/platform-api`; its local
-[`railway.toml`](../services/platform-api/railway.toml) runs workspace-aware
-commands from the repository root. Set:
+new persistent service with an empty Root Directory. The repository-root
+[`railway.toml`](../railway.toml) detects `RAILWAY_SERVICE_NAME=platform-api`
+and runs the workspace build, migration, and start commands. Set:
 
 ```sh
 DATABASE_URL=postgresql://<user>:<password>@<host>:5432/<database>?schema=public
