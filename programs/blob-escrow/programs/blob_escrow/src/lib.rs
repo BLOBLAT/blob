@@ -541,61 +541,61 @@ pub struct SettleMatch<'info> {
     #[account(address = match_escrow.result_authority @ EscrowError::Unauthorized)]
     pub result_authority: Signer<'info>,
     #[account(mut, seeds = [b"match", match_escrow.match_id_hash.as_ref()], bump = match_escrow.bump)]
-    pub match_escrow: Account<'info, MatchEscrow>,
+    pub match_escrow: Box<Account<'info, MatchEscrow>>,
     #[account(address = match_escrow.mint @ EscrowError::IncorrectMint)]
-    pub mint: InterfaceAccount<'info, Mint>,
+    pub mint: Box<InterfaceAccount<'info, Mint>>,
     #[account(
         mut,
         associated_token::mint = mint,
         associated_token::authority = match_escrow,
         associated_token::token_program = token_program
     )]
-    pub escrow_token_account: InterfaceAccount<'info, TokenAccount>,
+    pub escrow_token_account: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(
         mut,
         constraint = treasury_token_account.owner == match_escrow.treasury @ EscrowError::InvalidTreasuryTokenAccount,
         constraint = treasury_token_account.mint == match_escrow.mint @ EscrowError::IncorrectMint
     )]
-    pub treasury_token_account: InterfaceAccount<'info, TokenAccount>,
+    pub treasury_token_account: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(
         seeds = [b"entry", match_escrow.key().as_ref(), winner_one.player.as_ref()],
         bump = winner_one.bump,
         constraint = winner_one.match_escrow == match_escrow.key() @ EscrowError::InvalidWinner,
         constraint = !winner_one.refunded @ EscrowError::InvalidWinner
     )]
-    pub winner_one: Account<'info, MatchEntry>,
+    pub winner_one: Box<Account<'info, MatchEntry>>,
     #[account(
         mut,
         constraint = winner_one_token_account.owner == winner_one.player @ EscrowError::InvalidWinnerTokenAccount,
         constraint = winner_one_token_account.mint == match_escrow.mint @ EscrowError::IncorrectMint
     )]
-    pub winner_one_token_account: InterfaceAccount<'info, TokenAccount>,
+    pub winner_one_token_account: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(
         seeds = [b"entry", match_escrow.key().as_ref(), winner_two.player.as_ref()],
         bump = winner_two.bump,
         constraint = winner_two.match_escrow == match_escrow.key() @ EscrowError::InvalidWinner,
         constraint = !winner_two.refunded @ EscrowError::InvalidWinner
     )]
-    pub winner_two: Account<'info, MatchEntry>,
+    pub winner_two: Box<Account<'info, MatchEntry>>,
     #[account(
         mut,
         constraint = winner_two_token_account.owner == winner_two.player @ EscrowError::InvalidWinnerTokenAccount,
         constraint = winner_two_token_account.mint == match_escrow.mint @ EscrowError::IncorrectMint
     )]
-    pub winner_two_token_account: InterfaceAccount<'info, TokenAccount>,
+    pub winner_two_token_account: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(
         seeds = [b"entry", match_escrow.key().as_ref(), winner_three.player.as_ref()],
         bump = winner_three.bump,
         constraint = winner_three.match_escrow == match_escrow.key() @ EscrowError::InvalidWinner,
         constraint = !winner_three.refunded @ EscrowError::InvalidWinner
     )]
-    pub winner_three: Account<'info, MatchEntry>,
+    pub winner_three: Box<Account<'info, MatchEntry>>,
     #[account(
         mut,
         constraint = winner_three_token_account.owner == winner_three.player @ EscrowError::InvalidWinnerTokenAccount,
         constraint = winner_three_token_account.mint == match_escrow.mint @ EscrowError::IncorrectMint
     )]
-    pub winner_three_token_account: InterfaceAccount<'info, TokenAccount>,
+    pub winner_three_token_account: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(address = LEGACY_TOKEN_PROGRAM_ID)]
     pub token_program: Interface<'info, TokenInterface>,
 }

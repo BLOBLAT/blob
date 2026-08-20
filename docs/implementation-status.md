@@ -45,10 +45,11 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   local tooling.
 - Confirmed Node 22.12.0 and npm 11.8.0 for the JavaScript workspaces.
 - The escrow source passes its host-side Rust tests with the locally installed
-  Rust/Cargo toolchain. This Windows environment still lacks a registered WSL
-  Ubuntu distribution, Solana CLI, a validator, a keypair, wallet, devnet
-  deployment, and chain transaction; do not claim an on-chain build from this
-  machine without installing and verifying those tools first.
+  Rust/Cargo toolchain. This workspace now has Ubuntu 22.04 under WSL,
+  source-built Anchor 0.32.1, and Solana/Agave 2.3.0. Its committed localnet
+  smoke test builds the SBF artifact and deploys it to a temporary local
+  validator using throwaway keys, then removes all test state. No controlled
+  deployer key, wallet, devnet deployment, or public-chain transaction exists.
 - Queried current package versions: Wallet Standard 1.1.1, Solana Wallet
   Standard features 1.4.0, Prisma 7.9.1, noble ed25519 3.1.0.
 - Extended packages/shared with native-USDC constants, explicit SKILL vs
@@ -120,6 +121,17 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
 - Ran `cargo test --manifest-path programs/blob-escrow/Cargo.toml --locked`:
   11 escrow host-side tests passed. Build output was kept in and removed from
   the Windows temporary directory.
+- Added and passed `programs/blob-escrow/scripts/localnet-smoke.sh`: the
+  program builds against Solana's SBF runtime and is deployed and queried on
+  an ephemeral local validator. The checked-in `Cargo.lock` intentionally pins
+  compatible indirect crates because the Solana 2.3 platform toolchain embeds
+  Rust/Cargo 1.84; newer registry releases requiring Rust edition 2024 or
+  Rust 1.85 cannot be used by that compiler.
+- Reduced `SettleMatch` account deserialization pressure with boxed Anchor
+  account wrappers. The prior local SBF build reported a 5952-byte stack frame
+  exceeding Solana's 4096-byte maximum; the successful rebuild has no such
+  warning. The public account interface and all authorization constraints are
+  unchanged.
 
 ## Next safe steps
 
@@ -130,11 +142,9 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
    Production and redeploy. Test a Phantom Wallet Standard sign-in, profile
    rename, profile ticket, and anonymous Free Mode fallback from a real
    browser.
-3. Install the official Solana CLI under WSL or a clean Linux build runner for
-   SBF/local-validator and Anchor integration tests. Create the controlled
-   deployment key outside the repository, then replace the placeholder program
-   ID and test on devnet. Actual mint, program, multisig, and RPC values
-   remain external.
+3. Create a controlled deployment key outside the repository, then replace the
+   placeholder program ID and test on devnet. Actual mint, program, multisig,
+   and RPC values remain external.
 
 ## External actions that will eventually be required
 

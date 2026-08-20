@@ -246,7 +246,17 @@ $env:CARGO_TARGET_DIR = Join-Path $env:TEMP "blob-escrow-cargo-target"
 
 The committed program source pins Anchor 0.32.1. Official Solana/Anchor
 guidance requires WSL for the full Solana CLI, SBF/BPF build, local validator,
-and `anchor test` flow on Windows. Do not generate a deployer keypair or run a
-devnet deployment from this repository. A controlled external deployment
+and `anchor test` flow on Windows. The repository also provides
+`programs/blob-escrow/scripts/localnet-smoke.sh`, which uses only a temporary
+workspace, throwaway local keypairs, and `solana-test-validator` to build and
+deploy the escrow locally. Do not generate a persistent deployer keypair or
+run a devnet deployment from this repository. A controlled external deployment
 procedure must first replace the intentionally non-deployable program ID,
 fund the deployment signer on devnet, and run integration tests.
+
+The localnet smoke test passed using Ubuntu 22.04 WSL with Anchor 0.32.1 and
+Solana/Agave 2.3.0. The escrow `Cargo.lock` intentionally pins a small set of
+indirect dependencies compatible with the bundled Solana 2.3 SBF compiler
+(Rust/Cargo 1.84). Keep that lockfile committed; upgrading it without a fresh
+SBF/localnet test can reintroduce unsupported Rust 2024 or Rust 1.85
+dependencies.
