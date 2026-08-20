@@ -11,19 +11,29 @@ import {
   LeaderboardEntryState,
 } from "./schema.js";
 import type { LiveMetrics } from "./liveMetrics.js";
+import { ArenaChat } from "./arenaChat.js";
+import { ProfileTicketVerifier, type ResolvedPlayerIdentity } from "./profileIdentity.js";
 
 export interface BlobArenaRoomOptions {
   arenaConfig?: Partial<ArenaConfig>;
   liveMetrics?: LiveMetrics;
+  profileTicketPublicKey?: string;
+}
+
+interface AuthenticatedPlayerJoinOptions extends ValidatedPlayerJoinOptions {
+  identity: ResolvedPlayerIdentity;
 }
 
 export class BlobArenaRoom extends Room<{ state: BlobArenaState }> {
   override maxClients = DEFAULT_ARENA_CONFIG.maxPlayers;
   private simulation!: ArenaSimulation;
   private liveMetrics: LiveMetrics | undefined;
+  private profileTicketVerifier!: ProfileTicketVerifier;
+  private readonly arenaChat = new ArenaChat();
 
   override onCreate(options: BlobArenaRoomOptions = {}): void {
     this.liveMetrics = options.liveMetrics;
+    this.profileTicketVerifier = ProfileTicketVerifier.fromBase58(options.profileTicketPublicKey ?? process.env.BLOB_PROFILE_TICKET_PUBLIC_KEY);
     this.setState(new BlobArenaState());
     this.simulation = new ArenaSimulation(options.arenaConfig);
     this.maxClients = this.simulation.config.maxPlayers;
@@ -39,27 +49,62 @@ export class BlobArenaRoom extends Room<{ state: BlobArenaState }> {
       }
       this.simulation.setInput(client.sessionId, parsed.data, Date.now());
     });
+    this.onMessage(ClientMessage.CHAT_SEND, (client, payload: unknown) => {
+      this.receiveChatMessage(client, payload);
+    });
   }
 
-  override onAuth(_client: Client, options: unknown): ValidatedPlayerJoinOptions {
+  override async onAuth(client: Client, options: unknown): Promise<AuthenticatedPlayerJoinOptions> {
     const parsed = playerJoinOptionsSchema.safeParse(options);
     if (!parsed.success) {
       throw new Error("Invalid player join options.");
     }
-    return parsed.data;
+    return { ...parsed.data, identity: await this.profileTicketVerifier.resolve(client.sessionId, parsed.data) };
   }
 
-  override onJoin(client: Client, _options: unknown, auth: ValidatedPlayerJoinOptions): void {
-    this.simulation.addPlayer(client.sessionId, auth.name, Date.now());
+  override onJoin(client: Client, _options: unknown, auth: AuthenticatedPlayerJoinOptions): void {
+    this.simulation.addPlayer(client.sessionId, auth.identity.name, Date.now());
     this.liveMetrics?.recordArenaJoin(client.sessionId);
+    for (const message of this.arenaChat.getHistory()) {
+      client.send(ServerEvent.CHAT_MESSAGE, message);
+    }
+    this.log("player_joined", {
+      playerId: client.sessionId,
+      profileUserId: auth.identity.profileUserId ?? null,
+      name: auth.identity.name
+    });
     this.syncState();
   }
 
   override onLeave(client: Client): void {
     this.simulation.removePlayer(client.sessionId);
+    this.arenaChat.removeSender(client.sessionId);
     this.liveMetrics?.recordArenaLeave(client.sessionId);
     this.log("player_disconnected", { playerId: client.sessionId });
     this.syncState();
+  }
+
+  private receiveChatMessage(client: Client, payload: unknown): void {
+    const player = this.simulation.snapshot().players.find((candidate) => candidate.id === client.sessionId);
+    if (!player) {
+      client.send(ServerEvent.CHAT_REJECTED, { code: "CHAT_INVALID" });
+      return;
+    }
+    const result = this.arenaChat.send({
+      playerId: client.sessionId,
+      name: player.name,
+      payload,
+      now: Date.now()
+    });
+    if ("rejected" in result) {
+      client.send(ServerEvent.CHAT_REJECTED, result.rejected);
+      if (result.rejected.code !== "CHAT_INVALID") {
+        this.log("chat_rejected", { playerId: client.sessionId, code: result.rejected.code });
+      }
+      return;
+    }
+    this.broadcast(ServerEvent.CHAT_MESSAGE, result.message);
+    this.log("chat_message", { playerId: client.sessionId, messageId: result.message.id });
   }
 
   private syncState(): void {

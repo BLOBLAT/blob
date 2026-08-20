@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { loadPlatformApiConfig } from "./config.js";
 
 const DATABASE_URL = "postgresql://blob:blob@127.0.0.1:5432/blob?schema=public";
+const GAME_TICKET_PRIVATE_KEY = Buffer.alloc(32, 7).toString("base64");
 
 describe("platform API production configuration", () => {
   it("requires HTTPS for every browser origin in production", () => {
@@ -9,7 +10,8 @@ describe("platform API production configuration", () => {
       NODE_ENV: "production",
       DATABASE_URL,
       PLATFORM_PUBLIC_ORIGIN: "https://blob.lat",
-      PLATFORM_WEB_ORIGIN: "https://blob.lat,http://localhost:5173"
+      PLATFORM_WEB_ORIGIN: "https://blob.lat,http://localhost:5173",
+      PLATFORM_GAME_TICKET_PRIVATE_KEY_BASE64: GAME_TICKET_PRIVATE_KEY
     })).toThrow("PLATFORM_WEB_ORIGIN must contain only HTTPS origins");
   });
 
@@ -28,6 +30,7 @@ describe("platform API production configuration", () => {
       DATABASE_URL,
       PLATFORM_PUBLIC_ORIGIN: "https://blob.lat",
       PLATFORM_WEB_ORIGIN: "https://blob.lat,https://www.blob.lat",
+      PLATFORM_GAME_TICKET_PRIVATE_KEY_BASE64: GAME_TICKET_PRIVATE_KEY,
       PORT: "3001"
     });
     expect(config.port).toBe(3001);
@@ -41,7 +44,17 @@ describe("platform API production configuration", () => {
       DATABASE_URL,
       PLATFORM_PUBLIC_ORIGIN: "https://blob.lat",
       PLATFORM_WEB_ORIGIN: "https://blob.lat",
+      PLATFORM_GAME_TICKET_PRIVATE_KEY_BASE64: GAME_TICKET_PRIVATE_KEY,
       PLATFORM_SESSION_COOKIE_NAME: "blob_session"
     })).toThrow("PLATFORM_SESSION_COOKIE_NAME must use the __Host- prefix");
+  });
+
+  it("requires a real signing key in production", () => {
+    expect(() => loadPlatformApiConfig({
+      NODE_ENV: "production",
+      DATABASE_URL,
+      PLATFORM_PUBLIC_ORIGIN: "https://blob.lat",
+      PLATFORM_WEB_ORIGIN: "https://blob.lat"
+    })).toThrow("PLATFORM_GAME_TICKET_PRIVATE_KEY_BASE64 is required in production");
   });
 });

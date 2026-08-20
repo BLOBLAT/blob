@@ -6,6 +6,7 @@ import { AuthError, AuthService } from "./auth.js";
 import type { PlatformAuthRepository } from "./auth-types.js";
 import type { PlatformApiConfig } from "./config.js";
 import { FixedWindowRateLimiter } from "./rate-limit.js";
+import { issueGameTicket } from "./game-ticket.js";
 
 const challengeRequestSchema = z.object({
   walletAddress: z.string().min(32).max(64)
@@ -111,6 +112,20 @@ export function createPlatformApp(options: PlatformAppOptions): express.Express 
   app.get("/v1/me", asyncRoute(async (request, response) => {
     const user = await requireUser(auth, options.config, request);
     response.status(200).json({ user: toPublicUser(user) });
+  }));
+
+  app.get("/v1/me/game-ticket", asyncRoute(async (request, response) => {
+    const user = await requireUser(auth, options.config, request);
+    if (!options.config.gameTicketPrivateKey) {
+      response.status(503).json({ error: "GAME_IDENTITY_UNAVAILABLE", message: "Arena profile identity is unavailable." });
+      return;
+    }
+    const issued = await issueGameTicket({
+      user,
+      privateKey: options.config.gameTicketPrivateKey,
+      ttlMs: options.config.gameTicketTtlMs
+    });
+    response.status(200).json({ ticket: issued.ticket, expiresAt: issued.expiresAt.toISOString() });
   }));
 
   app.patch("/v1/me/profile", asyncRoute(async (request, response) => {

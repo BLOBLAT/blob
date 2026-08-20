@@ -21,12 +21,20 @@ authoritative game server: active browser presence and BLOBs currently in the
 arena. They are in-memory live values, not historical analytics or a claimed
 all-time visitor count.
 
-Free Mode remains wallet-free. A separate `services/platform-api` now provides
-an opt-in Solana wallet sign-in/profile foundation: the wallet signs an
-off-chain one-time message, the service verifies Ed25519 ownership, and a
-secure session can store a display name. It is not deployed or configured on
-the public site yet. The browser never signs in automatically and no login
-message approves a transaction or transfers funds.
+Free Mode remains wallet-free. A separate `services/platform-api` provides an
+opt-in Solana wallet sign-in/profile foundation: the wallet signs an off-chain
+one-time message, the service verifies Ed25519 ownership, and a secure session
+can store a display name. A short-lived API-signed identity ticket lets the
+authoritative game server accept that profile name without receiving the wallet
+address or trusting a browser-supplied name. The browser never signs in
+automatically and no login message approves a transaction or transfers funds.
+
+Free Mode also has transient **Arena Chat** below the game. It is carried by
+the same live Colyseus room as the active arena and shows only messages from
+real connected players. The server accepts plain text only, rejects links,
+applies anti-spam and duplicate-message limits, and keeps only the last 80
+messages in that room's memory. It is not a durable social feed or a source of
+competitive authority.
 
 The same isolated service contains an unexposed paid-match domain: bigint
 native-USDC pool accounting, 5% fee calculation, standard Skill vs disclosed

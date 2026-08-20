@@ -11,6 +11,11 @@ interface ChallengeResponse {
   expiresAt: string;
 }
 
+export interface GameIdentityTicket {
+  ticket: string;
+  expiresAt: string;
+}
+
 export class PlatformApiError extends Error {
   constructor(
     readonly code: string,
@@ -63,6 +68,10 @@ export class PlatformApi {
       body: { displayName }
     });
     return response.user;
+  }
+
+  async getGameIdentityTicket(): Promise<GameIdentityTicket> {
+    return this.request<GameIdentityTicket>("/v1/me/game-ticket", { method: "GET" });
   }
 
   async logout(): Promise<void> {

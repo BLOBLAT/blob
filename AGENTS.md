@@ -55,6 +55,17 @@ See `docs/architecture.md` before introducing a cross-boundary dependency.
   message challenge; never use a transaction or a browser-only signature as
   authentication. Sessions are opaque, HTTP-only cookies; only hashed tokens
   are persisted.
+- Profile display names reach an arena only through a short-lived Ed25519
+  ticket issued by `services/platform-api`. The API holds its private signing
+  key and the game server holds only `BLOB_PROFILE_TICKET_PUBLIC_KEY`; never
+  trust a browser-supplied profile name or send a wallet address through
+  Colyseus.
+- Arena chat is a transient Colyseus-room feature, not a Vercel endpoint or a
+  fake realtime feed. Validate it on the game server, retain at most the
+  bounded in-memory room history, use `textContent` to render it, rate-limit
+  senders, and reject all links server-side. Do not add direct messages,
+  durable chat history, or wallet addresses to chat without a reviewed
+  moderation and retention design.
 - Native-USDC transaction verification and settlement orchestration belong in
   `services/platform-api`, never in game-core, the Colyseus room, or the
   browser. The current service verifies transfer claims but does not sign,

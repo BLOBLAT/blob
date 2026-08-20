@@ -10,7 +10,7 @@ The room uses the deterministic `packages/game-core` simulation for the fixed ti
 
 The authoritative simulation has one explicit Free Mode lifecycle: WAITING, MATCHMAKING, COUNTDOWN, ACTIVE, FINISHED, RESULTS, then WAITING again. The game core generates unique matchId and roundId values server-side at countdown, calculates a bounded world from round population, tracks personal gameplay statistics, and finalizes an immutable ranking at the end of the active round.
 
-The room schema exposes only synchronized server state: phase, remaining time, world dimensions, players, food, active leaderboard, and finalized result. It also emits transient server events for joins, food collection, eliminations, deaths, round start, round finish, and match finalization. The Phaser client uses those state fields for rendering; it never treats a local timer, camera coordinate, or animation as authority.
+The room schema exposes only synchronized server state: phase, remaining time, world dimensions, players, food, active leaderboard, and finalized result. It also emits transient server events for joins, food collection, eliminations, deaths, round start, round finish, match finalization, and bounded arena chat. The Phaser client uses those state fields for rendering; it never treats a local timer, camera coordinate, or animation as authority.
 
 FREE and PAID are mode values for one shared simulation. Free Mode enables
 server-configured respawn. `services/platform-api` now owns a separate
@@ -24,6 +24,23 @@ result hash on-chain. It remains unexposed to paid play: there is no live paid
 room, deployed program, configured program ID, or token transfer. The service
 can consume an immutable result without giving payment code control of
 gameplay.
+
+Wallet profiles remain outside the real-time server: Wallet Standard signs a
+one-time challenge to `services/platform-api`, which creates an opaque cookie
+session in PostgreSQL. When a player enters an arena, the browser asks that API
+for a five-minute Ed25519-signed identity ticket. The game server verifies it
+with `BLOB_PROFILE_TICKET_PUBLIC_KEY`, accepts only its internal user ID and
+display name, and never receives a wallet address, session cookie, private
+key, or payment state. A missing, invalid, or expired ticket simply produces a
+server-assigned anonymous BLOB name, so Free Mode remains available.
+
+Arena Chat uses the already-authoritative Colyseus room. It is intentionally
+transient: each room keeps at most 80 messages in process memory and replays
+that small buffer to a newly joined client. It accepts plain text from only a
+connected player, strips control/zero-width characters, rejects URL patterns
+at the server boundary, rate-limits and suppresses duplicate messages, and
+uses server-owned player names. It has no database persistence, DMs, wallet
+addresses, raw HTML, bots, or fabricated messages.
 
 ## Target boundaries
 

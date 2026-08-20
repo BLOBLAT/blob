@@ -1,6 +1,6 @@
 # Production deployment
 
-This guide configures the existing BLOB monorepo for a public Free Mode deployment. It does not deploy a Colyseus server to Vercel and does not introduce payments, wallets, accounts, persistence, or other product systems.
+This guide configures the existing BLOB monorepo for a public Free Mode deployment. It does not deploy a Colyseus server to Vercel and does not enable paid matches, USDC transfers, wallet custody, or blockchain settlement. Wallet-backed profiles are a separate API and database deployment.
 
 ## Production architecture
 
@@ -14,6 +14,14 @@ https://blob.lat
 ```
 
 GitHub (`BLOBLAT/blob`, `main`) is the source of truth. Vercel deploys only `apps/web`. Railway runs only the persistent `apps/game-server` process, from the repository root so its workspace dependencies resolve. Cloudflare never routes `blob.lat` to the game server.
+
+When wallet profiles are enabled, add this independent path. It must not share a process with Colyseus:
+
+```text
+https://blob.lat -> Vercel / apps/web
+https://api.blob.lat -> Railway / services/platform-api -> Railway PostgreSQL
+https://blob.lat -> WSS -> Railway / apps/game-server
+```
 
 The repository root contains [`railway.toml`](../railway.toml). Railway/Railpack discovers this file automatically, installs workspace dependencies, builds `@blob/game-server`, starts that workspace, polls `/health`, and restarts only after a process failure. Its explicit start command prevents Railpack from trying—and failing—to infer a root-level start command in this npm-workspaces monorepo. The custom build command deliberately does not run a second `npm ci`: Railpack already installs dependencies before it runs that command.
 
@@ -88,7 +96,88 @@ Add the same variable for Preview only when preview builds are intentionally all
 
 Redeploy Vercel after changing a `VITE_` variable. Vite embeds these variables at build time. Then open the Vercel URL, pass the temporary access gate, select **Play Free**, and confirm the game panel progresses from server health check to **Connected**.
 
-## 3. Connect `blob.lat` through Cloudflare to Vercel
+### Enable wallet profiles only after `api.blob.lat` is healthy
+
+Do not point this variable at a temporary `*.up.railway.app` hostname. A
+wallet session is an HTTP-only same-site cookie, so modern browsers can block
+it across unrelated sites. Once the API custom domain below returns HTTP 200,
+set this additional Production Vercel variable and redeploy:
+
+```sh
+VITE_PLATFORM_API_URL=https://api.blob.lat
+```
+
+If this variable is absent, the profile dialog clearly says that profiles are
+not configured and Free Mode remains playable. It must never fall back to a
+production localhost address.
+
+## 3. Deploy the wallet/profile Platform API
+
+Create exactly two additional Railway resources in the existing BLOB project:
+
+1. one managed **PostgreSQL** service;
+2. one persistent service named `platform-api`, sourced from `BLOBLAT/blob` on
+   `main`.
+
+Keep the service Root Directory empty: this is a shared npm-workspace
+monorepo. Configure its build and deploy fields from the repository root:
+
+```sh
+npm run build --workspace=@blob/platform-api
+npm run prisma:migrate:deploy --workspace=@blob/platform-api
+npm run start --workspace=@blob/platform-api
+```
+
+Use `/health`, one replica, and restart policy `ON_FAILURE`. Railway supplies
+`PORT`; the API binds to `0.0.0.0`. Configure these private service variables:
+
+```sh
+DATABASE_URL=${{Postgres.DATABASE_URL}}
+NODE_ENV=production
+RAILPACK_NODE_VERSION=22.12.0
+PLATFORM_PUBLIC_ORIGIN=https://blob.lat
+PLATFORM_WEB_ORIGIN=https://blob.lat
+PLATFORM_GAME_TICKET_PRIVATE_KEY_BASE64=<random-32-byte-Ed25519-secret-in-base64>
+```
+
+`PLATFORM_GAME_TICKET_PRIVATE_KEY_BASE64` must exist only on `platform-api`.
+Derive its Ed25519 public key and set only that value on the existing game
+server:
+
+```sh
+BLOB_PROFILE_TICKET_PUBLIC_KEY=<matching-base58-Ed25519-public-key>
+```
+
+Never set either key as a `VITE_` variable, commit it, reuse the API private
+key for Solana, or give the game server the private key. These keys authenticate
+only ephemeral display-name tickets; they do not authorize payments.
+
+Generate the Railway public API domain, deploy, and test:
+
+```sh
+curl -i https://<railway-platform-api-domain>/health
+```
+
+Expect HTTP 200 and `{"service":"blob-platform-api","status":"ok"}`. A
+database failure deliberately yields HTTP 503 without a connection error.
+
+### Add `api.blob.lat`
+
+**MANUAL DNS ACTION MAY BE REQUIRED:** Add `api.blob.lat` as a custom Railway
+domain for the `platform-api` service. Railway will provide both a target and,
+when required, an ownership-verification TXT record. In Cloudflare DNS, create
+only those exact Railway records, then wait until Railway marks the domain and
+certificate healthy. Do not point `api.blob.lat` at Vercel or proxy it to the
+game server. Verify:
+
+```sh
+curl -i https://api.blob.lat/health
+```
+
+Only after that exact test succeeds should Vercel receive
+`VITE_PLATFORM_API_URL=https://api.blob.lat`.
+
+## 4. Connect `blob.lat` through Cloudflare to Vercel
 
 **MANUAL DASHBOARD ACTION REQUIRED:** DNS, Cloudflare SSL, and Vercel domain configuration cannot be changed by Git commits.
 
@@ -106,7 +195,7 @@ Redeploy Vercel after changing a `VITE_` variable. Vite embeds these variables a
 
 Cloudflare error 525 means Cloudflare could not complete TLS to its configured origin. It is an external DNS/origin/TLS problem, not a Vite or Colyseus code failure. Verify the Cloudflare record is targeting Vercel, the Vercel domain is verified, and no stale origin remains before changing application code.
 
-## 4. Later: add `game.blob.lat`
+## 5. Later: add `game.blob.lat`
 
 `game.blob.lat` is a separate host from `blob.lat`.
 

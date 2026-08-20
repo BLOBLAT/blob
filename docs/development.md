@@ -39,6 +39,13 @@ and its schema applied, start it separately with `npm run dev:platform`. Set
 wallet profiles locally. Free Mode does not require the API and remains fully
 playable if it is unavailable.
 
+To make verified display names reach the local arena, generate a disposable
+32-byte Ed25519 private key, set it as
+`PLATFORM_GAME_TICKET_PRIVATE_KEY_BASE64` for the platform API, derive its
+base58 public key, and set that public key as
+`BLOB_PROFILE_TICKET_PUBLIC_KEY` for the game server. Never commit either
+value; do not use a Solana wallet key for this purpose.
+
 The web client falls back to `http://127.0.0.1:2567` only while Vite is running in development mode. To point a local browser at another server, create `apps/web/.env.local`:
 
 ```sh
@@ -200,6 +207,11 @@ npm audit --omit=dev
 ```
 
 `npm test` includes deterministic simulation checks plus a real two-client Colyseus smoke test. The server test binds an ephemeral local port, joins two SDK clients to the same room, validates state/input propagation, rejects an invalid movement command, and verifies disconnect cleanup.
+
+It also verifies Arena Chat with two real room clients: a normalized plain-text
+message is delivered under the server-owned player name and a URL is rejected
+by the server. The chat buffer is process-local and limited to 80 messages;
+there is no local or production chat database.
 
 ## Live landing-page metrics
 

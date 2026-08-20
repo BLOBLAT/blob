@@ -11,6 +11,8 @@ export interface PlatformApiConfig {
   authChallengeRateLimit: number;
   authVerifyRateLimit: number;
   authRateLimitWindowMs: number;
+  gameTicketPrivateKey: Uint8Array | undefined;
+  gameTicketTtlMs: number;
 }
 
 const LOCAL_WEB_ORIGINS = ["http://127.0.0.1:5173", "http://localhost:5173"];
@@ -50,6 +52,10 @@ export function loadPlatformApiConfig(environment: NodeJS.ProcessEnv = process.e
   if (nodeEnv === "production" && !/^__Host-[A-Za-z0-9_-]+$/.test(sessionCookieName)) {
     throw new Error("PLATFORM_SESSION_COOKIE_NAME must use the __Host- prefix in production.");
   }
+  const gameTicketPrivateKey = decodeEd25519PrivateKey(environment.PLATFORM_GAME_TICKET_PRIVATE_KEY_BASE64);
+  if (nodeEnv === "production" && !gameTicketPrivateKey) {
+    throw new Error("PLATFORM_GAME_TICKET_PRIVATE_KEY_BASE64 is required in production.");
+  }
 
   return {
     databaseUrl,
@@ -63,8 +69,24 @@ export function loadPlatformApiConfig(environment: NodeJS.ProcessEnv = process.e
     renameCooldownMs: parsePositiveInteger(environment.PLATFORM_RENAME_COOLDOWN_MS, 24 * 60 * 60 * 1_000, "PLATFORM_RENAME_COOLDOWN_MS"),
     authChallengeRateLimit: parsePositiveInteger(environment.PLATFORM_AUTH_CHALLENGE_RATE_LIMIT, 6, "PLATFORM_AUTH_CHALLENGE_RATE_LIMIT"),
     authVerifyRateLimit: parsePositiveInteger(environment.PLATFORM_AUTH_VERIFY_RATE_LIMIT, 12, "PLATFORM_AUTH_VERIFY_RATE_LIMIT"),
-    authRateLimitWindowMs: parsePositiveInteger(environment.PLATFORM_AUTH_RATE_LIMIT_WINDOW_MS, 10 * 60 * 1_000, "PLATFORM_AUTH_RATE_LIMIT_WINDOW_MS")
+    authRateLimitWindowMs: parsePositiveInteger(environment.PLATFORM_AUTH_RATE_LIMIT_WINDOW_MS, 10 * 60 * 1_000, "PLATFORM_AUTH_RATE_LIMIT_WINDOW_MS"),
+    gameTicketPrivateKey,
+    gameTicketTtlMs: parsePositiveInteger(environment.PLATFORM_GAME_TICKET_TTL_MS, 5 * 60 * 1_000, "PLATFORM_GAME_TICKET_TTL_MS")
   };
+}
+
+function decodeEd25519PrivateKey(value: string | undefined): Uint8Array | undefined {
+  if (!value) {
+    return undefined;
+  }
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(value)) {
+    throw new Error("PLATFORM_GAME_TICKET_PRIVATE_KEY_BASE64 must be base64.");
+  }
+  const decoded = Buffer.from(value, "base64");
+  if (decoded.length !== 32) {
+    throw new Error("PLATFORM_GAME_TICKET_PRIVATE_KEY_BASE64 must decode to a 32-byte Ed25519 private key.");
+  }
+  return new Uint8Array(decoded);
 }
 
 function normalizeOrigin(value: string): string {

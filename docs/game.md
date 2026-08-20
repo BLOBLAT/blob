@@ -46,6 +46,22 @@ The authoritative world is a bounded rectangle. Its dimensions and food target a
 
 The HUD presents mass, rank, alive count, personal food eaten, and the authoritative round timer. It deliberately does not present a misleading global food-object counter.
 
+## Identity and Arena Chat
+
+Wallet connection is optional and never changes Free Mode rules. An anonymous
+player gets a server-assigned temporary `BLOB-…` name. A wallet-backed profile
+can use its chosen display name only after the platform API has verified an
+off-chain message signature and issued an expiring game-identity ticket. The
+browser cannot make the game server accept an arbitrary profile name, and the
+arena never receives the wallet address.
+
+**Arena Chat** appears beneath the active game. It carries messages only
+between currently connected players in that same room. Messages are plain text
+only, bounded to 240 characters, normalized by the server, rate-limited, and
+not durable. Links—including normal URLs, `www` forms, and common obfuscated
+domain forms—are rejected by the server. Chat cannot determine a match result
+or change gameplay state.
+
 ## Ranking and result
 
 The winner is the participant with the greatest final mass. Ties are resolved server-side in this order:

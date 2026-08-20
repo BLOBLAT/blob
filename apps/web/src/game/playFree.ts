@@ -7,12 +7,24 @@ import { GameServerConfigurationError, resolveGameServerUrl } from "./serverUrl.
 
 export interface FreeGameController {
   leave(): Promise<void>;
+  sendChat(text: string): void;
 }
 
 export interface StartFreeGameOptions {
   canvasHost: HTMLElement;
   onUiState(state: ArenaUiState): void;
   onConnectionStatus(message: string): void;
+  getProfileTicket?(): Promise<string | undefined>;
+  onChatMessage?(message: ArenaChatMessage): void;
+  onChatRejected?(code: string): void;
+}
+
+export interface ArenaChatMessage {
+  id: string;
+  playerId: string;
+  name: string;
+  text: string;
+  sentAt: number;
 }
 
 export async function startFreeGame(options: StartFreeGameOptions): Promise<FreeGameController> {
@@ -30,9 +42,18 @@ export async function startFreeGame(options: StartFreeGameOptions): Promise<Free
     const gameServerUrl = resolveGameServerUrl();
     options.onConnectionStatus("Checking the game server…");
     await verifyGameServerHealth(gameServerUrl);
+    let profileTicket: string | undefined;
+    try {
+      profileTicket = await options.getProfileTicket?.();
+    } catch (error) {
+      console.warn("[BLOB] profile identity ticket was unavailable; joining anonymously", error);
+    }
     const client = new Client(gameServerUrl);
     const room = await withConnectionTimeout(
-      client.joinOrCreate(ARENA_ROOM_NAME, { name: getGamePlayerName() })
+      client.joinOrCreate(ARENA_ROOM_NAME, {
+        name: getGamePlayerName(),
+        ...(profileTicket ? { profileTicket } : {})
+      })
     );
 
     if (disposed) {
@@ -41,9 +62,10 @@ export async function startFreeGame(options: StartFreeGameOptions): Promise<Free
     }
 
     activeRoom = room;
-    for (const event of Object.values(ServerEvent)) {
-      room.onMessage(event, () => undefined);
-    }
+    room.onMessage(ServerEvent.CHAT_MESSAGE, (message: ArenaChatMessage) => options.onChatMessage?.(message));
+    room.onMessage(ServerEvent.CHAT_REJECTED, (event: { code?: unknown }) => {
+      options.onChatRejected?.(typeof event.code === "string" ? event.code : "CHAT_INVALID");
+    });
     game?.destroy(true);
     game = createPhaserGame(options.canvasHost, room, options.onUiState);
     reconnectAttempts = 0;
@@ -90,6 +112,12 @@ export async function startFreeGame(options: StartFreeGameOptions): Promise<Free
       }
       game?.destroy(true);
       await activeRoom?.leave();
+    },
+    sendChat(text: string): void {
+      if (!activeRoom || disposed) {
+        return;
+      }
+      activeRoom.send("chat_send", { text });
     }
   };
 }

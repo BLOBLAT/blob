@@ -2,6 +2,7 @@ import { Client } from "@colyseus/sdk";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ARENA_ROOM_NAME } from "./BlobArenaRoom.js";
 import { createGameServer, type GameServerHandle } from "./server.js";
+import { ClientMessage, ServerEvent, type ArenaChatMessage } from "@blob/protocol";
 
 let server: GameServerHandle;
 let endpoint: string;
@@ -92,6 +93,29 @@ describe("BLOB arena room", () => {
     await firstRoom.leave();
     await waitUntil(async () => (await getLiveMetrics()).arenaPlayers === 0);
   });
+
+  it("relays only validated plain chat between real connected arena clients", async () => {
+    const firstClient = new Client(endpoint);
+    const secondClient = new Client(endpoint);
+    const firstRoom = await firstClient.joinOrCreate(ARENA_ROOM_NAME, { name: "Client Name" });
+    const secondRoom = await secondClient.joinOrCreate(ARENA_ROOM_NAME, { name: "Other Name" });
+    await waitUntil(() => getPlayers(firstRoom.state).length === 2);
+
+    const received = nextRoomMessage<ArenaChatMessage>(secondRoom, ServerEvent.CHAT_MESSAGE);
+    firstRoom.send(ClientMessage.CHAT_SEND, { text: "  hello\u200B from the pit  " });
+    await expect(received).resolves.toMatchObject({
+      playerId: firstRoom.sessionId,
+      name: firstRoom.state.players.get(firstRoom.sessionId)?.name,
+      text: "hello from the pit"
+    });
+
+    const rejected = nextRoomMessage<{ code: string }>(firstRoom, ServerEvent.CHAT_REJECTED);
+    firstRoom.send(ClientMessage.CHAT_SEND, { text: "visit https://not-allowed.example" });
+    await expect(rejected).resolves.toEqual({ code: "CHAT_LINKS_NOT_ALLOWED" });
+
+    await firstRoom.leave();
+    await secondRoom.leave();
+  });
 });
 
 function getPlayers(state: { players?: { forEach: (callback: (player: unknown) => void) => void } }): unknown[] {
@@ -117,4 +141,8 @@ async function waitUntil(condition: () => boolean | Promise<boolean>, timeoutMs 
     }
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
+}
+
+function nextRoomMessage<T>(room: { onMessage(type: string, callback: (message: T) => void): void }, type: string): Promise<T> {
+  return new Promise<T>((resolve) => room.onMessage(type, resolve));
 }

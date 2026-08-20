@@ -19,7 +19,8 @@ export const ArenaPhase = {
 export type ArenaPhase = (typeof ArenaPhase)[keyof typeof ArenaPhase];
 
 export const ClientMessage = {
-  INPUT: "input"
+  INPUT: "input",
+  CHAT_SEND: "chat_send"
 } as const;
 
 export const ServerEvent = {
@@ -29,7 +30,9 @@ export const ServerEvent = {
   PLAYER_ELIMINATED: "PLAYER_ELIMINATED",
   ROUND_STARTED: "ROUND_STARTED",
   ROUND_FINISHED: "ROUND_FINISHED",
-  MATCH_FINALIZED: "MATCH_FINALIZED"
+  MATCH_FINALIZED: "MATCH_FINALIZED",
+  CHAT_MESSAGE: "CHAT_MESSAGE",
+  CHAT_REJECTED: "CHAT_REJECTED"
 } as const;
 
 export type ServerEvent = (typeof ServerEvent)[keyof typeof ServerEvent];
@@ -41,6 +44,23 @@ export interface MovementIntent {
 
 export interface PlayerJoinOptions {
   name: string;
+  /**
+   * An optional, short-lived profile assertion signed by the platform API.
+   * The game server verifies it before accepting a profile display name.
+   */
+  profileTicket?: string;
+}
+
+export interface ArenaChatMessage {
+  id: string;
+  playerId: string;
+  name: string;
+  text: string;
+  sentAt: number;
+}
+
+export interface ArenaChatRejectedEvent {
+  code: "CHAT_INVALID" | "CHAT_LINKS_NOT_ALLOWED" | "CHAT_RATE_LIMITED" | "CHAT_DUPLICATE";
 }
 
 export interface ArenaPlayerView {

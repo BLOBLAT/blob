@@ -16,7 +16,9 @@ const config: PlatformApiConfig = {
   renameCooldownMs: 60_000,
   authChallengeRateLimit: 2,
   authVerifyRateLimit: 2,
-  authRateLimitWindowMs: 60_000
+  authRateLimitWindowMs: 60_000,
+  gameTicketPrivateKey: undefined,
+  gameTicketTtlMs: 60_000
 };
 
 const servers: ReturnType<typeof createServer>[] = [];

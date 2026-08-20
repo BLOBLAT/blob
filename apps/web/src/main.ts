@@ -12,7 +12,7 @@ if (!appRoot) {
 }
 const app: HTMLDivElement = appRoot;
 
-let freeGameController: { leave(): Promise<void> } | undefined;
+let freeGameController: { leave(): Promise<void>; sendChat(text: string): void } | undefined;
 let openingFreeArena = false;
 const platformApi = resolvePlatformApi();
 let profile: BlobProfile | null = null;
@@ -263,7 +263,9 @@ function renderWalletSelection(container: HTMLElement): void {
   if (!platformApi) {
     const unavailable = document.createElement("p");
     unavailable.className = "profile-state";
-    unavailable.textContent = "Wallet profiles are not configured for this deployment yet.";
+    unavailable.textContent = availableWallets.length > 0
+      ? availableWallets.map((wallet) => wallet.name).join(", ") + " detected. Wallet profiles are not configured for this deployment yet."
+      : "Wallet profiles are not configured for this deployment yet.";
     container.append(unavailable);
     return;
   }
@@ -445,6 +447,25 @@ async function openFreeArena(): Promise<void> {
       <ol class="live-leaderboard" id="live-leaderboard"></ol>
     </aside>
   `;
+  document.querySelector<HTMLElement>("#arena-chat")?.remove();
+  arenaShell.insertAdjacentHTML("afterend", `
+    <section class="arena-chat" id="arena-chat" aria-labelledby="arena-chat-title">
+      <div class="arena-chat-heading">
+        <div>
+          <p class="eyebrow">Arena chat</p>
+          <h3 id="arena-chat-title">PIT TALK</h3>
+        </div>
+        <p class="arena-chat-status" id="arena-chat-status" role="status">Chat connects with the arena.</p>
+      </div>
+      <ol class="arena-chat-messages" id="arena-chat-messages" aria-live="polite" aria-relevant="additions"></ol>
+      <form class="arena-chat-form" id="arena-chat-form">
+        <label class="sr-only" for="arena-chat-input">Arena message</label>
+        <input id="arena-chat-input" name="message" maxlength="240" autocomplete="off" placeholder="Say something to the pit…" required />
+        <button type="submit" class="play-button" id="arena-chat-send">Send</button>
+      </form>
+      <p class="arena-chat-rule">Plain text only. Links are not allowed.</p>
+    </section>
+  `);
 
   const status = requiredElement("#game-status");
   const connection = requiredElement("#game-connection");
@@ -460,7 +481,26 @@ async function openFreeArena(): Promise<void> {
   const podium = requiredElement<HTMLOListElement>("#round-podium");
   const personalResult = requiredElement("#personal-result");
   const nextRound = requiredElement("#next-round");
+  const chatMessages = requiredElement<HTMLOListElement>("#arena-chat-messages");
+  const chatStatus = requiredElement("#arena-chat-status");
+  const chatForm = requiredElement<HTMLFormElement>("#arena-chat-form");
+  const chatInput = requiredElement<HTMLInputElement>("#arena-chat-input");
+  const seenChatMessageIds = new Set<string>();
   requiredElement<HTMLButtonElement>("#leave-game").addEventListener("click", () => void leaveFreeArena());
+  chatForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const text = chatInput.value.trim();
+    if (!text) {
+      return;
+    }
+    if (!freeGameController) {
+      chatStatus.textContent = "Wait for the arena connection before sending.";
+      return;
+    }
+    freeGameController.sendChat(text);
+    chatInput.value = "";
+    chatStatus.textContent = "Sending…";
+  });
 
   try {
     const { startFreeGame } = await import("./game/playFree.js");
@@ -468,6 +508,21 @@ async function openFreeArena(): Promise<void> {
       canvasHost: requiredElement("#game-canvas"),
       onConnectionStatus(message) {
         connection.textContent = message;
+        chatStatus.textContent = message.startsWith("Connected") ? "Connected to this arena." : "Chat connects with the arena.";
+      },
+      getProfileTicket: profile && platformApi
+        ? async () => (await platformApi.getGameIdentityTicket()).ticket
+        : undefined,
+      onChatMessage(message) {
+        if (seenChatMessageIds.has(message.id)) {
+          return;
+        }
+        seenChatMessageIds.add(message.id);
+        renderArenaChatMessage(chatMessages, message);
+        chatStatus.textContent = "Connected to this arena.";
+      },
+      onChatRejected(code) {
+        chatStatus.textContent = describeChatRejection(code);
       },
       onUiState(state) {
         status.textContent = phaseLabel(state.phase, state.matchmakingPlayerCount);
@@ -522,6 +577,33 @@ function renderLeaderboard(container: HTMLElement, players: Array<{ playerId: st
     empty.textContent = "Waiting for active players…";
     container.append(empty);
   }
+}
+
+function renderArenaChatMessage(container: HTMLOListElement, message: { name: string; text: string }): void {
+  const item = document.createElement("li");
+  const name = document.createElement("strong");
+  name.textContent = message.name;
+  const text = document.createElement("span");
+  text.textContent = message.text;
+  item.append(name, text);
+  container.append(item);
+  while (container.childElementCount > 80) {
+    container.firstElementChild?.remove();
+  }
+  container.scrollTop = container.scrollHeight;
+}
+
+function describeChatRejection(code: string): string {
+  if (code === "CHAT_LINKS_NOT_ALLOWED") {
+    return "Links are not allowed in arena chat.";
+  }
+  if (code === "CHAT_RATE_LIMITED") {
+    return "Slow down — chat has a short anti-spam limit.";
+  }
+  if (code === "CHAT_DUPLICATE") {
+    return "That message was already sent.";
+  }
+  return "That message could not be sent.";
 }
 
 function renderRoundResults(
