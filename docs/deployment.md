@@ -23,7 +23,7 @@ https://api.blob.lat -> Railway / services/platform-api -> Railway PostgreSQL
 https://blob.lat -> WSS -> Railway / apps/game-server
 ```
 
-The repository root contains [`railway.toml`](../railway.toml). Railway/Railpack discovers this file automatically, installs workspace dependencies, builds `@blob/game-server`, starts that workspace, polls `/health`, and restarts only after a process failure. Its explicit start command prevents Railpack from trying—and failing—to infer a root-level start command in this npm-workspaces monorepo. The custom build command deliberately does not run a second `npm ci`: Railpack already installs dependencies before it runs that command.
+The repository root contains [`railway.toml`](../railway.toml). Railway/Railpack discovers it automatically, installs workspace dependencies, then routes build, pre-deploy migration, and start commands by `RAILWAY_SERVICE_NAME`: `blob` runs `@blob/game-server`, while `platform-api` runs `@blob/platform-api`. Both services expose `/health` and use the same explicit `ON_FAILURE` restart policy. The custom build command deliberately does not run a second `npm ci`: Railpack already installs dependencies before it runs that command.
 
 ## 1. Deploy the persistent game server to Railway
 
@@ -113,7 +113,7 @@ production localhost address.
 
 ## 3. Deploy the wallet/profile Platform API
 
-Create exactly two additional Railway resources in the existing BLOB project:
+For a new environment, create exactly two additional Railway resources in the existing BLOB project:
 
 1. one managed **PostgreSQL** service;
 2. one persistent service named `platform-api`, sourced from `BLOBLAT/blob` on

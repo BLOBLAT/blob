@@ -1,4 +1,5 @@
 import "./styles.css";
+import { validateChatMessage } from "@blob/validation";
 import { ACCESS_GATE_ENABLED, hasPrivateBuildAccess, unlockPrivateBuild } from "./accessGate.js";
 import { setProfileGameName } from "./identity.js";
 import { type BlobProfile, PlatformApiError, resolvePlatformApi } from "./platformApi.js";
@@ -489,15 +490,18 @@ async function openFreeArena(): Promise<void> {
   requiredElement<HTMLButtonElement>("#leave-game").addEventListener("click", () => void leaveFreeArena());
   chatForm.addEventListener("submit", (event) => {
     event.preventDefault();
-    const text = chatInput.value.trim();
-    if (!text) {
+    const parsed = validateChatMessage({ text: chatInput.value });
+    if (!parsed.success) {
+      chatStatus.textContent = parsed.code === "CHAT_LINKS_NOT_ALLOWED"
+        ? "Links are not allowed in arena chat."
+        : "Enter a plain-text message of up to 240 characters.";
       return;
     }
     if (!freeGameController) {
       chatStatus.textContent = "Wait for the arena connection before sending.";
       return;
     }
-    freeGameController.sendChat(text);
+    freeGameController.sendChat(parsed.data.text);
     chatInput.value = "";
     chatStatus.textContent = "Sending…";
   });

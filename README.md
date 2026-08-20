@@ -72,7 +72,7 @@ npm run check
 - `packages/validation` — runtime validation of untrusted input
 - `packages/game-core` — deterministic simulation and game configuration
 - `packages/shared` — paid-match state machine and integer prize domain
-- `services` — future API, payment, and chain deployables
+- `services/platform-api` — deployed wallet/profile and paid-match orchestration boundary; never a game-server dependency
 - `programs/blob-escrow` — isolated Anchor native-USDC escrow source; never a Free Mode dependency
 - `docs` — architecture and engineering decisions
 

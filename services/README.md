@@ -1,10 +1,11 @@
-# Future services
+# Services
 
-Deployable backend services will live here when their implementation begins:
+`platform-api` is the deployable, PostgreSQL-backed boundary for optional
+wallet profiles and future paid-match orchestration. It is deliberately
+separate from the authoritative Colyseus process and does not sign, send, or
+custody USDC.
 
-- `game-server` for the authoritative real-time simulation.
-- `matchmaking` for queueing and server allocation.
-- `api` for account-facing and administrative APIs, if a separate boundary becomes necessary.
-- `payments` for entry and settlement orchestration, isolated from game rules.
-
-Do not create service stubs solely to simulate functionality. Their contracts and authority boundaries are defined in `../docs/architecture.md`.
+Free Mode requires only `apps/game-server`. Do not create matchmaking,
+payment, administrative, or chain-service stubs merely to simulate a feature;
+their authority boundaries are documented in `../docs/architecture.md` and
+`../docs/paid-mode.md`.
