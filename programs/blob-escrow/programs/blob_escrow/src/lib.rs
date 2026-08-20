@@ -320,18 +320,14 @@ pub mod blob_escrow {
         Ok(())
     }
 
-    /// The controller may cancel only an unsettled match. Individual enrolled
-    /// players then withdraw their exact recorded contributions themselves.
+    /// The controller may cancel only before a round starts. Individual
+    /// enrolled players then withdraw their exact recorded contributions
+    /// themselves. Once a match is live, its pool can only be settled from the
+    /// result-authority-attested outcome; it cannot be replaced with a
+    /// controller-selected blanket refund.
     pub fn cancel_match(ctx: Context<ControlMatch>) -> Result<()> {
         let escrow = &mut ctx.accounts.match_escrow;
-        require!(
-            escrow.lifecycle != MatchLifecycle::Settled,
-            EscrowError::MatchAlreadySettled
-        );
-        require!(
-            escrow.lifecycle != MatchLifecycle::Refunding,
-            EscrowError::MatchAlreadyRefunding
-        );
+        validate_cancellable_lifecycle(escrow.lifecycle)?;
         escrow.lifecycle = MatchLifecycle::Refunding;
         Ok(())
     }
@@ -846,6 +842,17 @@ fn validate_rebuy_window(
     Ok(())
 }
 
+/// A refund is a pre-game funding failure path, never a replacement for the
+/// outcome of an active paid match. This is deliberately separate from the
+/// generic lifecycle checks so it remains easy to audit.
+fn validate_cancellable_lifecycle(lifecycle: MatchLifecycle) -> Result<()> {
+    require!(
+        lifecycle == MatchLifecycle::Funding,
+        EscrowError::MatchCancellationUnavailable
+    );
+    Ok(())
+}
+
 fn validate_distinct_winners(
     one: &Account<MatchEntry>,
     two: &Account<MatchEntry>,
@@ -962,6 +969,8 @@ pub enum EscrowError {
     MatchAlreadySettled,
     #[msg("The match is already refunding.")]
     MatchAlreadyRefunding,
+    #[msg("Only a funding match may be cancelled and refunded.")]
+    MatchCancellationUnavailable,
     #[msg("The match is not refunding.")]
     MatchNotRefunding,
     #[msg("This entry has already been refunded.")]
@@ -1105,6 +1114,15 @@ mod tests {
         assert!(validate_rebuy_window(131, 100, 600, 30, 60).is_err());
         assert!(validate_rebuy_window(540, 530, 600, 30, 60).is_err());
         assert!(validate_rebuy_window(99, 100, 600, 30, 60).is_err());
+    }
+
+    #[test]
+    fn allows_cancellation_only_before_the_paid_round_starts() {
+        assert!(validate_cancellable_lifecycle(MatchLifecycle::Funding).is_ok());
+        assert!(validate_cancellable_lifecycle(MatchLifecycle::Live).is_err());
+        assert!(validate_cancellable_lifecycle(MatchLifecycle::Settled).is_err());
+        assert!(validate_cancellable_lifecycle(MatchLifecycle::Refunding).is_err());
+        assert!(validate_cancellable_lifecycle(MatchLifecycle::Refunded).is_err());
     }
 
     #[test]

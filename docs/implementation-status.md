@@ -44,11 +44,11 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
 - Audited the workspace, game, paid-domain, deployment, tests, and available
   local tooling.
 - Confirmed Node 22.12.0 and npm 11.8.0 for the JavaScript workspaces.
-- The escrow source has passed its host-side Rust tests in a prior dedicated
-  build environment. The current Windows execution environment does not have
-  Rust, Anchor, Solana CLI, WSL, a validator, a keypair, wallet, devnet
-  deployment, or chain transaction; do not claim an on-chain build from this
-  machine without installing and verifying those tools first.
+- The escrow source passes its host-side Rust tests with the locally installed
+  Rust/Cargo toolchain. This Windows environment still lacks Anchor, Solana
+  CLI, WSL, a validator, a keypair, wallet, devnet deployment, and chain
+  transaction; do not claim an on-chain build from this machine without
+  installing and verifying those tools first.
 - Queried current package versions: Wallet Standard 1.1.1, Solana Wallet
   Standard features 1.4.0, Prisma 7.9.1, noble ed25519 3.1.0.
 - Extended packages/shared with native-USDC constants, explicit SKILL vs
@@ -107,6 +107,11 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   text from live room participants, blocks links both before sending and on
   the server, rate-limits and deduplicates messages, and retains at most 80
   in-memory messages. It has no durable history or direct messages.
+- Restricted the escrow cancellation path to `Funding` only, so the match
+  controller cannot replace an already-live paid round with blanket refunds.
+- Ran `cargo test --manifest-path programs/blob-escrow/Cargo.toml --locked`:
+  10 escrow host-side tests passed. Build output was kept in and removed from
+  the Windows temporary directory.
 
 ## Next safe steps
 

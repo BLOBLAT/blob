@@ -59,8 +59,10 @@ The implemented instructions are deliberately narrow:
   and the fixed 5% fee plus immutable match-specific payout rules (60/30/10
   is the current default).
 - `cancel_match` and `claim_refund` support controller-initiated, per-player
-  exact contribution refunds before settlement. No browser can redirect a
-  refund or payout to a different token-account owner.
+  exact contribution refunds only while the match is still funding. An active
+  match cannot be cancelled into a blanket refund: after start it must settle
+  through the result-authority path. No browser can redirect a refund or
+  payout to a different token-account owner.
 
 The result authority is an oracle boundary, not the game server. Production
 must use governance-controlled, auditable signing (for example a multisig or
