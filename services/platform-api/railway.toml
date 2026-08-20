@@ -1,10 +1,10 @@
 [build]
 builder = "RAILPACK"
-buildCommand = "npm run build --workspace=@blob/platform-api"
+buildCommand = "cd ../.. && npm run build --workspace=@blob/platform-api"
 
 [deploy]
-preDeployCommand = "npm run prisma:migrate:deploy --workspace=@blob/platform-api"
-startCommand = "npm run start --workspace=@blob/platform-api"
+preDeployCommand = "cd ../.. && npm run prisma:migrate:deploy --workspace=@blob/platform-api"
+startCommand = "cd ../.. && npm run start --workspace=@blob/platform-api"
 healthcheckPath = "/health"
 healthcheckTimeout = 100
 restartPolicyType = "ON_FAILURE"

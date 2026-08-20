@@ -119,8 +119,9 @@ Create exactly two additional Railway resources in the existing BLOB project:
 2. one persistent service named `platform-api`, sourced from `BLOBLAT/blob` on
    `main`.
 
-Keep the service Root Directory empty: this is a shared npm-workspace
-monorepo. Configure its build and deploy fields from the repository root:
+Set the Platform API service Root Directory to `services/platform-api` so it
+uses that service's own `railway.toml`, not the game-server configuration at
+the repository root. Its commands move to the workspace root before running:
 
 ```sh
 npm run build --workspace=@blob/platform-api
