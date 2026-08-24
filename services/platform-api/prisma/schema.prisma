@@ -170,6 +170,8 @@ model MatchEntry {
   amountBaseUnits     BigInt
   idempotencyKey      String       @unique
   admissionTokenHash  String?      @unique
+  transactionId       String?      @unique
+  transaction         ChainTransaction? @relation("EntryTransaction", fields: [transactionId], references: [id], onDelete: SetNull)
   fundedAt            DateTime?
   createdAt           DateTime     @default(now())
   updatedAt           DateTime     @updatedAt
@@ -255,6 +257,7 @@ model ChainTransaction {
   verificationError   String?
   idempotencyKey      String                @unique
   createdAt           DateTime              @default(now())
+  entry               MatchEntry?          @relation("EntryTransaction")
   reviveRequest       ReviveRequest?       @relation("ReviveTransaction")
   settlementAttempt   SettlementAttempt?   @relation("SettlementTransaction")
   payouts             Payout[]             @relation("PayoutTransaction")

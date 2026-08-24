@@ -17,7 +17,10 @@ server-configured respawn. `services/platform-api` now owns a separate
 PostgreSQL schema, Wallet Standard/Solana message authentication, opaque
 sessions, profile display names, paid-match term hashing, bigint pool and
 payout planning, an internal transactional immutable-result/payout-plan
-record, and independently verified finalized USDC transfer claims.
+record, and independently verified finalized USDC transfer claims. A verified
+entry-payment receipt is durably and uniquely bound to its exact reserved
+entry in the same serializable PostgreSQL transaction; the browser can never
+reuse a Solana signature to admit another player.
 `programs/blob-escrow` is an isolated Anchor 0.32.1 native-USDC escrow source
 with host-side Rust tests. It fixes platform configuration, entry/refund
 amounts, Rebuy timing, the 5% fee and immutable per-match payout split, and the finalized

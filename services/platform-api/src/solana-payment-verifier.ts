@@ -43,7 +43,10 @@ export class SolanaPaymentVerifier {
 
     const transaction = await this.getTransaction(input.signature);
     const slot = transaction?.slot;
-    if (!transaction || transaction.meta?.err !== null || typeof slot !== "number" || !Number.isSafeInteger(slot) || slot < 0) {
+    const blockTime = transaction?.blockTime;
+    const finalizedAtMs = typeof blockTime === "number" ? blockTime * 1_000 : NaN;
+    if (!transaction || transaction.meta?.err !== null || typeof slot !== "number" || !Number.isSafeInteger(slot) || slot < 0
+      || typeof blockTime !== "number" || !Number.isSafeInteger(blockTime) || blockTime < 0 || !Number.isSafeInteger(finalizedAtMs)) {
       throw new SolanaPaymentVerificationError("PAYMENT_NOT_FINALIZED", "USDC payment is not finalized successfully.");
     }
     if (!hasSigner(transaction.transaction?.message?.accountKeys, input.senderWalletAddress)) {
@@ -55,7 +58,7 @@ export class SolanaPaymentVerifier {
     if (matches.length !== 1) {
       throw new SolanaPaymentVerificationError("PAYMENT_TRANSFER_INVALID", "The finalized transaction does not contain the expected USDC transfer.");
     }
-    return { signature: input.signature, slot, finalizedAt: new Date() };
+    return { signature: input.signature, slot, finalizedAt: new Date(finalizedAtMs) };
   }
 
   private async getTransaction(signature: string): Promise<RpcTransaction | null> {
@@ -93,6 +96,7 @@ export class SolanaPaymentVerificationError extends Error {
 
 interface RpcTransaction {
   slot?: number;
+  blockTime?: number | null;
   meta?: { err?: unknown; innerInstructions?: Array<{ instructions?: unknown[] }> };
   transaction?: { message?: { accountKeys?: unknown[]; instructions?: unknown[] } };
 }

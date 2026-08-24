@@ -79,6 +79,15 @@ describe("Solana USDC verification", () => {
     const verifier = createVerifier({ ...createTransaction(), slot: -1 });
     await expect(verifier.verifyFinalizedUsdcTransfer(input())).rejects.toMatchObject({ code: "PAYMENT_NOT_FINALIZED" });
   });
+
+  it("uses the finalized chain block time and rejects a transaction without one", async () => {
+    const verifier = createVerifier(createTransaction());
+    await expect(verifier.verifyFinalizedUsdcTransfer(input()))
+      .resolves.toMatchObject({ finalizedAt: new Date("2026-06-24T16:33:20.000Z") });
+    const missingBlockTime = createVerifier({ ...createTransaction(), blockTime: null });
+    await expect(missingBlockTime.verifyFinalizedUsdcTransfer(input()))
+      .rejects.toMatchObject({ code: "PAYMENT_NOT_FINALIZED" });
+  });
 });
 
 function input() {
@@ -105,6 +114,7 @@ function createTransaction(
 ) {
   return {
     slot: 321,
+    blockTime: 1_782_318_800,
     meta: { err: null },
     transaction: {
       message: {

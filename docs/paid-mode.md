@@ -84,6 +84,16 @@ signature is therefore only a claim until this verification passes and its
 unique signature is durably recorded. Before it calls RPC, the verifier
 Base58-decodes public keys to exactly 32 bytes and transaction signatures to
 exactly 64 bytes; strings that merely resemble Solana references are rejected.
+It uses the finalized transaction's chain `blockTime`, never API wall-clock
+time, for funding-deadline decisions and rejects a transaction without a valid
+block time.
+
+The internal `PrismaPaidEntryPaymentRepository` atomically records that
+verified receipt with the exact reserved entry. It permits funding only while
+the match is in `FUNDING` and the finalized chain time precedes the immutable
+deadline; the unique Solana signature and unique entry-to-transaction relation
+make both duplicate and cross-entry reuse fail closed. It has no browser or
+HTTP route, and does not submit transfers.
 
 ## Authority flow
 
