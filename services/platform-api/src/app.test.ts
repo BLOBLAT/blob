@@ -18,7 +18,8 @@ const config: PlatformApiConfig = {
   authVerifyRateLimit: 2,
   authRateLimitWindowMs: 60_000,
   gameTicketPrivateKey: undefined,
-  gameTicketTtlMs: 60_000
+  gameTicketTtlMs: 60_000,
+  paidAdmissionTicketPrivateKey: undefined
 };
 
 const servers: ReturnType<typeof createServer>[] = [];

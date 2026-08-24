@@ -57,4 +57,17 @@ describe("platform API production configuration", () => {
       PLATFORM_WEB_ORIGIN: "https://blob.lat"
     })).toThrow("PLATFORM_GAME_TICKET_PRIVATE_KEY_BASE64 is required in production");
   });
+
+  it("accepts only a separate 32-byte Ed25519 key for future paid admission", () => {
+    expect(() => loadPlatformApiConfig({
+      DATABASE_URL,
+      PLATFORM_PAID_ADMISSION_TICKET_PRIVATE_KEY_BASE64: "not base64!"
+    })).toThrow("PLATFORM_PAID_ADMISSION_TICKET_PRIVATE_KEY_BASE64 must be base64");
+
+    const config = loadPlatformApiConfig({
+      DATABASE_URL,
+      PLATFORM_PAID_ADMISSION_TICKET_PRIVATE_KEY_BASE64: Buffer.alloc(32, 11).toString("base64")
+    });
+    expect(config.paidAdmissionTicketPrivateKey).toHaveLength(32);
+  });
 });

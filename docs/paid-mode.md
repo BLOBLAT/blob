@@ -106,6 +106,13 @@ as consumed. It carries internal entry/player identifiers but no wallet address.
 The ticket neither grants payment credit nor changes combat or ranking
 authority.
 
+The future paid-admission signer is configured separately as
+`PLATFORM_PAID_ADMISSION_TICKET_PRIVATE_KEY_BASE64`. It must be a different
+32-byte Ed25519 key from `PLATFORM_GAME_TICKET_PRIVATE_KEY_BASE64`, which is
+reserved for Free Mode display-name tickets. No HMAC shared secret is used or
+accepted for paid admission, and setting this future key alone does not expose
+Paid Mode.
+
 Before it creates a settlement request, the paid domain validates the complete
 server result: valid timestamp, every funded participant exactly once,
 contiguous ranks, and non-negative safe-integer competitive statistics. It
