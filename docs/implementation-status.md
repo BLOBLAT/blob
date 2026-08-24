@@ -23,8 +23,8 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
 
 ## Current repository and deployment baseline
 
-- `main` tracks `origin/main`; commit the repository-side profile, chat, and
-  deployment changes before operating production services.
+- `main` tracks `origin/main` at `0fa0eb1` (`fix: reject disallowed platform
+  API origins`).
 - Free Mode is live via Vercel (apps/web) and Railway (apps/game-server).
 - The game server is authoritative and must never contain wallet keys,
   payment signing, or client-trusted settlement logic.
@@ -38,17 +38,21 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   TXT ownership records have not yet been confirmed, so the browser must not
   receive `VITE_PLATFORM_API_URL` until `https://api.blob.lat/health` is
   healthy.
+- Vercel Production retains the game-client configuration; the Platform API,
+  PostgreSQL, and ticket-signing variables were removed from Vercel and remain
+  scoped to Railway. `VITE_PLATFORM_API_URL` is intentionally unset until the
+  same-site API domain is healthy.
 
 ## Work completed in this session
 
 - Audited the workspace, game, paid-domain, deployment, tests, and available
   local tooling.
 - Confirmed Node 22.12.0 and npm 11.8.0 for the JavaScript workspaces.
-- The escrow source passes its host-side Rust tests with the locally installed
-  Rust/Cargo toolchain. This workspace now has Ubuntu 22.04 under WSL,
-  source-built Anchor 0.32.1, and Solana/Agave 2.3.0. Its committed localnet
-  smoke test builds the SBF artifact and deploys it to a temporary local
-  validator using throwaway keys, then removes all test state. No controlled
+- The escrow source passed host-side Rust tests and the committed isolated
+  localnet smoke test before `b59e4c5`. The smoke script discovers the installed
+  Solana CLI and uses only temporary validator state and throwaway keys. The
+  current Windows WSL distribution registration must be restored before another
+  local SBF smoke run; do not remove its existing WSL virtual disk. No controlled
   deployer key, wallet, devnet deployment, or public-chain transaction exists.
 - Queried current package versions: Wallet Standard 1.1.1, Solana Wallet
   Standard features 1.4.0, Prisma 7.9.1, noble ed25519 3.1.0.
@@ -67,7 +71,7 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   can sign, send, or claim a payment automatically.
 - Added focused tests for wallet signature/replay protection, exact paid-pool
   calculations, Rebuy policy, finalization validation, and payment parsing.
-- Ran `npm run check` successfully: 58 tests passed, all workspace typechecks
+- Ran the equivalent split verification successfully: 60 tests passed, all workspace typechecks
   passed, and the web, game-server, and platform API production builds passed.
 - `npm audit --omit=dev` currently reports three high findings through
   Prisma 7.9.1's `@prisma/config` -> `deepmerge-ts`. Its only offered fix is
@@ -104,6 +108,9 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
 - Added API-signed, short-lived display-name tickets: the Platform API holds
   the private Ed25519 key and the game server holds only its public key. A
   browser cannot submit an authoritative arena name or wallet address.
+- Platform API now returns a deliberate `403 ORIGIN_NOT_ALLOWED` response for
+  browser Origins outside its explicit allowlist, rather than an ambiguous
+  internal error. The Railway production deployment for `0fa0eb1` succeeded.
 - Added transient room-scoped Arena Chat below the game. It accepts only plain
   text from live room participants, blocks links both before sending and on
   the server, rate-limits and deduplicates messages, and retains at most 80
