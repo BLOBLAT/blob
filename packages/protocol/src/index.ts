@@ -66,6 +66,11 @@ export interface ArenaChatRejectedEvent {
 export interface ArenaPlayerView {
   id: string;
   name: string;
+  /**
+   * Free Mode training participants are server-owned and always disclosed to
+   * the browser. Paid matches never admit bots.
+   */
+  isBot: boolean;
   x: number;
   y: number;
   mass: number;
@@ -97,6 +102,7 @@ export interface ArenaWorldView {
 export interface LeaderboardEntry {
   playerId: string;
   name: string;
+  isBot: boolean;
   rank: number;
   mass: number;
   kills: number;
@@ -105,6 +111,7 @@ export interface LeaderboardEntry {
 export interface FinalPlayerResultView {
   playerId: string;
   name: string;
+  isBot: boolean;
   rank: number;
   finalMass: number;
   foodCollected: number;
@@ -129,6 +136,10 @@ export interface ArenaSnapshot {
   roundId: string;
   serverTime: number;
   remainingMs: number;
+  /** Connected human participants, never synthetic arena bots. */
+  humanPlayerCount: number;
+  /** Clearly disclosed server-controlled Free Mode bots. */
+  botPlayerCount: number;
   matchmakingPlayerCount: number;
   world: ArenaWorldView;
   players: ArenaPlayerView[];

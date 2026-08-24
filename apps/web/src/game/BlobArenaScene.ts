@@ -4,6 +4,7 @@ import Phaser from "phaser";
 export interface NetworkPlayer {
   id: string;
   name: string;
+  isBot: boolean;
   x: number;
   y: number;
   mass: number;
@@ -21,6 +22,7 @@ export interface NetworkPlayer {
 export interface NetworkLeaderboardEntry {
   playerId: string;
   name: string;
+  isBot: boolean;
   rank: number;
   mass: number;
   kills: number;
@@ -29,6 +31,7 @@ export interface NetworkLeaderboardEntry {
 export interface NetworkFinalRanking {
   playerId: string;
   name: string;
+  isBot: boolean;
   rank: number;
   finalMass: number;
   foodCollected: number;
@@ -71,6 +74,8 @@ interface NetworkArenaState {
   roundId: string;
   serverTime: number;
   remainingMs: number;
+  humanPlayerCount: number;
+  botPlayerCount: number;
   matchmakingPlayerCount: number;
   worldWidth: number;
   worldHeight: number;
@@ -83,6 +88,8 @@ export interface ArenaUiState {
   matchId: string;
   roundId: string;
   remainingMs: number;
+  humanPlayerCount: number;
+  botPlayerCount: number;
   matchmakingPlayerCount: number;
   players: NetworkPlayer[];
   leaderboard: NetworkLeaderboardEntry[];
@@ -199,6 +206,8 @@ export class BlobArenaScene extends Phaser.Scene {
         matchId: state.matchId,
         roundId: state.roundId,
         remainingMs: state.remainingMs,
+        humanPlayerCount: state.humanPlayerCount,
+        botPlayerCount: state.botPlayerCount,
         matchmakingPlayerCount: state.matchmakingPlayerCount,
         players,
         leaderboard,
@@ -374,6 +383,11 @@ export class BlobArenaScene extends Phaser.Scene {
         this.graphics.lineStyle(4, 0xff668e, (this.deathPulseUntil - time) / 320);
         this.graphics.strokeCircle(player.x, player.y + wobble, radius + 18);
       }
+    } else if (player.isBot) {
+      this.graphics.lineStyle(2, 0x8e6bff, 0.95);
+      this.graphics.strokeCircle(player.x, player.y + wobble, radius + 3);
+      this.graphics.fillStyle(0xfff7f2, 0.85);
+      this.graphics.fillCircle(player.x, player.y - radius * 0.62 + wobble, Math.max(3, radius * 0.1));
     } else if (player.spawnProtectedUntil > serverTime) {
       this.graphics.lineStyle(2, 0xffd34f, 0.95);
       this.graphics.strokeCircle(player.x, player.y + wobble, radius + 3);

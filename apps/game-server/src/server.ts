@@ -1,11 +1,21 @@
 import { ARENA_ROOM_NAME } from "@blob/protocol";
 import { Server } from "@colyseus/core";
+import { Encoder } from "@colyseus/schema";
 import { WebSocketTransport } from "@colyseus/ws-transport";
 import cors from "cors";
 import express from "express";
 import { createServer, type Server as HttpServer } from "node:http";
 import { BlobArenaRoom, type BlobArenaRoomOptions } from "./BlobArenaRoom.js";
 import { isValidVisitorId, LiveMetrics } from "./liveMetrics.js";
+
+/**
+ * A full room snapshot includes server-owned food and up to 32 participants.
+ * Colyseus defaults to a small encoder buffer which is insufficient once Free
+ * Mode adds its disclosed Arena Bots. This is transport capacity only: it
+ * does not alter simulation state or client authority.
+ */
+export const ARENA_STATE_ENCODER_BUFFER_BYTES = 128 * 1024;
+Encoder.BUFFER_SIZE = Math.max(Encoder.BUFFER_SIZE, ARENA_STATE_ENCODER_BUFFER_BYTES);
 
 export interface GameServerHandle {
   listen(port: number, host?: string): Promise<number>;

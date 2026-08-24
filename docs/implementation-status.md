@@ -96,6 +96,13 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   renders actual active browser sessions plus connected arena BLOBs. No
   historical visitor analytics, account data, wallet data, IP address, or
   tracking service was added.
+- Added a Free Mode-only, server-authoritative Arena Bot roster. Each round
+  with a human player gets a deterministic varied set of three to five bots;
+  bot AI flees larger BLOBs, hunts safely smaller BLOBs, gathers food, and
+  roams through the same simulation/input path. Bots are synchronised as
+  `isBot`, visibly labelled in the leaderboard/results, excluded from live
+  visitor counts and chat, displaced before a real player is refused at
+  capacity, removed between rounds, and forbidden in Paid Mode.
 - Aligned the off-chain paid terms validator with the escrow program before
   entry acceptance: canonical disabled Skill-match Rebuy fields are all zero;
   the active ruleset fixes the 10-minute round, 5% fee, max 32 players, exactly

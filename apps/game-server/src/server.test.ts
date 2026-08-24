@@ -1,7 +1,8 @@
 import { Client } from "@colyseus/sdk";
+import { Encoder } from "@colyseus/schema";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ARENA_ROOM_NAME } from "./BlobArenaRoom.js";
-import { createGameServer, type GameServerHandle } from "./server.js";
+import { ARENA_STATE_ENCODER_BUFFER_BYTES, createGameServer, type GameServerHandle } from "./server.js";
 import { ClientMessage, ServerEvent, type ArenaChatMessage } from "@blob/protocol";
 
 let server: GameServerHandle;
@@ -16,6 +17,9 @@ beforeAll(async () => {
       resultsDurationMs: 30,
       spawnProtectionMs: 1,
       inputTimeoutMs: 120,
+      freeModeBotsEnabled: true,
+      freeModeBotMinCount: 3,
+      freeModeBotMaxCount: 3,
     },
   });
   const port = await server.listen(0);
@@ -27,6 +31,10 @@ afterAll(async () => {
 });
 
 describe("BLOB arena room", () => {
+  it("allocates enough encoder capacity for a full authoritative Free Mode snapshot", () => {
+    expect(Encoder.BUFFER_SIZE).toBeGreaterThanOrEqual(ARENA_STATE_ENCODER_BUFFER_BYTES);
+  });
+
   it("serves a health check with the configured local CORS origin", async () => {
     const response = await fetch(`${endpoint}/health`, {
       headers: { Origin: "http://127.0.0.1:5173" }
@@ -66,7 +74,8 @@ describe("BLOB arena room", () => {
     const firstRoom = await firstClient.joinOrCreate(ARENA_ROOM_NAME, { name: "Blob One" });
     const secondRoom = await secondClient.joinOrCreate(ARENA_ROOM_NAME, { name: "Blob Two" });
 
-    await waitUntil(() => getPlayers(firstRoom.state).length === 2 && getPlayers(secondRoom.state).length === 2);
+    await waitUntil(() => getPlayers(firstRoom.state).length === 5 && getPlayers(secondRoom.state).length === 5);
+    expect(getBotCount(firstRoom.state)).toBe(3);
     await waitUntil(async () => (await getLiveMetrics()).arenaPlayers === 2);
     await waitUntil(() => firstRoom.state.phase === "ACTIVE");
 
@@ -89,7 +98,7 @@ describe("BLOB arena room", () => {
     expect(firstRoom.state.players.get(firstRoom.sessionId)?.x).toBeCloseTo(stoppedAtX ?? originalX, 3);
 
     await secondRoom.leave();
-    await waitUntil(() => getPlayers(firstRoom.state).length === 1);
+    await waitUntil(() => getPlayers(firstRoom.state).length === 4);
     await firstRoom.leave();
     await waitUntil(async () => (await getLiveMetrics()).arenaPlayers === 0);
   });
@@ -99,7 +108,8 @@ describe("BLOB arena room", () => {
     const secondClient = new Client(endpoint);
     const firstRoom = await firstClient.joinOrCreate(ARENA_ROOM_NAME, { name: "Client Name" });
     const secondRoom = await secondClient.joinOrCreate(ARENA_ROOM_NAME, { name: "Other Name" });
-    await waitUntil(() => getPlayers(firstRoom.state).length === 2);
+    await waitUntil(() => getPlayers(firstRoom.state).length === 5);
+    expect(getBotCount(firstRoom.state)).toBe(3);
 
     const received = nextRoomMessage<ArenaChatMessage>(secondRoom, ServerEvent.CHAT_MESSAGE);
     firstRoom.send(ClientMessage.CHAT_SEND, { text: "  hello\u200B from the pit  " });
@@ -122,6 +132,13 @@ function getPlayers(state: { players?: { forEach: (callback: (player: unknown) =
   const players: unknown[] = [];
   state.players?.forEach((player) => players.push(player));
   return players;
+}
+
+function getBotCount(state: { players?: { forEach: (callback: (player: unknown) => void) => void } }): number {
+  return getPlayers(state).filter((player) => (
+    typeof player === "object" && player !== null &&
+    "isBot" in player && (player as { isBot?: unknown }).isBot === true
+  )).length;
 }
 
 function delay(milliseconds: number): Promise<void> {

@@ -4,7 +4,11 @@
 
 - Prioritize: security, correctness, gameplay, UX, performance, then scale.
 - BLOB is server-authoritative. Clients send input only; they never decide positions, collisions, scoring, match outcomes, balances, or leaderboard results.
-- Free Mode is a real local multiplayer mode. Never add fake multiplayer, bots presented as people, payments, leaderboards, statistics, or competitive outcomes.
+- Free Mode is a real local multiplayer mode. It may include a small server-owned
+  `ARENA BOT` roster only when every bot is explicitly marked in synchronized
+  state and UI. Never present bots as people, count them as real visitors, let
+  them chat, or admit them to Paid Mode. Never add fake payments,
+  leaderboards, statistics, or competitive outcomes.
 - Keep paid competition isolated from the game simulation. Payment and chain integrations may validate entry and settlement, but must not alter competitive rules or authoritative results.
 - Competitive gameplay must remain skill-based: no pay-to-win mechanics and no RNG that decides competitive outcomes.
 
@@ -16,7 +20,7 @@
 
 - Generate matchId and roundId only on the server. Finalized results are immutable server records and are the only possible future settlement input.
 
-- Free Mode may admit a late player to an active round only through the game-core configuration: use a server-selected safe spawn and spawn protection, while keeping that round's world dimensions fixed. Future Paid Mode can retain a next-round queue. Do not fabricate bots to satisfy matchmaking.
+- Free Mode may admit a late player to an active round only through the game-core configuration: use a server-selected safe spawn and spawn protection, while keeping that round's world dimensions fixed. Future Paid Mode can retain a next-round queue. Free Mode's explicitly disclosed server-controlled Arena Bots may make a one-player round playable; they never enter Paid Mode or represent real matchmaking demand.
 
 - Stopped, released, malformed, over-rate, and stale movement input must become zero intent. Never reintroduce client-side velocity authority.
 

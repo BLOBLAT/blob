@@ -8,7 +8,14 @@ Free Mode will be a complete playable experience. Paid competition is planned as
 
 ## Status
 
-Free Mode is a real multiplayer round foundation. Two or more browser clients can enter matchmaking, see an authoritative countdown, play a server-timed 10-minute ACTIVE round, collect food, grow, eat eligible opponents, respawn, and view a live in-match leaderboard. The server finalizes the top three and each player's real round statistics before returning the room to matchmaking.
+Free Mode is a real multiplayer round foundation. A single browser client can
+enter matchmaking and receive a server-selected roster of three to five
+**clearly labelled Arena Bots**, so a round remains playable while live
+players arrive. Bots run only inside the authoritative Free Mode simulation,
+use the same movement, food, collision, death, and respawn rules, never count
+as real visitors, never chat, and never enter Paid Mode. The server finalizes
+the top three and each participant's actual round statistics before returning
+the room to matchmaking.
 
 The browser sends normalized intent only. The server owns phase, timer, match and round identifiers, world dimensions, position, food, mass, eating, respawn, rank, and final result. Desktop uses mouse steering with keyboard fallback; mobile uses a release-to-stop touch joystick. A configurable stale-input timeout prevents indefinite drifting when input stops.
 

@@ -2,7 +2,7 @@
 
 ## Implemented baseline
 
-The repository is an npm-workspace monorepo. Local Free Mode is implemented as a Phaser browser client plus a Colyseus authoritative game server. It is real multiplayer: clients use Colyseus `joinOrCreate` to enter the same room, receive state synchronized from the server, and send validated direction intent only.
+The repository is an npm-workspace monorepo. Local Free Mode is implemented as a Phaser browser client plus a Colyseus authoritative game server. It is real multiplayer: clients use Colyseus `joinOrCreate` to enter the same room, receive state synchronized from the server, and send validated direction intent only. To keep an otherwise empty Free Mode playable, the game core may add three to five **explicitly disclosed** server-owned Arena Bots for that Free round. They are not Colyseus clients or real visitors, are marked `isBot` in every relevant protocol view, never chat, and are disabled for Paid Mode.
 
 The room uses the deterministic `packages/game-core` simulation for the fixed tick, bounded movement, food, growth, eating, death, respawn, ranking, and match lifecycle. The browser never computes or submits an authoritative position, score, kill, rank, or match result.
 
@@ -45,7 +45,7 @@ that small buffer to a newly joined client. It accepts plain text from only a
 connected player, strips control/zero-width characters, rejects URL patterns
 at the server boundary, rate-limits and suppresses duplicate messages, and
 uses server-owned player names. It has no database persistence, DMs, wallet
-addresses, raw HTML, bots, or fabricated messages.
+addresses, raw HTML, bot-generated messages, or fabricated messages.
 
 ## Target boundaries
 

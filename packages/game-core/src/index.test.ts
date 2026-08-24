@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { ArenaPhase } from "@blob/protocol";
+import { ArenaPhase, GameMode } from "@blob/protocol";
 import {
   ArenaSimulation,
+  calculateFreeModeBotCount,
   calculateFoodTarget,
   calculateWorldSize,
   createArenaConfig,
@@ -24,6 +25,7 @@ const testConfig = {
   spawnProtectionMs: 1,
   respawnDelayMs: 40,
   inputTimeoutMs: 80,
+  freeModeBotsEnabled: false,
 };
 
 function startActive(simulation: ArenaSimulation): number {
@@ -223,6 +225,94 @@ describe("authoritative round lifecycle", () => {
       phase: ArenaPhase.WAITING,
       matchmakingPlayerCount: 0,
       players: [],
+    });
+  });
+});
+
+describe("disclosed Free Mode arena bots", () => {
+  it("adds a varied server-controlled roster for one human and starts a playable Free round", () => {
+    const simulation = new ArenaSimulation({
+      ...testConfig,
+      freeModeBotsEnabled: true,
+      freeModeBotMinCount: 3,
+      freeModeBotMaxCount: 5,
+    });
+    simulation.addPlayer("human", "Human", 0);
+    simulation.advance(0);
+
+    const matchmaking = simulation.snapshot();
+    expect(matchmaking.phase).toBe(ArenaPhase.MATCHMAKING);
+    expect(matchmaking.humanPlayerCount).toBe(1);
+    expect(matchmaking.botPlayerCount).toBeGreaterThanOrEqual(3);
+    expect(matchmaking.botPlayerCount).toBeLessThanOrEqual(5);
+    expect(matchmaking.matchmakingPlayerCount).toBe(matchmaking.humanPlayerCount + matchmaking.botPlayerCount);
+    expect(matchmaking.players.filter((participant) => participant.isBot)).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: expect.stringMatching(/^ARENA /), isBot: true })]),
+    );
+
+    let now = startActive(simulation);
+    const before = simulation.snapshot().players
+      .filter((participant) => participant.isBot)
+      .map((participant) => ({ id: participant.id, x: participant.x, y: participant.y }));
+    now += simulation.config.botDecisionIntervalMs + 50;
+    simulation.advance(now);
+    const after = simulation.snapshot();
+    expect(after.players.some((participant) => {
+      const previous = before.find((candidate) => candidate.id === participant.id);
+      return Boolean(previous && participant.isBot && (participant.x !== previous.x || participant.y !== previous.y));
+    })).toBe(true);
+    expect(after.leaderboard.every((entry) => typeof entry.isBot === "boolean")).toBe(true);
+  });
+
+  it("keeps bots out of Paid Mode and always makes space for a real player", () => {
+    const paid = new ArenaSimulation({ ...testConfig, mode: GameMode.PAID, freeModeBotsEnabled: true });
+    paid.addPlayer("paid-human", "Paid Human", 0);
+    paid.advance(0);
+    expect(paid.snapshot()).toMatchObject({
+      phase: ArenaPhase.MATCHMAKING,
+      humanPlayerCount: 1,
+      botPlayerCount: 0,
+      matchmakingPlayerCount: 1,
+    });
+
+    const free = new ArenaSimulation({
+      ...testConfig,
+      maxPlayers: 4,
+      freeModeBotsEnabled: true,
+      freeModeBotMinCount: 3,
+      freeModeBotMaxCount: 3,
+    });
+    free.addPlayer("first-human", "First Human", 0);
+    free.advance(0);
+    expect(free.snapshot()).toMatchObject({ humanPlayerCount: 1, botPlayerCount: 3 });
+    free.addPlayer("second-human", "Second Human", 1);
+    expect(free.snapshot()).toMatchObject({ humanPlayerCount: 2, botPlayerCount: 2 });
+  });
+
+  it("uses a bounded reproducible 3–5 participant selection and removes bots after results", () => {
+    const config = createArenaConfig({ ...testConfig, freeModeBotsEnabled: true, freeModeBotMinCount: 3, freeModeBotMaxCount: 5 });
+    const rosterCounts = [1, 2, 3, 4, 5, 6].map((matchNumber) => calculateFreeModeBotCount(matchNumber, config));
+    expect(rosterCounts.every((count) => count >= 3 && count <= 5)).toBe(true);
+    expect(new Set(rosterCounts).size).toBeGreaterThan(1);
+
+    const simulation = new ArenaSimulation({
+      ...testConfig,
+      freeModeBotsEnabled: true,
+      freeModeBotMinCount: 3,
+      freeModeBotMaxCount: 3,
+      matchDurationMs: 100,
+    });
+    simulation.addPlayer("human", "Human", 0);
+    startActive(simulation);
+    simulation.advance(160);
+    expect(simulation.snapshot().result?.rankings.some((entry) => entry.isBot)).toBe(true);
+    simulation.advance(166);
+    simulation.advance(176);
+    expect(simulation.snapshot()).toMatchObject({
+      phase: ArenaPhase.WAITING,
+      humanPlayerCount: 1,
+      botPlayerCount: 0,
+      matchmakingPlayerCount: 1,
     });
   });
 });

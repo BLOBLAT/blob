@@ -23,7 +23,12 @@ This starts the full local Free Mode stack:
 - Vite browser client: `http://127.0.0.1:5173`
 - persistent Colyseus server: `http://127.0.0.1:2567`
 
-Open `http://127.0.0.1:5173` in two browser windows or browser profiles. Click **Play Free** in both. The two blobs should see one another, food, authoritative mass/rank changes, death, and respawn.
+Open `http://127.0.0.1:5173` in one browser window and click **Play Free**.
+The server should show the real-player count plus a clearly marked roster of
+three to five Arena Bots, then start a normal round after the countdown. Open
+a second browser window or profile to verify both real clients see one
+another, the same bots, food, authoritative mass/rank changes, death, and
+respawn.
 
 To run each process separately:
 
@@ -56,7 +61,16 @@ Do not commit `.env.local`.
 
 ## Round manual test
 
-With the default round tuning, the first client remains in matchmaking until a second joins. Both clients then see the server countdown, followed by the shared 10-minute round timer. To manually test control safety, steer briefly with the mouse or touch joystick and stop moving or release: the BLOB must stop within the configured stale-input interval. At round end, verify the same top-three result and personal statistics on both clients, then confirm the room returns to matchmaking.
+With the default round tuning, the first human client remains in matchmaking
+only long enough for the server to create its clearly disclosed three-to-five
+Arena Bot roster. It then sees the server countdown and the shared 10-minute
+round timer. Add a second browser client and verify that real players and bots
+are explicitly distinguished in the live ranking. To manually test control
+safety, steer briefly with the mouse or touch joystick and stop moving or
+release: the BLOB must stop within the configured stale-input interval. At
+round end, verify the same top-three result and personal statistics on both
+clients, then confirm the room returns to matchmaking without carrying bots
+into the next lobby.
 
 ## Production topology summary
 
@@ -221,7 +235,11 @@ git diff --check
 npm audit --omit=dev
 ```
 
-`npm test` includes deterministic simulation checks plus a real two-client Colyseus smoke test. The server test binds an ephemeral local port, joins two SDK clients to the same room, validates state/input propagation, rejects an invalid movement command, and verifies disconnect cleanup.
+`npm test` includes deterministic simulation checks plus a real two-client
+Colyseus smoke test. The server test binds an ephemeral local port, joins two
+SDK clients to the same room, validates state/input propagation, rejects an
+invalid movement command, verifies disconnect cleanup, and proves that three
+disclosed Arena Bots synchronize without increasing the real-client metric.
 
 It also verifies Arena Chat with two real room clients: a normalized plain-text
 message is delivered under the server-owned player name and a URL is rejected

@@ -115,6 +115,7 @@ export class BlobArenaRoom extends Room<{ state: BlobArenaState }> {
       state.name = player.name;
       return state;
     }, (state, player) => {
+      state.isBot = player.isBot;
       state.x = player.x;
       state.y = player.y;
       state.mass = player.mass;
@@ -144,6 +145,7 @@ export class BlobArenaRoom extends Room<{ state: BlobArenaState }> {
       return state;
     }, (state, entry) => {
       state.name = entry.name;
+      state.isBot = entry.isBot;
       state.rank = entry.rank;
       state.mass = entry.mass;
       state.kills = entry.kills;
@@ -156,6 +158,8 @@ export class BlobArenaRoom extends Room<{ state: BlobArenaState }> {
     this.state.roundId = snapshot.roundId;
     this.state.serverTime = snapshot.serverTime;
     this.state.remainingMs = snapshot.remainingMs;
+    this.state.humanPlayerCount = snapshot.humanPlayerCount;
+    this.state.botPlayerCount = snapshot.botPlayerCount;
     this.state.matchmakingPlayerCount = snapshot.matchmakingPlayerCount;
     this.state.worldWidth = snapshot.world.width;
     this.state.worldHeight = snapshot.world.height;
@@ -173,6 +177,7 @@ export class BlobArenaRoom extends Room<{ state: BlobArenaState }> {
       return state;
     }, (state, ranking) => {
       state.name = ranking.name;
+      state.isBot = ranking.isBot;
       state.rank = ranking.rank;
       state.finalMass = ranking.finalMass;
       state.foodCollected = ranking.foodCollected;

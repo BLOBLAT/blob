@@ -1,4 +1,5 @@
 import "./styles.css";
+import "./arenaBots.css";
 import { validateChatMessage } from "@blob/validation";
 import { ACCESS_GATE_ENABLED, hasPrivateBuildAccess, unlockPrivateBuild } from "./accessGate.js";
 import { setProfileGameName } from "./identity.js";
@@ -121,7 +122,7 @@ function renderSite(): void {
         <div class="arena-message">
           <span class="status-dot"></span>
           <p>REAL FREE MODE</p>
-          <small>Connect to a live local arena. No bots. No fake stats.</small>
+          <small>Live players plus clearly marked Arena Bots. No fake stats.</small>
           <button class="play-button arena-play" type="button" data-play-free>Play Free <span>→</span></button>
         </div>
       </div>
@@ -443,6 +444,7 @@ async function openFreeArena(): Promise<void> {
       </div>
       <p class="game-connection" id="game-connection">Connecting…</p>
       <p class="game-status" id="game-status">Preparing arena…</p>
+      <p class="game-participants" id="game-participants">Synchronizing participants…</p>
       <p class="game-timer" id="game-timer"></p>
       <h3>LIVE RANKING</h3>
       <ol class="live-leaderboard" id="live-leaderboard"></ol>
@@ -471,6 +473,7 @@ async function openFreeArena(): Promise<void> {
   const status = requiredElement("#game-status");
   const connection = requiredElement("#game-connection");
   const timer = requiredElement("#game-timer");
+  const participants = requiredElement("#game-participants");
   const roundTimer = requiredElement("#game-round-timer");
   const leaderboard = requiredElement("#live-leaderboard");
   const mass = requiredElement("#game-mass");
@@ -529,7 +532,8 @@ async function openFreeArena(): Promise<void> {
         chatStatus.textContent = describeChatRejection(code);
       },
       onUiState(state) {
-        status.textContent = phaseLabel(state.phase, state.matchmakingPlayerCount);
+        status.textContent = phaseLabel(state.phase, state.humanPlayerCount, state.botPlayerCount);
+        participants.textContent = formatParticipantSummary(state.humanPlayerCount, state.botPlayerCount);
         timer.textContent = phaseTimerLabel(state.phase, state.remainingMs);
         roundTimer.textContent = state.phase === "ACTIVE" ? formatClock(state.remainingMs) : "--:--";
         mass.textContent = String(Math.floor(state.localPlayer?.mass ?? 0));
@@ -564,13 +568,15 @@ async function leaveFreeArena(): Promise<void> {
   window.location.reload();
 }
 
-function renderLeaderboard(container: HTMLElement, players: Array<{ playerId: string; name: string; mass: number; kills: number; rank: number }>, localPlayerId: string | undefined): void {
+function renderLeaderboard(container: HTMLElement, players: Array<{ playerId: string; name: string; isBot: boolean; mass: number; kills: number; rank: number }>, localPlayerId: string | undefined): void {
   container.replaceChildren();
   for (const player of players) {
     const item = document.createElement("li");
     item.classList.toggle("is-local-player", player.playerId === localPlayerId);
     const name = document.createElement("span");
-    name.textContent = player.rank + ". " + (player.playerId === localPlayerId ? "YOU" : player.name);
+    name.textContent = player.rank + ". " + (player.playerId === localPlayerId
+      ? "YOU"
+      : player.isBot ? "BOT · " + player.name : player.name);
     const score = document.createElement("strong");
     score.textContent = Math.floor(player.mass) + " mass · " + player.kills + " K";
     item.append(name, score);
@@ -621,6 +627,7 @@ function renderRoundResults(
     rankings: Array<{
       playerId: string;
       name: string;
+      isBot: boolean;
       rank: number;
       finalMass: number;
       foodCollected: number;
@@ -642,7 +649,9 @@ function renderRoundResults(
     const place = document.createElement("strong");
     place.textContent = placeLabel(entry.rank);
     const name = document.createElement("span");
-    name.textContent = entry.playerId === localPlayerId ? "YOU" : entry.name;
+    name.textContent = entry.playerId === localPlayerId
+      ? "YOU"
+      : entry.isBot ? "BOT · " + entry.name : entry.name;
     const mass = document.createElement("small");
     mass.textContent = Math.floor(entry.finalMass) + " mass";
     item.append(place, name, mass);
@@ -714,12 +723,16 @@ function describeGameConnectionFailure(error: unknown): { connection: string; de
   };
 }
 
-function phaseLabel(phase: string, playerCount: number): string {
+function phaseLabel(phase: string, humanPlayerCount: number, botPlayerCount: number): string {
   if (phase === "WAITING") {
     return "Arena waiting for players";
   }
   if (phase === "MATCHMAKING") {
-    return "Finding players — " + playerCount + " joined";
+    const humans = humanPlayerCount + " " + (humanPlayerCount === 1 ? "player" : "players");
+    const bots = botPlayerCount > 0
+      ? " · " + botPlayerCount + " arena " + (botPlayerCount === 1 ? "bot" : "bots")
+      : "";
+    return "Finding players — " + humans + bots;
   }
   if (phase === "COUNTDOWN") {
     return "Round starting — movement is frozen";
@@ -734,6 +747,14 @@ function phaseLabel(phase: string, playerCount: number): string {
     return "Results live — next matchmaking follows";
   }
   return "Synchronizing arena state";
+}
+
+function formatParticipantSummary(humanPlayerCount: number, botPlayerCount: number): string {
+  const humans = humanPlayerCount + " live " + (humanPlayerCount === 1 ? "player" : "players");
+  if (botPlayerCount === 0) {
+    return humans;
+  }
+  return humans + " · " + botPlayerCount + " disclosed Arena " + (botPlayerCount === 1 ? "Bot" : "Bots");
 }
 
 function phaseTimerLabel(phase: string, remainingMs: number): string {

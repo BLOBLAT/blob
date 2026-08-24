@@ -2,7 +2,13 @@
 
 ## Free Mode round
 
-Free Mode is a real, session-based multiplayer round in the authoritative Colyseus room blob_arena. There are no bots, fake statistics, payments, or client-decided outcomes.
+Free Mode is a real, session-based multiplayer round in the authoritative
+Colyseus room `blob_arena`. It can contain a small roster of server-owned,
+clearly marked **Arena Bots** when fewer live players are present. They are
+not fake people: every bot has `isBot: true` in the synchronized state, is
+labelled `BOT · ARENA …` in the ranking/results UI, is excluded from real
+visitor metrics and chat, and is never admitted to Paid Mode. There are no
+fake statistics, payments, or client-decided outcomes.
 
 The server owns this explicit lifecycle:
 
@@ -19,8 +25,26 @@ The default tuning lives only in packages/game-core/src/index.ts:
 | Active round | 10 minutes |
 | Results screen | 15 seconds |
 | Simulation tick | 50 ms |
+| Free Mode Arena Bots | Server-selected 3–5 per round |
 
-One player waits in matchmaking. When at least two players are queued, the server creates a unique matchId and roundId, freezes movement for the countdown, safely spawns participants, then starts the active round. Free Mode also admits players who arrive during an active round: they receive a server-selected safe spawn and temporary spawn protection immediately. The active world's size remains fixed for that round. This Free Mode policy is configuration-driven; future Paid Mode can retain a next-round queue instead.
+When a human enters Free Mode, the server creates a deterministic, varied
+roster of three to five Arena Bots for that round. This makes the normal
+minimum population available immediately, while the UI states the real-player
+and bot counts separately. Each bot is a server-side participant—not a
+Colyseus client—and follows the same intent/movement pipeline as a human:
+it flees larger BLOBs, pursues safely smaller targets, collects nearby food,
+and otherwise roams. To avoid an impossible perfect-autopilot opponent, bot
+decisions use a bounded cadence and perception/food-search ranges, with a
+server-configured movement-speed cap below a human's maximum. A human always
+displaces a bot if the round reaches capacity.
+
+The server then creates a unique `matchId` and `roundId`, freezes movement for
+the countdown, safely spawns participants, then starts the active round. Free
+Mode also admits players who arrive during an active round: they receive a
+server-selected safe spawn and temporary spawn protection immediately. The
+active world's size remains fixed for that round. This Free Mode policy is
+configuration-driven; future Paid Mode has bots disabled and can retain a
+next-round queue instead.
 
 At 00:00 the server stops progression, freezes a single immutable final result, enters FINISHED, then exposes it during RESULTS. After the results interval, the same room returns to matchmaking.
 

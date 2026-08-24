@@ -4,6 +4,7 @@ import { ArenaPhase, GameMode } from "@blob/protocol";
 export class BlobPlayerState extends Schema {
   @type("string") id = "";
   @type("string") name = "";
+  @type("boolean") isBot = false;
   @type("number") x = 0;
   @type("number") y = 0;
   @type("number") mass = 0;
@@ -29,6 +30,7 @@ export class FoodState extends Schema {
 export class LeaderboardEntryState extends Schema {
   @type("string") playerId = "";
   @type("string") name = "";
+  @type("boolean") isBot = false;
   @type("number") rank = 0;
   @type("number") mass = 0;
   @type("number") kills = 0;
@@ -37,6 +39,7 @@ export class LeaderboardEntryState extends Schema {
 export class FinalRankingState extends Schema {
   @type("string") playerId = "";
   @type("string") name = "";
+  @type("boolean") isBot = false;
   @type("number") rank = 0;
   @type("number") finalMass = 0;
   @type("number") foodCollected = 0;
@@ -66,6 +69,8 @@ export class BlobArenaState extends Schema {
   @type("string") roundId = "";
   @type("number") serverTime = 0;
   @type("number") remainingMs = 0;
+  @type("number") humanPlayerCount = 0;
+  @type("number") botPlayerCount = 0;
   @type("number") matchmakingPlayerCount = 0;
   @type("number") worldWidth = 0;
   @type("number") worldHeight = 0;

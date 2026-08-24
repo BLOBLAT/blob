@@ -42,6 +42,14 @@ export interface ArenaConfig {
   safeSpawnDistance: number;
   inputRateLimitPerSecond: number;
   inputTimeoutMs: number;
+  /** Free Mode only. Bots are always marked as bots in synchronized state. */
+  freeModeBotsEnabled: boolean;
+  freeModeBotMinCount: number;
+  freeModeBotMaxCount: number;
+  botDecisionIntervalMs: number;
+  botPerceptionRange: number;
+  botFoodSearchRange: number;
+  botMoveSpeedMultiplier: number;
 }
 
 export const DEFAULT_ARENA_CONFIG: ArenaConfig = {
@@ -74,6 +82,13 @@ export const DEFAULT_ARENA_CONFIG: ArenaConfig = {
   safeSpawnDistance: 110,
   inputRateLimitPerSecond: 25,
   inputTimeoutMs: 350,
+  freeModeBotsEnabled: true,
+  freeModeBotMinCount: 3,
+  freeModeBotMaxCount: 5,
+  botDecisionIntervalMs: 360,
+  botPerceptionRange: 560,
+  botFoodSearchRange: 500,
+  botMoveSpeedMultiplier: 0.84,
 };
 
 export interface WorldSize {
@@ -94,9 +109,16 @@ interface SimulationPlayer extends ArenaPlayerView {
   lastInputAt: number;
   respawnAt: number | null;
   joinSequence: number;
+  bot?: BotState;
 }
 
 interface SimulationFood extends FoodView {}
+
+interface BotState {
+  seed: number;
+  personality: "HUNTER" | "GATHERER" | "CAUTIOUS";
+  nextDecisionAt: number;
+}
 
 const ZERO_INPUT: MovementIntent = { x: 0, y: 0 };
 
@@ -118,6 +140,13 @@ function cloneInput(input: MovementIntent): MovementIntent {
 
 function createId(prefix: string, sequence: number, now: number): string {
   return prefix + "-" + now.toString(36) + "-" + sequence.toString(36);
+}
+
+function deterministicInteger(seed: number): number {
+  let value = seed | 0;
+  value = Math.imul(value ^ (value >>> 16), 0x45d9f3b);
+  value = Math.imul(value ^ (value >>> 16), 0x45d9f3b);
+  return (value ^ (value >>> 16)) >>> 0;
 }
 
 function requirePositiveNumber(name: string, value: number): void {
@@ -147,8 +176,29 @@ export function createArenaConfig(overrides: Partial<ArenaConfig> = {}): ArenaCo
   if (config.absorbedMassPercent > 1) {
     throw new Error("absorbedMassPercent cannot exceed 1");
   }
+  if (config.freeModeBotMinCount > config.freeModeBotMaxCount) {
+    throw new Error("freeModeBotMinCount cannot exceed freeModeBotMaxCount");
+  }
+  if (config.botMoveSpeedMultiplier > 1) {
+    throw new Error("botMoveSpeedMultiplier cannot exceed 1");
+  }
 
   return config;
+}
+
+/**
+ * Selects a varied but reproducible Free Mode bot roster for a round. This
+ * never runs for Paid Mode and does not depend on browser input or entropy.
+ */
+export function calculateFreeModeBotCount(
+  nextMatchNumber: number,
+  config: ArenaConfig = DEFAULT_ARENA_CONFIG,
+): number {
+  if (!config.freeModeBotsEnabled || config.mode !== GameMode.FREE) {
+    return 0;
+  }
+  const range = config.freeModeBotMaxCount - config.freeModeBotMinCount + 1;
+  return config.freeModeBotMinCount + deterministicInteger(nextMatchNumber * 7919 + 17) % range;
 }
 
 export function calculateWorldSize(playerCount: number, config: ArenaConfig = DEFAULT_ARENA_CONFIG): WorldSize {
@@ -207,31 +257,16 @@ export class ArenaSimulation {
   }
 
   addPlayer(id: string, name: string, now: number): void {
-    if (this.players.has(id) || this.players.size >= this.config.maxPlayers) {
+    if (this.players.has(id)) {
       return;
     }
 
     this.now = now;
-    const player: SimulationPlayer = {
-      id,
-      name: name.slice(0, 24),
-      x: this.world.width / 2,
-      y: this.world.height / 2,
-      mass: this.config.startingMass,
-      score: 0,
-      kills: 0,
-      deaths: 0,
-      foodCollected: 0,
-      survivalTimeMs: 0,
-      rank: this.players.size + 1,
-      alive: false,
-      inRound: false,
-      spawnProtectedUntil: 0,
-      input: cloneInput(ZERO_INPUT),
-      lastInputAt: now,
-      respawnAt: null,
-      joinSequence: ++this.joinSequence,
-    };
+    this.makeRoomForHumanPlayer();
+    if (this.players.size >= this.config.maxPlayers) {
+      return;
+    }
+    const player = this.createPlayer(id, name, now, false);
     this.players.set(id, player);
     if (this.phase === ArenaPhase.ACTIVE && this.config.mode === GameMode.FREE) {
       this.activatePlayerForRound(player, player.joinSequence);
@@ -241,13 +276,21 @@ export class ArenaSimulation {
   }
 
   removePlayer(id: string): void {
+    const player = this.players.get(id);
+    if (!player || player.isBot) {
+      return;
+    }
     this.players.delete(id);
+    if (this.humanPlayerCount() === 0) {
+      this.resetToWaiting();
+      return;
+    }
     this.updateRanks();
   }
 
   setInput(id: string, input: MovementIntent, now: number): boolean {
     const player = this.players.get(id);
-    if (!player || this.phase !== ArenaPhase.ACTIVE || !player.alive) {
+    if (!player || player.isBot || this.phase !== ArenaPhase.ACTIVE || !player.alive) {
       return false;
     }
     if (!Number.isFinite(input.x) || !Number.isFinite(input.y) || Math.abs(input.x) > 1 || Math.abs(input.y) > 1) {
@@ -273,7 +316,7 @@ export class ArenaSimulation {
 
     switch (this.phase) {
       case ArenaPhase.WAITING:
-        if (this.players.size > 0) {
+        if (this.humanPlayerCount() > 0) {
           this.beginMatchmaking();
         }
         break;
@@ -317,6 +360,8 @@ export class ArenaSimulation {
       roundId: this.roundId,
       serverTime: this.now,
       remainingMs: this.remainingMs(),
+      humanPlayerCount: this.humanPlayerCount(),
+      botPlayerCount: this.botPlayerCount(),
       matchmakingPlayerCount: this.eligiblePlayerCount(),
       world: {
         width: this.world.width,
@@ -330,6 +375,80 @@ export class ArenaSimulation {
     };
   }
 
+  private createPlayer(id: string, name: string, now: number, isBot: boolean, botSeed?: number): SimulationPlayer {
+    const bot = isBot && botSeed !== undefined
+      ? {
+        seed: botSeed,
+        personality: (["HUNTER", "GATHERER", "CAUTIOUS"] as const)[botSeed % 3] ?? "GATHERER",
+        nextDecisionAt: now,
+      }
+      : undefined;
+    return {
+      id,
+      name: name.slice(0, 24),
+      isBot,
+      x: this.world.width / 2,
+      y: this.world.height / 2,
+      mass: this.config.startingMass,
+      score: 0,
+      kills: 0,
+      deaths: 0,
+      foodCollected: 0,
+      survivalTimeMs: 0,
+      rank: this.players.size + 1,
+      alive: false,
+      inRound: false,
+      spawnProtectedUntil: 0,
+      input: cloneInput(ZERO_INPUT),
+      lastInputAt: now,
+      respawnAt: null,
+      joinSequence: ++this.joinSequence,
+      bot,
+    };
+  }
+
+  private makeRoomForHumanPlayer(): void {
+    if (this.players.size < this.config.maxPlayers) {
+      return;
+    }
+    const bot = [...this.players.values()]
+      .filter((player) => player.isBot)
+      .sort((left, right) => right.joinSequence - left.joinSequence)[0];
+    if (bot) {
+      this.players.delete(bot.id);
+    }
+  }
+
+  private ensureFreeModeBots(): void {
+    if (this.config.mode !== GameMode.FREE || !this.config.freeModeBotsEnabled) {
+      return;
+    }
+    const maximumBots = Math.max(0, this.config.maxPlayers - this.humanPlayerCount());
+    const desiredBots = Math.min(
+      calculateFreeModeBotCount(this.matchNumber + 1, this.config),
+      maximumBots,
+    );
+    const bots = [...this.players.values()]
+      .filter((player) => player.isBot)
+      .sort((left, right) => right.joinSequence - left.joinSequence);
+    for (const bot of bots.slice(desiredBots)) {
+      this.players.delete(bot.id);
+    }
+    for (let index = this.botPlayerCount(); index < desiredBots; index += 1) {
+      const seed = deterministicInteger((this.matchNumber + 1) * 997 + index * 131);
+      const id = "arena-bot-" + (this.matchNumber + 1) + "-" + (index + 1);
+      this.players.set(id, this.createPlayer(id, "ARENA " + (index + 1), this.now, true, seed));
+    }
+  }
+
+  private removeBots(): void {
+    for (const player of this.players.values()) {
+      if (player.isBot) {
+        this.players.delete(player.id);
+      }
+    }
+  }
+
   private beginMatchmaking(): void {
     this.phase = ArenaPhase.MATCHMAKING;
     this.phaseEndsAt = this.now + this.config.matchmakingDurationMs;
@@ -338,6 +457,7 @@ export class ArenaSimulation {
     this.roundId = "";
     this.food.clear();
     this.foodTarget = 0;
+    this.ensureFreeModeBots();
     for (const player of this.players.values()) {
       player.alive = false;
       player.inRound = false;
@@ -347,6 +467,10 @@ export class ArenaSimulation {
   }
 
   private advanceMatchmaking(): void {
+    if (this.humanPlayerCount() === 0) {
+      this.resetToWaiting();
+      return;
+    }
     const eligible = this.eligiblePlayerCount();
     if (eligible === 0) {
       this.resetToWaiting();
@@ -363,7 +487,7 @@ export class ArenaSimulation {
   }
 
   private advanceCountdown(): void {
-    if (this.eligiblePlayerCount() < this.config.minPlayersToStart) {
+    if (this.humanPlayerCount() === 0 || this.eligiblePlayerCount() < this.config.minPlayersToStart) {
       this.beginMatchmaking();
       return;
     }
@@ -425,6 +549,9 @@ export class ArenaSimulation {
         continue;
       }
       if (player.alive) {
+        if (player.isBot) {
+          this.updateBotIntent(player);
+        }
         player.survivalTimeMs += elapsed;
         this.applyMovement(player, elapsed);
       } else if (this.config.respawnEnabled && player.respawnAt !== null && this.now >= player.respawnAt) {
@@ -450,6 +577,7 @@ export class ArenaSimulation {
     this.result = null;
     this.food.clear();
     this.foodTarget = 0;
+    this.removeBots();
     for (const player of this.players.values()) {
       player.alive = false;
       player.inRound = false;
@@ -469,10 +597,66 @@ export class ArenaSimulation {
 
     const normalizedX = input.x / length;
     const normalizedY = input.y / length;
-    const speed = this.config.baseMoveSpeed * Math.pow(this.config.startingMass / Math.max(player.mass, this.config.startingMass), 0.22);
+    const speed = this.config.baseMoveSpeed
+      * Math.pow(this.config.startingMass / Math.max(player.mass, this.config.startingMass), 0.22)
+      * (player.isBot ? this.config.botMoveSpeedMultiplier : 1);
     player.x += normalizedX * speed * (elapsed / 1_000);
     player.y += normalizedY * speed * (elapsed / 1_000);
     this.constrainPlayerToWorld(player);
+  }
+
+  /**
+   * Server-only Free Mode bot behaviour. Bots use the same intent and
+   * movement pipeline as a browser client: flee danger, pursue safe prey,
+   * collect nearby food, then roam. No browser message can create or steer a
+   * bot.
+   */
+  private updateBotIntent(player: SimulationPlayer): void {
+    const bot = player.bot;
+    if (!bot || this.now < bot.nextDecisionAt) {
+      return;
+    }
+    bot.nextDecisionAt = this.now + this.config.botDecisionIntervalMs;
+
+    const visiblePlayers = [...this.players.values()]
+      .filter((other) => other.id !== player.id && other.alive && other.inRound)
+      .map((other) => ({ other, distance: Math.hypot(other.x - player.x, other.y - player.y) }))
+      .filter(({ distance }) => distance <= this.config.botPerceptionRange)
+      .sort((left, right) => left.distance - right.distance);
+    const threat = visiblePlayers.find(({ other }) => other.mass >= player.mass * 1.16);
+    if (threat) {
+      this.setBotDirection(player, player.x - threat.other.x, player.y - threat.other.y);
+      return;
+    }
+
+    const pursuitRatio = this.config.minimumMassRatioToEat * (bot.personality === "HUNTER" ? 1 : 1.08);
+    const prey = bot.personality === "CAUTIOUS"
+      ? undefined
+      : visiblePlayers.find(({ other }) => player.mass >= other.mass * pursuitRatio);
+    if (prey) {
+      this.setBotDirection(player, prey.other.x - player.x, prey.other.y - player.y);
+      return;
+    }
+
+    const food = [...this.food.values()]
+      .map((pellet) => ({ pellet, distance: Math.hypot(pellet.x - player.x, pellet.y - player.y) }))
+      .filter(({ distance }) => distance <= this.config.botFoodSearchRange)
+      .sort((left, right) => left.distance - right.distance)[0];
+    if (food) {
+      this.setBotDirection(player, food.pellet.x - player.x, food.pellet.y - player.y);
+      return;
+    }
+
+    const decision = Math.floor(this.now / this.config.botDecisionIntervalMs);
+    const x = this.seededCoordinate(bot.seed + decision * 37, this.world.width, radiusFromMass(player.mass));
+    const y = this.seededCoordinate(bot.seed + decision * 61 + 19, this.world.height, radiusFromMass(player.mass));
+    this.setBotDirection(player, x - player.x, y - player.y);
+  }
+
+  private setBotDirection(player: SimulationPlayer, x: number, y: number): void {
+    const length = Math.hypot(x, y);
+    player.input = length > 0 ? { x: x / length, y: y / length } : cloneInput(ZERO_INPUT);
+    player.lastInputAt = this.now;
   }
 
   private collectFood(): void {
@@ -540,6 +724,9 @@ export class ArenaSimulation {
     player.input = cloneInput(ZERO_INPUT);
     player.lastInputAt = this.now;
     player.respawnAt = null;
+    if (player.bot) {
+      player.bot.nextDecisionAt = this.now;
+    }
     player.spawnProtectedUntil = this.now + this.config.spawnProtectionMs;
     this.placeSafely(player, player.joinSequence + this.matchNumber);
   }
@@ -604,6 +791,7 @@ export class ArenaSimulation {
       .map((player, index) => ({
         playerId: player.id,
         name: player.name,
+        isBot: player.isBot,
         rank: index + 1,
         finalMass: player.mass,
         foodCollected: player.foodCollected,
@@ -655,6 +843,7 @@ export class ArenaSimulation {
       .map((player) => ({
         playerId: player.id,
         name: player.name,
+        isBot: player.isBot,
         rank: player.rank,
         mass: Math.round(player.mass),
         kills: player.kills,
@@ -665,6 +854,14 @@ export class ArenaSimulation {
     return this.players.size;
   }
 
+  private humanPlayerCount(): number {
+    return [...this.players.values()].filter((player) => !player.isBot).length;
+  }
+
+  private botPlayerCount(): number {
+    return [...this.players.values()].filter((player) => player.isBot).length;
+  }
+
   private remainingMs(): number {
     if (this.phaseEndsAt === null) {
       return 0;
@@ -673,7 +870,14 @@ export class ArenaSimulation {
   }
 
   private toPlayerView(player: SimulationPlayer): ArenaPlayerView {
-    const { input: _input, lastInputAt: _lastInputAt, respawnAt: _respawnAt, joinSequence: _joinSequence, ...view } = player;
+    const {
+      input: _input,
+      lastInputAt: _lastInputAt,
+      respawnAt: _respawnAt,
+      joinSequence: _joinSequence,
+      bot: _bot,
+      ...view
+    } = player;
     return { ...view };
   }
 
