@@ -40,6 +40,17 @@ describe("SignedPaidAdmissionConsumer", () => {
     await expect(consumer.consume({ token, expectedMatchId: "match_a", expectedRoundId: "round_a", now: new Date(issuedAt) })).resolves.toEqual(claims);
   });
 
+  it("normalizes a valid trailing slash without changing the signed request path", async () => {
+    const ticketIssuerPublicKey = await ed25519.getPublicKeyAsync(ticketPrivateKey);
+    const token = await signTicket(claims, ticketPrivateKey);
+    const send = vi.fn(async (url: string | URL | Request) => {
+      expect(String(url)).toBe("http://platform-api.railway.internal:8080/internal/paid-admissions/consume");
+      return new Response(null, { status: 204 });
+    });
+    const consumer = new SignedPaidAdmissionConsumer("http://platform-api.railway.internal:8080/", privateKey, ticketIssuerPublicKey, send);
+    await expect(consumer.consume({ token, expectedMatchId: "match_a", expectedRoundId: "round_a", now: new Date(issuedAt) })).resolves.toEqual(claims);
+  });
+
   it("fails closed for invalid tickets and non-successful private responses", async () => {
     const ticketIssuerPublicKey = await ed25519.getPublicKeyAsync(ticketPrivateKey);
     const token = await signTicket(claims, ticketPrivateKey);
@@ -74,6 +85,10 @@ describe("SignedPaidAdmissionConsumer", () => {
     expect(() => new SignedPaidAdmissionConsumer("https://api.blob.lat", privateKey, ticketIssuerPublicKey))
       .toThrow("Paid admission consumer configuration is invalid.");
     expect(() => new SignedPaidAdmissionConsumer("http://platform-api.railway.internal.evil.example", privateKey, ticketIssuerPublicKey))
+      .toThrow("Paid admission consumer configuration is invalid.");
+    expect(() => new SignedPaidAdmissionConsumer("http://user:password@platform-api.railway.internal:8080", privateKey, ticketIssuerPublicKey))
+      .toThrow("Paid admission consumer configuration is invalid.");
+    expect(() => new SignedPaidAdmissionConsumer("http://platform-api.railway.internal:0", privateKey, ticketIssuerPublicKey))
       .toThrow("Paid admission consumer configuration is invalid.");
   });
 });

@@ -31,15 +31,19 @@ export interface PaidAdmissionConsumer {
  * secret, wallet key, browser credential, or gameplay authority is involved.
  */
 export class SignedPaidAdmissionConsumer implements PaidAdmissionConsumer {
+  private readonly origin: string;
+
   constructor(
-    private readonly origin: string,
+    origin: string,
     private readonly privateKey: Uint8Array,
     private readonly ticketIssuerPublicKey: Uint8Array,
     private readonly send: typeof fetch = fetch,
   ) {
-    if (!isPrivateOrigin(origin) || privateKey.length !== 32 || ticketIssuerPublicKey.length !== 32) {
+    const normalizedOrigin = normalizePrivateOrigin(origin);
+    if (!normalizedOrigin || privateKey.length !== 32 || ticketIssuerPublicKey.length !== 32) {
       throw new PaidAdmissionConsumerError("ADMISSION_CONSUMER_CONFIG_INVALID", "Paid admission consumer configuration is invalid.");
     }
+    this.origin = normalizedOrigin;
   }
 
   async consume(input: PaidAdmissionVerificationInput): Promise<PaidAdmissionClaims> {
@@ -152,15 +156,23 @@ function assertPayload(input: { token: string; claims: PaidAdmissionClaims }, no
   }
 }
 
-function isPrivateOrigin(value: string): boolean {
+function normalizePrivateOrigin(value: string): string | undefined {
   try {
     const url = new URL(value);
-    return url.protocol === "http:"
-      && url.hostname.endsWith(".railway.internal")
-      && url.pathname === "/"
-      && !url.search
-      && !url.hash;
+    if (url.protocol !== "http:"
+      || !url.hostname.endsWith(".railway.internal")
+      || url.port === "0"
+      || url.pathname !== "/"
+      || url.search
+      || url.hash
+      || url.username
+      || url.password) {
+      return undefined;
+    }
+    // URL.origin removes an optional trailing slash while preserving an
+    // explicit internal service port. It keeps the signed request path exact.
+    return url.origin;
   } catch {
-    return false;
+    return undefined;
   }
 }
