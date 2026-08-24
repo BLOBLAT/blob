@@ -184,6 +184,7 @@ export function finalizePaidMatch(input: {
   });
   const immutableResultHash = hashResult(input.result, input.verifiedParticipants, input.confirmedRevives, input.terms.rulesHash);
   const settlementId = input.settlementId ?? "settlement-" + randomUUID();
+  assertInternalIdentifier(settlementId, "settlement ID");
   return {
     immutableResultHash,
     pool,
@@ -237,7 +238,7 @@ function assertVerifiedParticipants(participants: readonly VerifiedParticipant[]
   const playerIds = new Set<string>();
   const wallets = new Set<string>();
   for (const participant of participants) {
-    if (!participant.playerId || playerIds.has(participant.playerId)) {
+    if (!isInternalIdentifier(participant.playerId) || playerIds.has(participant.playerId)) {
       throw new PaidMatchDomainError("ENTRY_DUPLICATE", "Each paid participant must be unique.");
     }
     assertSolanaAddress(participant.walletAddress, "participant wallet address");
@@ -250,6 +251,12 @@ function assertVerifiedParticipants(participants: readonly VerifiedParticipant[]
 }
 
 function assertResultMatchesParticipants(result: AuthoritativeMatchResult, participants: readonly VerifiedParticipant[]): void {
+  if (!isValidDate(result.resultTimestamp)) {
+    throw new PaidMatchDomainError("RESULT_TIMESTAMP_INVALID", "Final result timestamp is invalid.");
+  }
+  if (!Array.isArray(result.players)) {
+    throw new PaidMatchDomainError("RESULT_PARTICIPANT_COUNT_INVALID", "Final result does not include every verified entry.");
+  }
   const participantIds = new Set(participants.map((participant) => participant.playerId));
   const playerIds = new Set<string>();
   const ranks = new Set<number>();
@@ -257,7 +264,17 @@ function assertResultMatchesParticipants(result: AuthoritativeMatchResult, parti
     throw new PaidMatchDomainError("RESULT_PARTICIPANT_COUNT_INVALID", "Final result does not include every verified entry.");
   }
   for (const player of result.players) {
-    if (!participantIds.has(player.playerId) || playerIds.has(player.playerId) || ranks.has(player.finalRank) || player.finalRank < 1) {
+    if (!isInternalIdentifier(player.playerId)
+      || !participantIds.has(player.playerId)
+      || playerIds.has(player.playerId)
+      || ranks.has(player.finalRank)
+      || !isNonNegativeSafeInteger(player.finalRank)
+      || player.finalRank < 1
+      || !isNonNegativeSafeInteger(player.finalMass)
+      || !isNonNegativeSafeInteger(player.foodCollected)
+      || !isNonNegativeSafeInteger(player.eliminations)
+      || !isNonNegativeSafeInteger(player.deaths)
+      || !isNonNegativeSafeInteger(player.survivalTimeMs)) {
       throw new PaidMatchDomainError("RESULT_RANKING_INVALID", "Final result has an invalid paid ranking.");
     }
     playerIds.add(player.playerId);
@@ -282,7 +299,10 @@ function assertConfirmedRevives(
   const revivesByPlayer = new Map<string, number>();
   const deathIds = new Set<string>();
   for (const revive of revives) {
-    if (!participantIds.has(revive.playerId) || !revive.deathId || deathIds.has(revive.deathId)) {
+    if (!isInternalIdentifier(revive.playerId)
+      || !isInternalIdentifier(revive.deathId)
+      || !participantIds.has(revive.playerId)
+      || deathIds.has(revive.deathId)) {
       throw new PaidMatchDomainError("REVIVE_INVALID", "Confirmed revive does not belong to a unique paid death.");
     }
     deathIds.add(revive.deathId);
@@ -352,4 +372,22 @@ function assertSolanaAddress(value: string, label: string): void {
   if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value)) {
     throw new PaidMatchDomainError("SOLANA_ADDRESS_INVALID", "The " + label + " is invalid.");
   }
+}
+
+function assertInternalIdentifier(value: unknown, label: string): asserts value is string {
+  if (!isInternalIdentifier(value)) {
+    throw new PaidMatchDomainError("SETTLEMENT_ID_INVALID", "The " + label + " is invalid.");
+  }
+}
+
+function isInternalIdentifier(value: unknown): value is string {
+  return typeof value === "string" && value.length >= 1 && value.length <= 128;
+}
+
+function isNonNegativeSafeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+function isValidDate(value: unknown): value is Date {
+  return value instanceof Date && Number.isSafeInteger(value.getTime());
 }

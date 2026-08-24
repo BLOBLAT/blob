@@ -104,6 +104,12 @@ as consumed. It carries internal entry/player identifiers but no wallet address.
 The ticket neither grants payment credit nor changes combat or ranking
 authority.
 
+Before it creates a settlement request, the paid domain validates the complete
+server result: valid timestamp, every funded participant exactly once,
+contiguous ranks, and non-negative safe-integer competitive statistics. It
+also validates every confirmed revive/death and caller-supplied settlement ID.
+Malformed values cannot enter the immutable result hash or an idempotency key.
+
 ## Required before enabling paid play
 
 1. Provision PostgreSQL for `services/platform-api` and apply the reviewed

@@ -96,6 +96,10 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
 - Profile identity tickets now contain a unique ID and are consumed exactly
   once by the arena. Replayed tickets fall back to an anonymous Free Mode name;
   the browser requests a fresh ticket on each connection or reconnect.
+- The paid-domain finalizer now rejects malformed result timestamps,
+  non-finite/negative competitive statistics, invalid revive IDs, and invalid
+  caller-supplied settlement IDs before it hashes a result or emits a
+  settlement request.
 - Added privacy-minimal live landing-page metrics: a random per-tab presence
   ID is retained only in game-server memory for 75 seconds, and the footer
   renders actual active browser sessions plus connected arena BLOBs. No

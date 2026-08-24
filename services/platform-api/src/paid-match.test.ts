@@ -73,6 +73,37 @@ describe("paid-match finalization", () => {
       .toThrow("Final result does not include every verified entry");
   });
 
+  it("rejects malformed authoritative statistics, result timestamps, and revive IDs before settlement", () => {
+    const terms = createPaidMatchTerms({ usdcMint: USDC_MINT, escrowAddress: ESCROW, ruleset: PaidRuleset.REBUY, now: NOW });
+    const result = createPaidResult(terms.matchId, terms.roundId);
+    const invalidMass: AuthoritativeMatchResult = {
+      ...result,
+      players: [{ ...result.players[0]!, finalMass: Number.NaN }, ...result.players.slice(1)]
+    };
+    expect(() => finalizePaidMatch({ terms, result: invalidMass, verifiedParticipants: participants(), confirmedRevives: [] }))
+      .toThrow("Final result has an invalid paid ranking");
+    const invalidTimestamp: AuthoritativeMatchResult = { ...result, resultTimestamp: new Date("invalid") };
+    expect(() => finalizePaidMatch({ terms, result: invalidTimestamp, verifiedParticipants: participants(), confirmedRevives: [] }))
+      .toThrow("Final result timestamp is invalid");
+    expect(() => finalizePaidMatch({
+      terms,
+      result,
+      verifiedParticipants: participants(),
+      confirmedRevives: [{ playerId: "player-1", deathId: "" }]
+    })).toThrow("Confirmed revive does not belong to a unique paid death");
+  });
+
+  it("rejects an invalid caller-supplied settlement ID", () => {
+    const terms = createPaidMatchTerms({ usdcMint: USDC_MINT, escrowAddress: ESCROW, now: NOW });
+    expect(() => finalizePaidMatch({
+      terms,
+      result: createPaidResult(terms.matchId, terms.roundId),
+      verifiedParticipants: participants(),
+      confirmedRevives: [],
+      settlementId: ""
+    })).toThrow("settlement ID is invalid");
+  });
+
   it("rejects off-chain rules that the native-USDC escrow would reject before entries are accepted", () => {
     expect(() => createPaidMatchTerms({
       usdcMint: USDC_MINT,
