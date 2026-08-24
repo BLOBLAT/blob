@@ -190,6 +190,10 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   terms and verified player entries. Identical retries reuse the same derived
   settlement ID; conflicting results fail closed. It has no public route and
   cannot sign, send, or accept a USDC transfer.
+- Hardened idempotent finalization reuse: it now verifies every persisted
+  payout's place, verified winning entry, atomic amount, and idempotency key,
+  rather than trusting a matching payout count. A durable mismatch fails
+  closed before any future settlement worker could consume the result.
 - Railway deployment `8bab46b7-67bd-48b0-8d41-d29ff8fda90a` successfully
   applied migration `20260824150000_persist_immutable_paid_results`; its
   post-deploy Platform API health check returned HTTP 200.

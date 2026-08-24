@@ -99,6 +99,30 @@ describe("durable paid-match finalization", () => {
       Prisma.TransactionIsolationLevel.Serializable,
     ]);
   });
+
+  it("fails closed when an existing payout record differs from the immutable payout plan", async () => {
+    const terms = createTerms();
+    const state = createState(terms);
+    const repository = new PrismaPaidMatchFinalizationRepository(createPrisma(state));
+    const input = createInput(terms);
+    await repository.persist(input);
+    state.payouts[0]!.amountBaseUnits += 1n;
+
+    await expect(repository.persist(input))
+      .rejects.toMatchObject({ code: "PAYOUT_RECORD_CONFLICT" } satisfies Partial<PaidMatchPersistenceError>);
+  });
+
+  it("fails closed when an existing payout set omits a prize place", async () => {
+    const terms = createTerms();
+    const state = createState(terms);
+    const repository = new PrismaPaidMatchFinalizationRepository(createPrisma(state));
+    const input = createInput(terms);
+    await repository.persist(input);
+    state.payouts[2] = { ...state.payouts[0]! };
+
+    await expect(repository.persist(input))
+      .rejects.toMatchObject({ code: "PAYOUT_RECORD_CONFLICT" } satisfies Partial<PaidMatchPersistenceError>);
+  });
 });
 
 function createTerms(): PaidMatchTerms {
@@ -142,7 +166,7 @@ interface TestState {
   entries: Array<{ id: string; playerId: string; amountBaseUnits: bigint; wallet: { address: string } }>;
   result?: { id: string; matchId: string; roundId: string; rulesHash: string; resultHash: string; resultPayload: unknown };
   attempt?: { resultId: string; resultHash: string; settlementId: string; idempotencyKey: string };
-  payouts: Array<{ resultId: string; entryId: string; place: number }>;
+  payouts: Array<{ resultId: string; entryId: string; place: number; amountBaseUnits: bigint; idempotencyKey: string }>;
   auditEvents: unknown[];
   serializationFailures: number;
   transactionCalls: number;
@@ -218,11 +242,11 @@ function createPrisma(state: TestState): PrismaClient {
       }
     },
     payout: {
-      createMany: async ({ data }: { data: Array<{ resultId: string; entryId: string; place: number }> }) => {
+      createMany: async ({ data }: { data: Array<{ resultId: string; entryId: string; place: number; amountBaseUnits: bigint; idempotencyKey: string }> }) => {
         state.payouts.push(...data);
         return { count: data.length };
       },
-      count: async () => state.payouts.length,
+      findMany: async () => state.payouts,
     },
     auditEvent: {
       create: async ({ data }: { data: unknown }) => {

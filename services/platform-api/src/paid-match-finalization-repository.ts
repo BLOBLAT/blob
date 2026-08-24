@@ -102,7 +102,7 @@ export class PrismaPaidMatchFinalizationRepository {
         select: { id: true, roundId: true, rulesHash: true, resultHash: true }
       });
       if (existingResult) {
-        return this.reuseExistingFinalization(transaction, existingResult, finalized, input.terms);
+        return this.reuseExistingFinalization(transaction, existingResult, finalized, input);
       }
       if (match.status !== "LIVE" && match.status !== "FINALIZING") {
         throw new PaidMatchPersistenceError("MATCH_NOT_FINALIZABLE", "Paid match is not in a finalizable lifecycle state.");
@@ -175,8 +175,9 @@ export class PrismaPaidMatchFinalizationRepository {
     transaction: Prisma.TransactionClient,
     existingResult: { id: string; roundId: string; rulesHash: string; resultHash: string },
     finalized: FinalizedPaidMatch,
-    terms: PaidMatchTerms,
+    input: PersistPaidMatchFinalizationInput,
   ): Promise<PersistedPaidMatchFinalization> {
+    const { terms } = input;
     if (existingResult.roundId !== terms.roundId
       || existingResult.rulesHash !== terms.rulesHash
       || existingResult.resultHash !== finalized.immutableResultHash) {
@@ -193,8 +194,34 @@ export class PrismaPaidMatchFinalizationRepository {
       || attempt.idempotencyKey !== finalized.settlementRequest.idempotencyKey) {
       throw new PaidMatchPersistenceError("SETTLEMENT_RECORD_CONFLICT", "The durable settlement record does not match the immutable result.");
     }
-    const payoutCount = await transaction.payout.count({ where: { resultId: existingResult.id } });
-    if (payoutCount !== finalized.prizes.payouts.length) {
+    const entriesByPlayer = await loadVerifiedEntries(transaction, terms, input.verifiedParticipants);
+    const expectedPayouts = finalized.prizes.payouts.map((payout) => {
+      const rankedPlayer = input.result.players.find((player) => player.finalRank === payout.place);
+      const entry = rankedPlayer ? entriesByPlayer.get(rankedPlayer.playerId) : undefined;
+      if (!rankedPlayer || !entry) {
+        throw new PaidMatchPersistenceError("PAYOUT_BINDING_INVALID", "A prize winner is not a verified paid entry.");
+      }
+      return {
+        entryId: entry.id,
+        place: payout.place,
+        amountBaseUnits: payout.amountBaseUnits,
+        idempotencyKey: "payout:" + terms.matchId + ":" + finalized.immutableResultHash + ":" + payout.place,
+      };
+    });
+    const storedPayouts = await transaction.payout.findMany({
+      where: { resultId: existingResult.id },
+      select: { entryId: true, place: true, amountBaseUnits: true, idempotencyKey: true }
+    });
+    const storedPayoutsByPlace = new Map(storedPayouts.map((payout) => [payout.place, payout]));
+    if (storedPayouts.length !== expectedPayouts.length
+      || storedPayoutsByPlace.size !== storedPayouts.length
+      || expectedPayouts.some((expectedPayout) => {
+        const storedPayout = storedPayoutsByPlace.get(expectedPayout.place);
+        return !storedPayout
+          || expectedPayout.entryId !== storedPayout.entryId
+          || expectedPayout.amountBaseUnits !== storedPayout.amountBaseUnits
+          || expectedPayout.idempotencyKey !== storedPayout.idempotencyKey;
+      })) {
       throw new PaidMatchPersistenceError("PAYOUT_RECORD_CONFLICT", "The durable payout plan does not match the immutable result.");
     }
     return {
