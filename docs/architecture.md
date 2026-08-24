@@ -30,9 +30,10 @@ one-time challenge to `services/platform-api`, which creates an opaque cookie
 session in PostgreSQL. When a player enters an arena, the browser asks that API
 for a five-minute Ed25519-signed identity ticket. The game server verifies it
 with `BLOB_PROFILE_TICKET_PUBLIC_KEY`, accepts only its internal user ID and
-display name, and never receives a wallet address, session cookie, private
-key, or payment state. A missing, invalid, or expired ticket simply produces a
-server-assigned anonymous BLOB name, so Free Mode remains available.
+display name, consumes its unique ticket ID once, and never receives a wallet
+address, session cookie, private key, or payment state. A missing, invalid,
+expired, or replayed ticket simply produces a server-assigned anonymous BLOB
+name, so Free Mode remains available.
 
 The future paid admission ticket follows the same privacy rule: it binds only
 an internal entry ID, player ID, match ID, round ID, rules hash, expiry, and

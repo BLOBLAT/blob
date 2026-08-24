@@ -20,13 +20,16 @@ describe("game identity tickets", () => {
     const [payload, signature] = issued.ticket.split(".");
     expect(payload).toBeDefined();
     expect(signature).toBeDefined();
-    expect(Buffer.from(payload!, "base64url").toString("utf8")).toBe(JSON.stringify({
+    const claims = JSON.parse(Buffer.from(payload!, "base64url").toString("utf8"));
+    expect(claims).toMatchObject({
       v: 1,
       sub: "user-42",
       name: "Blob Prime",
       iat: Date.UTC(2026, 7, 20, 12, 0, 0),
       exp: Date.UTC(2026, 7, 20, 12, 1, 0)
-    }));
+    });
+    expect(claims.jti).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(claims).not.toHaveProperty("walletAddress");
     expect(await ed25519.verifyAsync(
       Buffer.from(signature!, "base64url"),
       new TextEncoder().encode(payload!),

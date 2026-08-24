@@ -1,4 +1,5 @@
 import * as ed25519 from "@noble/ed25519";
+import { randomUUID } from "node:crypto";
 import type { AuthenticatedUser } from "./auth-types.js";
 
 export const GAME_TICKET_VERSION = 1;
@@ -25,7 +26,8 @@ export async function issueGameTicket(input: {
     sub: input.user.userId,
     name: input.user.displayName,
     iat: now.getTime(),
-    exp: expiresAt.getTime()
+    exp: expiresAt.getTime(),
+    jti: randomUUID()
   };
   const encodedPayload = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
   const signature = await ed25519.signAsync(new TextEncoder().encode(encodedPayload), input.privateKey);

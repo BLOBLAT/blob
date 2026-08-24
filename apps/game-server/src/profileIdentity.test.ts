@@ -15,7 +15,8 @@ describe("profile identity ticket verification", () => {
       sub: "user-7",
       name: "Blob Prime",
       iat: NOW,
-      exp: NOW + 60_000
+      exp: NOW + 60_000,
+      jti: "profile-ticket-one"
     });
 
     await expect(verifier.resolve("session-one", { name: "Forged Name", profileTicket: ticket }, NOW))
@@ -30,11 +31,31 @@ describe("profile identity ticket verification", () => {
       sub: "user-7",
       name: "Blob Prime",
       iat: NOW - 61_000,
-      exp: NOW - 1
+      exp: NOW - 1,
+      jti: "expired-ticket-one"
     });
     const identity = await verifier.resolve("session-two", { name: "Pretending", profileTicket: expiredTicket }, NOW);
     expect(identity.profileUserId).toBeUndefined();
     expect(identity.name).toMatch(/^BLOB-[A-Z0-9]+$/);
+  });
+
+  it("consumes a valid profile ticket once and falls back anonymously on replay", async () => {
+    const privateKey = ed25519.utils.randomSecretKey();
+    const verifier = ProfileTicketVerifier.fromBase58(base58.encode(await ed25519.getPublicKeyAsync(privateKey)));
+    const ticket = await signTicket(privateKey, {
+      v: 1,
+      sub: "user-7",
+      name: "Blob Prime",
+      iat: NOW,
+      exp: NOW + 60_000,
+      jti: "single-use-ticket"
+    });
+
+    await expect(verifier.resolve("session-one", { name: "Ignored", profileTicket: ticket }, NOW))
+      .resolves.toEqual({ name: "Blob Prime", profileUserId: "user-7" });
+    const replay = await verifier.resolve("session-two", { name: "Ignored", profileTicket: ticket }, NOW + 1);
+    expect(replay.profileUserId).toBeUndefined();
+    expect(replay.name).toMatch(/^BLOB-[A-Z0-9]+$/);
   });
 });
 

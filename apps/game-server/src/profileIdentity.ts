@@ -12,6 +12,7 @@ interface ProfileTicketPayload {
   name: string;
   iat: number;
   exp: number;
+  jti: string;
 }
 
 export interface ResolvedPlayerIdentity {
@@ -24,6 +25,8 @@ export interface ResolvedPlayerIdentity {
  * receives a public key, so it cannot create a profile identity itself.
  */
 export class ProfileTicketVerifier {
+  private readonly consumedTicketIds = new Map<string, number>();
+
   private constructor(private readonly publicKey: Uint8Array | undefined) {}
 
   static fromBase58(value: string | undefined): ProfileTicketVerifier {
@@ -46,9 +49,24 @@ export class ProfileTicketVerifier {
     const verified = this.publicKey && join.profileTicket
       ? await this.verify(join.profileTicket, now)
       : undefined;
-    return verified
+    return verified && this.consumeTicket(verified.jti, verified.exp, now)
       ? { name: verified.name, profileUserId: verified.sub }
       : { name: createAnonymousPlayerName(sessionId) };
+  }
+
+  /** A profile ticket has no gameplay authority, but accepting it once stops a
+   * copied short-lived assertion from being reused to impersonate its name. */
+  private consumeTicket(ticketId: string, expiresAt: number, now: number): boolean {
+    for (const [consumedId, consumedExpiry] of this.consumedTicketIds) {
+      if (consumedExpiry <= now) {
+        this.consumedTicketIds.delete(consumedId);
+      }
+    }
+    if (this.consumedTicketIds.has(ticketId)) {
+      return false;
+    }
+    this.consumedTicketIds.set(ticketId, expiresAt);
+    return true;
   }
 
   private async verify(ticket: string, now: number): Promise<ProfileTicketPayload | undefined> {
@@ -89,6 +107,7 @@ function isProfileTicketPayload(value: unknown, now: number): value is ProfileTi
   return payload.v === PROFILE_TICKET_VERSION
     && typeof payload.sub === "string" && payload.sub.length >= 1 && payload.sub.length <= 128
     && typeof payload.name === "string" && DISPLAY_NAME_PATTERN.test(payload.name)
+    && typeof payload.jti === "string" && /^[A-Za-z0-9_-]{8,64}$/.test(payload.jti)
     && typeof iat === "number" && Number.isSafeInteger(iat)
     && typeof exp === "number" && Number.isSafeInteger(exp)
     && iat <= now + 30_000
