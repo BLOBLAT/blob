@@ -35,8 +35,10 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   and both its Railway health endpoint and the game-server health endpoint
   return HTTP 200. This does **not** enable paid entry or token transfers.
 - The Railway `api.blob.lat` custom domain has its required DNS records, but
-  its direct TLS certificate is still awaiting completion. It is not exposed
-  to browsers while invalid.
+  Railway still reports `VALIDATING_OWNERSHIP` and a direct HTTPS check fails.
+  It is not exposed to browsers while invalid. Cloudflare must leave the
+  `api` CNAME **DNS only** while Railway validates the certificate; do not
+  assume a proxied record can complete that origin-certificate flow.
 - Vercel Production currently serves wallet profiles through the same-site
   `/v1/*` rewrite: `VITE_PLATFORM_API_URL=https://blob.lat` is browser-visible
   and `PLATFORM_API_PROXY_ORIGIN` remains server-only. Platform API,
@@ -74,6 +76,9 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   calculations, Rebuy policy, finalization validation, and payment parsing.
 - Ran the equivalent split verification successfully: 60 tests passed, all workspace typechecks
   passed, and the web, game-server, and platform API production builds passed.
+- The current JavaScript suite has 76 tests passing. The root workspace check
+  now executes TypeScript workspaces sequentially, avoiding the Windows
+  parallel-compiler memory failure without dropping any package check.
 - `npm audit --omit=dev` currently reports three high findings through
   Prisma 7.9.1's `@prisma/config` -> `deepmerge-ts`. Its only offered fix is
   the breaking downgrade to Prisma 6.12.0, so it was not applied blindly.
@@ -100,6 +105,26 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   non-finite/negative competitive statistics, invalid revive IDs, and invalid
   caller-supplied settlement IDs before it hashes a result or emits a
   settlement request.
+- Platform API reference validation Base58-decodes every future Solana public
+  key to 32 bytes and transaction signature to 64 bytes before it calls an
+  RPC endpoint. A string that merely resembles a Solana reference is rejected.
+- The paid-record migration now requires a persisted payout split and gives a
+  match exactly one durable settlement attempt plus an entry exactly one prize
+  place. It was applied by Railway pre-deploy; the API and database health
+  check remained successful.
+- Future paid admission uses a separate optional
+  `PLATFORM_PAID_ADMISSION_TICKET_PRIVATE_KEY_BASE64` Ed25519 signer. The API
+  rejects malformed values and refuses to start if it matches the Free Mode
+  display-name ticket key. The obsolete HMAC shared-secret configuration was
+  removed; setting the future key does not enable Paid Mode.
+- Railway deployment watch patterns are scoped per service. A Platform API
+  commit deploys only that service; game-server/game-core/protocol changes
+  deploy the authoritative arena. Root dependency/configuration changes still
+  deliberately deploy both.
+- Production browser smoke confirmed the real `blob.lat` Free Mode path:
+  authenticated WebSocket connection, server state, a separately labelled
+  3–5 Arena Bot roster, and bot labels in the authoritative leaderboard. The
+  smoke-test session left the room cleanly.
 - Added privacy-minimal live landing-page metrics: a random per-tab presence
   ID is retained only in game-server memory for 75 seconds, and the footer
   renders actual active browser sessions plus connected arena BLOBs. No
@@ -160,9 +185,10 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
 
 ## Next safe steps
 
-1. Monitor `https://api.blob.lat/health` until Railway presents a valid
-   certificate. Keep its Cloudflare DNS record **DNS only** while Railway
-   validates the domain; do not interrupt the working same-site bridge.
+1. Keep the `api` Cloudflare CNAME **DNS only**, then monitor
+   `https://api.blob.lat/health` until Railway presents a valid certificate.
+   Do not interrupt the working same-site bridge before that exact check
+   returns HTTP 200.
 2. Test a Phantom Wallet Standard sign-in, profile rename, profile ticket,
    and anonymous Free Mode fallback from a real browser. Once the direct
    health endpoint is valid, replace the temporary Vercel values with
@@ -174,9 +200,9 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
 
 ## External actions that will eventually be required
 
-- Cloudflare DNS access only if Railway reports the already-created
-  `api.blob.lat` domain is no longer valid; otherwise leave the active DNS-only
-  record untouched while its certificate is issued.
+- Cloudflare DNS access is required only to ensure the already-created
+  `api.blob.lat` CNAME remains DNS-only while Railway issues its certificate;
+  do not alter the target or remove the verification record.
 - A production Solana RPC provider endpoint and credentials.
 - A KMS/HSM or managed signing configuration for restricted settlement
   attestations.
