@@ -24,6 +24,10 @@ export interface PlatformApiConfig {
   gameTicketGlobalRateLimit: number;
   /** Reserved for a future paid-room admission signer; it never enables paid play by itself. */
   paidAdmissionTicketPrivateKey: Uint8Array | undefined;
+  /** Public half of the game-server-only arena-chat audit signing key. */
+  arenaChatAuditPublicKey: Uint8Array | undefined;
+  /** Accepted chat retention window. Cleanup is owned by platform-api. */
+  arenaChatRetentionDays: number;
 }
 
 const LOCAL_WEB_ORIGINS = ["http://127.0.0.1:5173", "http://localhost:5173"];
@@ -78,6 +82,10 @@ export function loadPlatformApiConfig(environment: NodeJS.ProcessEnv = process.e
     && timingSafeEqual(Buffer.from(gameTicketPrivateKey), Buffer.from(paidAdmissionTicketPrivateKey))) {
     throw new Error("PLATFORM_PAID_ADMISSION_TICKET_PRIVATE_KEY_BASE64 must differ from PLATFORM_GAME_TICKET_PRIVATE_KEY_BASE64.");
   }
+  const arenaChatAuditPublicKey = decodeArenaChatAuditPublicKey(environment.BLOB_ARENA_CHAT_AUDIT_PUBLIC_KEY_BASE58);
+  if (environment.BLOB_ARENA_CHAT_AUDIT_PUBLIC_KEY_BASE58 && !arenaChatAuditPublicKey) {
+    throw new Error("BLOB_ARENA_CHAT_AUDIT_PUBLIC_KEY_BASE58 must be a base58 Ed25519 public key.");
+  }
 
   return {
     databaseUrl,
@@ -98,6 +106,8 @@ export function loadPlatformApiConfig(environment: NodeJS.ProcessEnv = process.e
     gameTicketRateLimit: parsePositiveInteger(environment.PLATFORM_GAME_TICKET_RATE_LIMIT, 15, "PLATFORM_GAME_TICKET_RATE_LIMIT"),
     gameTicketGlobalRateLimit: parsePositiveInteger(environment.PLATFORM_GAME_TICKET_GLOBAL_RATE_LIMIT, 240, "PLATFORM_GAME_TICKET_GLOBAL_RATE_LIMIT"),
     paidAdmissionTicketPrivateKey,
+    arenaChatAuditPublicKey,
+    arenaChatRetentionDays: parsePositiveInteger(environment.BLOB_CHAT_RETENTION_DAYS, 90, "BLOB_CHAT_RETENTION_DAYS"),
   };
 }
 
@@ -151,3 +161,4 @@ function parseInteger(value: string): number {
   return /^\d+$/.test(value) ? Number(value) : Number.NaN;
 }
 import { timingSafeEqual } from "node:crypto";
+import { decodeArenaChatAuditPublicKey } from "./arena-chat-audit.js";

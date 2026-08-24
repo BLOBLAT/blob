@@ -48,6 +48,7 @@ The production `platform-api` service watches:
 ```text
 services/platform-api/**
 packages/shared/**
+packages/validation/**
 package.json
 package-lock.json
 railway.toml
@@ -197,6 +198,8 @@ RAILPACK_NODE_VERSION=22.12.0
 PLATFORM_PUBLIC_ORIGIN=https://blob.lat
 PLATFORM_WEB_ORIGIN=https://blob.lat
 PLATFORM_GAME_TICKET_PRIVATE_KEY_BASE64=<random-32-byte-Ed25519-secret-in-base64>
+BLOB_ARENA_CHAT_AUDIT_PUBLIC_KEY_BASE58=<separate-random-Ed25519-public-key>
+BLOB_CHAT_RETENTION_DAYS=90
 ```
 
 `PLATFORM_GAME_TICKET_PRIVATE_KEY_BASE64` must exist only on `platform-api`.
@@ -210,6 +213,22 @@ BLOB_PROFILE_TICKET_PUBLIC_KEY=<matching-base58-Ed25519-public-key>
 Never set either key as a `VITE_` variable, commit it, reuse the API private
 key for Solana, or give the game server the private key. These keys authenticate
 only ephemeral display-name tickets; they do not authorize payments.
+
+Arena Chat uses a separate one-way audit signer. Generate an independent
+32-byte Ed25519 key pair outside source control. Configure **only** its base58
+public key above on `platform-api`, then configure these values only on the
+`blob` game-server service:
+
+```sh
+BLOB_ARENA_CHAT_AUDIT_PRIVATE_KEY_BASE64=<matching-random-32-byte-private-key>
+BLOB_CHAT_RETENTION_DAYS=90
+PLATFORM_CHAT_AUDIT_ORIGIN=http://${{platform-api.RAILWAY_PRIVATE_DOMAIN}}:${{platform-api.PORT}}
+```
+
+The request stays on Railway private networking and is signed before the
+message is broadcast. Do not set either value in Vercel or a `VITE_` variable.
+If the audit service/database is unavailable, Free Mode continues normally but
+the chat send is rejected rather than publishing an unrecorded message.
 
 Generate the Railway public API domain, deploy, and test:
 

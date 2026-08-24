@@ -72,6 +72,21 @@ describe("arena chat validation", () => {
     }
   });
 
+  it("rejects contact details and common wallet-phishing language before relay", () => {
+    expect(validateChatMessage({ text: "write to blob@example.com" })).toEqual({
+      success: false,
+      code: "CHAT_CONTACT_DETAILS_NOT_ALLOWED"
+    });
+    expect(validateChatMessage({ text: "+1 (555) 123-4567" })).toEqual({
+      success: false,
+      code: "CHAT_CONTACT_DETAILS_NOT_ALLOWED"
+    });
+    expect(validateChatMessage({ text: "share your seed phrase" })).toEqual({
+      success: false,
+      code: "CHAT_SCAM_CONTENT_NOT_ALLOWED"
+    });
+  });
+
   it("rejects empty, oversized, and malformed chat payloads", () => {
     expect(validateChatMessage({ text: "   " })).toEqual({ success: false, code: "CHAT_INVALID" });
     expect(validateChatMessage({ text: "a".repeat(241) })).toEqual({ success: false, code: "CHAT_INVALID" });

@@ -1,5 +1,6 @@
 import { Client } from "@colyseus/sdk";
 import { Encoder } from "@colyseus/schema";
+import type { ArenaChatAuditRecord } from "@blob/validation";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ARENA_ROOM_NAME } from "./BlobArenaRoom.js";
 import { ARENA_STATE_ENCODER_BUFFER_BYTES, createGameServer, type GameServerHandle } from "./server.js";
@@ -7,6 +8,7 @@ import { ClientMessage, ServerEvent, type ArenaChatMessage } from "@blob/protoco
 
 let server: GameServerHandle;
 let endpoint: string;
+const chatAuditRecords: ArenaChatAuditRecord[] = [];
 
 beforeAll(async () => {
   server = createGameServer(undefined, {
@@ -21,6 +23,13 @@ beforeAll(async () => {
       freeModeBotMinCount: 3,
       freeModeBotMaxCount: 3,
     },
+    chatPersistence: {
+      enabled: true,
+      persist: async (record) => {
+        chatAuditRecords.push(record);
+        return true;
+      }
+    }
   });
   const port = await server.listen(0);
   endpoint = `http://127.0.0.1:${port}`;
@@ -118,6 +127,13 @@ describe("BLOB arena room", () => {
       name: firstRoom.state.players.get(firstRoom.sessionId)?.name,
       text: "hello from the pit"
     });
+    expect(chatAuditRecords.at(-1)).toMatchObject({
+      authorName: firstRoom.state.players.get(firstRoom.sessionId)?.name,
+      text: "hello from the pit",
+      profileUserId: null,
+      anonymousAuthorKey: expect.any(String)
+    });
+    expect(chatAuditRecords.at(-1)?.anonymousAuthorKey).not.toBe(firstRoom.sessionId);
 
     const rejected = nextRoomMessage<{ code: string }>(firstRoom, ServerEvent.CHAT_REJECTED);
     firstRoom.send(ClientMessage.CHAT_SEND, { text: "visit https://not-allowed.example" });

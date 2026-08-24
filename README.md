@@ -36,12 +36,14 @@ authoritative game server accept that profile name without receiving the wallet
 address or trusting a browser-supplied name. The browser never signs in
 automatically and no login message approves a transaction or transfers funds.
 
-Free Mode also has transient **Arena Chat** below the game. It is carried by
-the same live Colyseus room as the active arena and shows only messages from
-real connected players. The server accepts plain text only, rejects links,
-applies anti-spam and duplicate-message limits, and keeps only the last 80
-messages in that room's memory. It is not a durable social feed or a source of
-competitive authority.
+Free Mode also has **Arena Chat** below the game. It is carried live by the
+same Colyseus room as the active arena and shows only messages from real
+connected players. The server accepts plain text only; it rejects links,
+contact details and common wallet-phishing phrases, applies anti-spam and
+duplicate-message limits, and keeps only the last 80 live messages in room
+memory. In production, accepted messages are written to a private, signed
+PostgreSQL audit record before broadcast and automatically expire after 90
+days. Chat is not a public archive or a source of competitive authority.
 
 The same isolated service contains an unexposed paid-match domain: bigint
 native-USDC pool accounting, 5% fee calculation, standard Skill vs disclosed

@@ -165,6 +165,9 @@ NODE_ENV=production
 PORT=<provided-by-railway>
 PLATFORM_PUBLIC_ORIGIN=https://blob.lat
 PLATFORM_WEB_ORIGIN=https://blob.lat,https://www.blob.lat
+PLATFORM_GAME_TICKET_PRIVATE_KEY_BASE64=<separate-random-32-byte-private-key>
+BLOB_ARENA_CHAT_AUDIT_PUBLIC_KEY_BASE58=<separate-base58-public-key>
+BLOB_CHAT_RETENTION_DAYS=90
 ```
 
 Production uses a host-only `__Host-blob_session` cookie by default and rejects
@@ -181,6 +184,22 @@ single API process in the same ten-minute window. This covers normal arena
 joins and reconnects while preventing an authenticated session from creating
 unbounded Ed25519 signing work. The browser remains able to join Free Mode
 anonymously if an identity ticket cannot be obtained.
+
+For production chat auditing, generate a second, independent Ed25519 key pair
+outside the repository. Put only the public base58 half on `platform-api` as
+shown above. Put the matching private base64 half only on `blob`, together
+with the private Railway endpoint:
+
+```sh
+BLOB_ARENA_CHAT_AUDIT_PRIVATE_KEY_BASE64=<matching-random-32-byte-private-key>
+BLOB_CHAT_RETENTION_DAYS=90
+PLATFORM_CHAT_AUDIT_ORIGIN=http://${{platform-api.RAILWAY_PRIVATE_DOMAIN}}:${{platform-api.PORT}}
+```
+
+Accepted messages are signed and persisted before room broadcast. They contain
+no wallet/cookie/IP and Platform API deletes them after the configured retention
+period. If this bridge is unavailable, only chat fails closed; arena gameplay
+does not depend on it.
 
 Apply the committed baseline before starting the service:
 
@@ -263,8 +282,11 @@ disclosed Arena Bots synchronize without increasing the real-client metric.
 
 It also verifies Arena Chat with two real room clients: a normalized plain-text
 message is delivered under the server-owned player name and a URL is rejected
-by the server. The chat buffer is process-local and limited to 80 messages;
-there is no local or production chat database.
+by the server. The live buffer is process-local and limited to 80 messages.
+Production chat additionally requires its signed private Platform API audit
+bridge; accepted messages are durably retained for the configured 90-day
+window. Local development deliberately uses the bounded live buffer unless a
+developer configures the private audit bridge.
 
 ## Live landing-page metrics
 

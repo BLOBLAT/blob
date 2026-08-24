@@ -1,8 +1,9 @@
 import { ArenaSimulation, DEFAULT_ARENA_CONFIG, type ArenaConfig } from "@blob/game-core";
 import { ARENA_ROOM_NAME, ClientMessage, ServerEvent } from "@blob/protocol";
-import { movementIntentSchema, playerJoinOptionsSchema, type ValidatedPlayerJoinOptions } from "@blob/validation";
+import { movementIntentSchema, playerJoinOptionsSchema, type ArenaChatAuditRecord, type ValidatedPlayerJoinOptions } from "@blob/validation";
 import { MapSchema, Schema } from "@colyseus/schema";
 import { type Client, Room } from "@colyseus/core";
+import { createHash } from "node:crypto";
 import {
   BlobArenaState,
   BlobPlayerState,
@@ -12,12 +13,15 @@ import {
 } from "./schema.js";
 import type { LiveMetrics } from "./liveMetrics.js";
 import { ArenaChat } from "./arenaChat.js";
+import { createArenaChatPersistence, resolveChatRetentionDays, type ArenaChatPersistence } from "./chatAudit.js";
 import { ProfileTicketVerifier, type ResolvedPlayerIdentity } from "./profileIdentity.js";
 
 export interface BlobArenaRoomOptions {
   arenaConfig?: Partial<ArenaConfig>;
   liveMetrics?: LiveMetrics;
   profileTicketPublicKey?: string;
+  chatPersistence?: ArenaChatPersistence;
+  chatRetentionDays?: number;
 }
 
 interface AuthenticatedPlayerJoinOptions extends ValidatedPlayerJoinOptions {
@@ -29,11 +33,16 @@ export class BlobArenaRoom extends Room<{ state: BlobArenaState }> {
   private simulation!: ArenaSimulation;
   private liveMetrics: LiveMetrics | undefined;
   private profileTicketVerifier!: ProfileTicketVerifier;
+  private chatPersistence!: ArenaChatPersistence;
+  private chatRetentionDays = 90;
   private readonly arenaChat = new ArenaChat();
+  private readonly profileUserIds = new Map<string, string>();
 
   override onCreate(options: BlobArenaRoomOptions = {}): void {
     this.liveMetrics = options.liveMetrics;
     this.profileTicketVerifier = ProfileTicketVerifier.fromBase58(options.profileTicketPublicKey ?? process.env.BLOB_PROFILE_TICKET_PUBLIC_KEY);
+    this.chatPersistence = options.chatPersistence ?? createArenaChatPersistence();
+    this.chatRetentionDays = options.chatRetentionDays ?? resolveChatRetentionDays();
     this.setState(new BlobArenaState());
     this.simulation = new ArenaSimulation(options.arenaConfig);
     this.maxClients = this.simulation.config.maxPlayers;
@@ -50,7 +59,7 @@ export class BlobArenaRoom extends Room<{ state: BlobArenaState }> {
       this.simulation.setInput(client.sessionId, parsed.data, Date.now());
     });
     this.onMessage(ClientMessage.CHAT_SEND, (client, payload: unknown) => {
-      this.receiveChatMessage(client, payload);
+      void this.receiveChatMessage(client, payload);
     });
   }
 
@@ -64,6 +73,9 @@ export class BlobArenaRoom extends Room<{ state: BlobArenaState }> {
 
   override onJoin(client: Client, _options: unknown, auth: AuthenticatedPlayerJoinOptions): void {
     this.simulation.addPlayer(client.sessionId, auth.identity.name, Date.now());
+    if (auth.identity.profileUserId) {
+      this.profileUserIds.set(client.sessionId, auth.identity.profileUserId);
+    }
     this.liveMetrics?.recordArenaJoin(client.sessionId);
     for (const message of this.arenaChat.getHistory()) {
       client.send(ServerEvent.CHAT_MESSAGE, message);
@@ -79,22 +91,25 @@ export class BlobArenaRoom extends Room<{ state: BlobArenaState }> {
   override onLeave(client: Client): void {
     this.simulation.removePlayer(client.sessionId);
     this.arenaChat.removeSender(client.sessionId);
+    this.profileUserIds.delete(client.sessionId);
     this.liveMetrics?.recordArenaLeave(client.sessionId);
     this.log("player_disconnected", { playerId: client.sessionId });
     this.syncState();
   }
 
-  private receiveChatMessage(client: Client, payload: unknown): void {
-    const player = this.simulation.snapshot().players.find((candidate) => candidate.id === client.sessionId);
+  private async receiveChatMessage(client: Client, payload: unknown): Promise<void> {
+    const snapshot = this.simulation.snapshot();
+    const player = snapshot.players.find((candidate) => candidate.id === client.sessionId);
     if (!player) {
       client.send(ServerEvent.CHAT_REJECTED, { code: "CHAT_INVALID" });
       return;
     }
-    const result = this.arenaChat.send({
+    const now = Date.now();
+    const result = this.arenaChat.prepare({
       playerId: client.sessionId,
       name: player.name,
       payload,
-      now: Date.now()
+      now
     });
     if ("rejected" in result) {
       client.send(ServerEvent.CHAT_REJECTED, result.rejected);
@@ -103,8 +118,47 @@ export class BlobArenaRoom extends Room<{ state: BlobArenaState }> {
       }
       return;
     }
+    const record = this.createChatAuditRecord({
+      messageId: result.message.id,
+      playerId: client.sessionId,
+      name: player.name,
+      text: result.message.text,
+      sentAt: now,
+      matchId: snapshot.matchId,
+      roundId: snapshot.roundId
+    });
+    if (!this.chatPersistence.enabled || !(await this.chatPersistence.persist(record))) {
+      client.send(ServerEvent.CHAT_REJECTED, { code: "CHAT_AUDIT_UNAVAILABLE" });
+      this.log("chat_audit_unavailable", { playerId: client.sessionId, messageId: result.message.id });
+      return;
+    }
+    this.arenaChat.commit(result.message);
     this.broadcast(ServerEvent.CHAT_MESSAGE, result.message);
     this.log("chat_message", { playerId: client.sessionId, messageId: result.message.id });
+  }
+
+  private createChatAuditRecord(input: {
+    messageId: string;
+    playerId: string;
+    name: string;
+    text: string;
+    sentAt: number;
+    matchId: string;
+    roundId: string;
+  }): ArenaChatAuditRecord {
+    const profileUserId = this.profileUserIds.get(input.playerId) ?? null;
+    return {
+      id: input.messageId,
+      roomId: this.roomId,
+      matchId: input.matchId || null,
+      roundId: input.roundId || null,
+      profileUserId,
+      anonymousAuthorKey: profileUserId ? null : createAnonymousChatAuthorKey(this.roomId, input.playerId),
+      authorName: input.name,
+      text: input.text,
+      sentAt: input.sentAt,
+      expiresAt: input.sentAt + this.chatRetentionDays * 24 * 60 * 60 * 1_000
+    };
   }
 
   private syncState(): void {
@@ -229,3 +283,12 @@ function syncCollection<TState extends Schema, TView>(
 }
 
 export { ARENA_ROOM_NAME };
+
+function createAnonymousChatAuthorKey(roomId: string, sessionId: string): string {
+  return createHash("sha256")
+    .update("blob-arena-chat-v1\u0000")
+    .update(roomId)
+    .update("\u0000")
+    .update(sessionId)
+    .digest("base64url");
+}

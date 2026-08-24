@@ -7,6 +7,7 @@ import type { PlatformAuthRepository } from "./auth-types.js";
 import type { PlatformApiConfig } from "./config.js";
 import { FixedWindowRateLimiter } from "./rate-limit.js";
 import { GameTicketDisplayNameError, issueGameTicket } from "./game-ticket.js";
+import { verifyArenaChatAuditRequest, type ArenaChatAuditRepository } from "./arena-chat-audit.js";
 
 class OriginNotAllowedError extends Error {}
 
@@ -27,6 +28,7 @@ const profileRequestSchema = z.object({
 export interface PlatformAppOptions {
   config: PlatformApiConfig;
   repository: PlatformAuthRepository;
+  arenaChatRepository?: ArenaChatAuditRepository;
   /** The production entrypoint supplies a durable-store readiness probe. */
   healthCheck: () => Promise<void>;
 }
@@ -87,6 +89,37 @@ export function createPlatformApp(options: PlatformAppOptions): express.Express 
     methods: ["GET", "PATCH", "POST", "OPTIONS"],
     allowedHeaders: ["Content-Type"],
     optionsSuccessStatus: 204
+  }));
+
+  // This endpoint is only for the Railway-private game service. It deliberately
+  // uses the exact raw body for Ed25519 verification before any JSON parser
+  // can alter it. Browsers neither call nor read this audit stream.
+  app.post("/internal/arena-chat/messages", express.raw({ type: "application/json", limit: "2kb" }), asyncRoute(async (request, response) => {
+    const rawBody = Buffer.isBuffer(request.body) ? request.body : undefined;
+    if (!rawBody || !options.arenaChatRepository) {
+      response.status(503).json({ error: "AUDIT_UNAVAILABLE" });
+      return;
+    }
+    const verified = await verifyArenaChatAuditRequest({
+      rawBody,
+      signatureHeader: request.get("X-BLOB-Arena-Audit-Signature") ?? undefined,
+      publicKey: options.config.arenaChatAuditPublicKey,
+      retentionDays: options.config.arenaChatRetentionDays
+    });
+    if (!verified.success) {
+      response.status(verified.error === "AUDIT_UNAVAILABLE" ? 503 : verified.error === "AUDIT_UNAUTHORIZED" ? 401 : 400)
+        .json({ error: verified.error });
+      return;
+    }
+    await options.arenaChatRepository.store(verified.record);
+    console.info(JSON.stringify({
+      service: "blob-platform-api",
+      event: "arena_chat_recorded",
+      messageId: verified.record.id,
+      roomId: verified.record.roomId,
+      profileUserId: verified.record.profileUserId
+    }));
+    response.status(201).json({ status: "recorded" });
   }));
   app.use(express.json({ limit: "16kb", strict: true, type: "application/json" }));
   app.use(cookieParser());

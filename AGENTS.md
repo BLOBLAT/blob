@@ -64,12 +64,17 @@ See `docs/architecture.md` before introducing a cross-boundary dependency.
   key and the game server holds only `BLOB_PROFILE_TICKET_PUBLIC_KEY`; never
   trust a browser-supplied profile name or send a wallet address through
   Colyseus.
-- Arena chat is a transient Colyseus-room feature, not a Vercel endpoint or a
+- Arena chat uses Colyseus only for live delivery, not a Vercel endpoint or a
   fake realtime feed. Validate it on the game server, retain at most the
-  bounded in-memory room history, use `textContent` to render it, rate-limit
-  senders, and reject all links server-side. Do not add direct messages,
-  durable chat history, or wallet addresses to chat without a reviewed
-  moderation and retention design.
+  bounded in-memory room history for a newly joined client, use `textContent`,
+  rate-limit senders, and reject links, contact details, and wallet-phishing
+  language server-side. In production, persist accepted normalized messages
+  before broadcast through the Railway-private signed Platform API audit path.
+  Retain message/name snapshots for `BLOB_CHAT_RETENTION_DAYS` (90 by default)
+  then purge them. Never persist wallet addresses, cookies, IPs, HTML, DMs, or
+  a public searchable archive. `BLOB_ARENA_CHAT_AUDIT_PRIVATE_KEY_BASE64` is
+  game-server-only; `BLOB_ARENA_CHAT_AUDIT_PUBLIC_KEY_BASE58` is
+  platform-api-only. Do not add moderator powers based on a display name.
 - Native-USDC transaction verification and settlement orchestration belong in
   `services/platform-api`, never in game-core, the Colyseus room, or the
   browser. The current service verifies transfer claims but does not sign,

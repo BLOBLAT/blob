@@ -251,10 +251,43 @@ transaction has been created in this repository.
 
 ## Continuation handoff — 2026-08-24
 
-This section records the next user-requested product work. The protected-name
-policy described below is implemented; durable chat moderation/persistence is
-still planned. Keep the authoritative Free Mode and the existing
-wallet/profile boundary intact while doing it.
+This section records the product work and current continuation boundary. The
+protected-name policy and the first durable Arena Chat audit path are now
+implemented. Keep the authoritative Free Mode and the existing wallet/profile
+boundary intact while extending it.
+
+### Immediate continuation checkpoint
+
+The durable chat implementation is currently committed locally but has **not
+yet been pushed or deployed**. It passed its focused local tests (25 tests)
+plus the relevant TypeScript checks/builds. Before claiming it deployed, the
+next agent must:
+
+1. Inspect `git diff` and retain only the chat-audit scope.
+2. Generate one new independent Ed25519 key pair outside the repository. The
+   32-byte standard-base64 private key belongs only to Railway service `blob`
+   as `BLOB_ARENA_CHAT_AUDIT_PRIVATE_KEY_BASE64`. Its base58 public key belongs
+   only to Railway service `platform-api` as
+   `BLOB_ARENA_CHAT_AUDIT_PUBLIC_KEY_BASE58`. Do not reuse the profile-ticket
+   or paid-admission key and do not print/commit either key.
+3. Set `BLOB_CHAT_RETENTION_DAYS=90` on both services. On `blob`, set
+   `PLATFORM_CHAT_AUDIT_ORIGIN` to Railway private networking, normally
+   `http://${{platform-api.RAILWAY_PRIVATE_DOMAIN}}:${{platform-api.PORT}}`.
+   Set variables with deploys deferred if possible, then publish the source
+   commit so both services deploy the compatible code.
+4. The Platform API Railway build must apply migration
+   `20260824190000_add_arena_chat_audit` before startup. Verify both services'
+   `/health`, then send a normal Free Mode message from two browser clients.
+   Confirm a normal chat message appears, a link/contact/scam message is
+   rejected, and a database record exists only for the accepted message.
+5. Run `npm run check`, `npm audit --omit=dev`, `git diff --check`, then commit
+   and push. The known Prisma transitive audit finding must be reported, not
+   "fixed" by an unreviewed breaking downgrade.
+
+If private audit variables are absent in production, the new game-server code
+fails only **chat** closed with `CHAT_AUDIT_UNAVAILABLE`; authoritative gameplay
+continues. Local development intentionally retains the existing bounded
+in-memory chat behaviour unless the audit bridge is configured.
 
 ### Verified current behaviour
 
@@ -269,11 +302,17 @@ wallet/profile boundary intact while doing it.
   name only from a short-lived, one-time Ed25519 ticket signed by the Platform
   API; otherwise it assigns a server-generated anonymous `BLOB-…` name. A
   wallet address never enters Colyseus state or chat.
-- Arena chat is currently room-scoped and transient by design: it normalizes
-  text, limits it to 240 characters, blocks direct and common obfuscated
-  links, rate-limits senders, suppresses duplicates, and retains the newest
-  80 messages only in the authoritative room process. It is not yet a durable
-  archive and has no moderator role, report queue, mute, or retention policy.
+- Arena Chat remains room-scoped for delivery and retains only 80 live
+  messages in the authoritative process. In production, an accepted normalized
+  message is Ed25519-signed by the game server and persisted through a
+  Railway-private Platform API endpoint before it is broadcast. PostgreSQL
+  stores the message/name snapshot, room/match/round, time, and either a
+  profile user ID or a one-way anonymous arena identifier—never a wallet,
+  cookie, IP, raw HTML, or a public archive. Platform API purges expired
+  records (90 days by default). Links, email/phone/contact strings, likely
+  wallet addresses, scam phrases, malformed payloads, flooding, and duplicate
+  sends are rejected server-side. There is still intentionally no direct
+  message feature, moderator role, report queue, or mute UI.
 - The direct `api.blob.lat` certificate is still stuck in Railway
   `VALIDATING_OWNERSHIP` despite its propagated CNAME/TXT, no CAA record, and
   no DNSSEC delegation. Do not remove the working Vercel same-site `/v1/*`
@@ -306,7 +345,7 @@ wallet/profile boundary intact while doing it.
    silently turn into someone else's name. Mark it `rename required` or fall
    back to a server-generated presentation name until its owner selects a
    compliant replacement; do not delete users or wallets.
-4. **Add durable chat as an audit log, not a public global archive.** Preserve
+4. **Add durable chat as an audit log, not a public global archive — implemented.** Preserve
    the real-time Colyseus room as the only chat transport. After its server
    validation succeeds, persist the normalized message to Platform API
    PostgreSQL before broadcasting it. Store message ID, room/match/round,
@@ -315,7 +354,7 @@ wallet/profile boundary intact while doing it.
    Never store wallet addresses, session cookies, IP addresses, or raw HTML in
    chat records. Historical messages retain the original name snapshot even
    after a profile rename.
-5. **Use an internal authenticated game-server → Platform API path.** Prefer
+5. **Use an internal authenticated game-server → Platform API path — implemented.** Prefer
    Railway private networking plus a dedicated Ed25519 audit-event signer:
    the game server receives only the private signing key, the Platform API
    receives only its public verifier key. Both keys stay in Railway variables,
@@ -323,7 +362,7 @@ wallet/profile boundary intact while doing it.
    chat message with an explicit unavailable state; never stall, crash, or
    make Free Mode movement depend on chat persistence.
 6. **Implement minimal deterministic moderation before durable chat is
-   enabled.** Retain the current normalisation/link checks and extend them to
+   enabled — partly implemented.** Retain the current normalisation/link checks and extend them to
    email/phone/crypto-address solicitation, control/invisible character
    stripping, flood/repetition limits, a reviewed server-side prohibited-term
    list, user/session temporary mutes, soft hide/removal status, and an

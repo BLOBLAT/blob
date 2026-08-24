@@ -148,8 +148,16 @@ export type ValidatedPlayerJoinOptions = z.infer<typeof playerJoinOptionsSchema>
 export type ValidatedMovementIntent = z.infer<typeof movementIntentSchema>;
 
 const forbiddenLinkPattern = /(?:https?|hxxps?)\s*:\s*\/\/|\bwww\s*(?:\.|\[\.\])|\b(?:[a-z0-9-]+\s*(?:\.|\[\.\])\s*)+(?:com|net|org|io|gg|app|dev|xyz|info|me|ru|lat|sol|click|link|site|online|co|tv|ai)\b/i;
+const forbiddenEmailPattern = /\b[A-Z0-9._%+-]+\s*@\s*[A-Z0-9.-]+\s*\.\s*[A-Z]{2,}\b/i;
+const forbiddenPhonePattern = /(?:\+?\d[\s().-]*){8,15}\d/;
+const forbiddenWalletPattern = /\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/;
+const forbiddenScamPattern = /\b(?:seed\s*phrase|mnemonic|private\s*key|airdrop\s*claim|wallet\s*connect)\b/i;
 
-export type ChatMessageRejectionCode = "CHAT_INVALID" | "CHAT_LINKS_NOT_ALLOWED";
+export type ChatMessageRejectionCode =
+  | "CHAT_INVALID"
+  | "CHAT_LINKS_NOT_ALLOWED"
+  | "CHAT_CONTACT_DETAILS_NOT_ALLOWED"
+  | "CHAT_SCAM_CONTENT_NOT_ALLOWED";
 
 export type ValidatedChatMessage = {
   text: string;
@@ -175,8 +183,41 @@ export function validateChatMessage(payload: unknown):
   if (text.length < 1 || text.length > 240) {
     return { success: false, code: "CHAT_INVALID" };
   }
+  if (forbiddenEmailPattern.test(text) || forbiddenPhonePattern.test(text) || forbiddenWalletPattern.test(text)) {
+    return { success: false, code: "CHAT_CONTACT_DETAILS_NOT_ALLOWED" };
+  }
   if (forbiddenLinkPattern.test(text)) {
     return { success: false, code: "CHAT_LINKS_NOT_ALLOWED" };
   }
+  if (forbiddenScamPattern.test(text)) {
+    return { success: false, code: "CHAT_SCAM_CONTENT_NOT_ALLOWED" };
+  }
   return { success: true, data: { text } };
 }
+
+/**
+ * Input accepted only from the private game-server to platform-API audit
+ * bridge. It deliberately contains no browser cookie, IP address, or wallet
+ * address. `anonymousAuthorKey` is an opaque, server-derived hash.
+ */
+export const arenaChatAuditRecordSchema = z.object({
+  id: z.string().uuid(),
+  roomId: z.string().min(1).max(128),
+  matchId: z.string().min(1).max(128).nullable(),
+  roundId: z.string().min(1).max(128).nullable(),
+  profileUserId: z.string().uuid().nullable(),
+  anonymousAuthorKey: z.string().regex(/^[A-Za-z0-9_-]{32,128}$/).nullable(),
+  authorName: z.string().min(3).max(16),
+  text: z.string().min(1).max(240),
+  sentAt: z.number().int().positive(),
+  expiresAt: z.number().int().positive()
+}).strict().superRefine((value, context) => {
+  if ((value.profileUserId === null) === (value.anonymousAuthorKey === null)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "Exactly one author identity is required." });
+  }
+  if (value.expiresAt <= value.sentAt) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "Message expiry must be after send time." });
+  }
+});
+
+export type ArenaChatAuditRecord = z.infer<typeof arenaChatAuditRecordSchema>;

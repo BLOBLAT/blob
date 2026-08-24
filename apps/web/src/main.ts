@@ -495,9 +495,7 @@ async function openFreeArena(): Promise<void> {
     event.preventDefault();
     const parsed = validateChatMessage({ text: chatInput.value });
     if (!parsed.success) {
-      chatStatus.textContent = parsed.code === "CHAT_LINKS_NOT_ALLOWED"
-        ? "Links are not allowed in arena chat."
-        : "Enter a plain-text message of up to 240 characters.";
+      chatStatus.textContent = describeChatRejection(parsed.code);
       return;
     }
     if (!freeGameController) {
@@ -607,11 +605,20 @@ function describeChatRejection(code: string): string {
   if (code === "CHAT_LINKS_NOT_ALLOWED") {
     return "Links are not allowed in arena chat.";
   }
+  if (code === "CHAT_CONTACT_DETAILS_NOT_ALLOWED") {
+    return "Contact details and wallet addresses are not allowed in arena chat.";
+  }
+  if (code === "CHAT_SCAM_CONTENT_NOT_ALLOWED") {
+    return "That message contains wording blocked for player safety.";
+  }
   if (code === "CHAT_RATE_LIMITED") {
     return "Slow down — chat has a short anti-spam limit.";
   }
   if (code === "CHAT_DUPLICATE") {
     return "That message was already sent.";
+  }
+  if (code === "CHAT_AUDIT_UNAVAILABLE") {
+    return "Chat is temporarily unavailable. The arena is still live.";
   }
   return "That message could not be sent.";
 }

@@ -83,10 +83,13 @@ wallet address.
 
 **Arena Chat** appears beneath the active game. It carries messages only
 between currently connected players in that same room. Messages are plain text
-only, bounded to 240 characters, normalized by the server, rate-limited, and
-not durable. Links—including normal URLs, `www` forms, and common obfuscated
-domain forms—are rejected by the server. Chat cannot determine a match result
-or change gameplay state.
+only, bounded to 240 characters, normalized by the server, and rate-limited.
+Links—including normal URLs, `www` forms, and common obfuscated domain forms—
+contact details, and common wallet-phishing phrases are rejected by the server.
+Production first creates a signed private audit record in Platform API
+PostgreSQL, then broadcasts the message; audit records expire after 90 days by
+default. It records a name snapshot but never a wallet address, cookie, or IP.
+Chat cannot determine a match result or change gameplay state.
 
 ## Ranking and result
 

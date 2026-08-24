@@ -48,13 +48,18 @@ future game server receives only its public verification key. Wallet addresses
 stay in the Platform API and settlement records; neither Colyseus nor an
 authoritative result receives one.
 
-Arena Chat uses the already-authoritative Colyseus room. It is intentionally
-transient: each room keeps at most 80 messages in process memory and replays
-that small buffer to a newly joined client. It accepts plain text from only a
-connected player, strips control/zero-width characters, rejects URL patterns
-at the server boundary, rate-limits and suppresses duplicate messages, and
-uses server-owned player names. It has no database persistence, DMs, wallet
-addresses, raw HTML, bot-generated messages, or fabricated messages.
+Arena Chat uses the already-authoritative Colyseus room for live delivery.
+Each room keeps at most 80 messages in process memory and replays that small
+buffer to a newly joined client. It accepts plain text from only a connected
+player, strips control/zero-width characters, rejects URL patterns, contact
+details, and common wallet-phishing phrases at the server boundary, rate-limits
+and suppresses duplicates, and uses server-owned player names. In production,
+the game server signs every accepted normalized message for the Railway-private
+Platform API audit endpoint before broadcast. PostgreSQL retains a message/name
+snapshot, time, match/round, and either internal profile ID or a one-way
+anonymous arena identifier for 90 days by default, then platform-api purges it.
+It has no DMs, wallet addresses, cookies, IPs, raw HTML, bot-generated
+messages, public history endpoint, or fabricated messages.
 
 ## Target boundaries
 

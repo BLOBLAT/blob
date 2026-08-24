@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import * as ed25519 from "@noble/ed25519";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createPlatformApp } from "./app.js";
 import { DisplayNameConflictError, type PlatformAuthRepository } from "./auth-types.js";
@@ -22,7 +23,9 @@ const config: PlatformApiConfig = {
   gameTicketTtlMs: 60_000,
   gameTicketRateLimit: 2,
   gameTicketGlobalRateLimit: 3,
-  paidAdmissionTicketPrivateKey: undefined
+  paidAdmissionTicketPrivateKey: undefined,
+  arenaChatAuditPublicKey: undefined,
+  arenaChatRetentionDays: 90
 };
 
 const servers: ReturnType<typeof createServer>[] = [];
@@ -304,6 +307,58 @@ describe("platform API health", () => {
       error: "PROFILE_NAME_UNAVAILABLE",
       message: "That display name is already in use."
     });
+  });
+
+  it("records only a correctly signed game-server chat audit message", async () => {
+    const privateKey = new Uint8Array(32).fill(4);
+    const publicKey = await ed25519.getPublicKeyAsync(privateKey);
+    const store = vi.fn(async () => undefined);
+    const app = createPlatformApp({
+      config: { ...config, arenaChatAuditPublicKey: publicKey },
+      repository: {} as PlatformAuthRepository,
+      arenaChatRepository: { store, pruneExpired: async () => 0 },
+      healthCheck: async () => undefined
+    });
+    const server = createServer(app);
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("Could not start test HTTP server.");
+    }
+    const record = {
+      id: "7f9f4c4d-53d1-4cc6-9f8a-90548bef7654",
+      roomId: "room-1",
+      matchId: "match-1",
+      roundId: "round-1",
+      profileUserId: null,
+      anonymousAuthorKey: "a".repeat(43),
+      authorName: "Blob Prime",
+      text: "nice move",
+      sentAt: Date.now(),
+      expiresAt: Date.now() + 24 * 60 * 60 * 1_000
+    };
+    const body = Buffer.from(JSON.stringify(record));
+    const signature = await ed25519.signAsync(body, privateKey);
+    const url = "http://127.0.0.1:" + address.port + "/internal/arena-chat/messages";
+
+    const accepted = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-BLOB-Arena-Audit-Signature": Buffer.from(signature).toString("base64")
+      },
+      body
+    });
+    expect(accepted.status).toBe(201);
+    expect(store).toHaveBeenCalledWith(expect.objectContaining({ id: record.id, text: "nice move" }));
+
+    const rejected = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body
+    });
+    expect(rejected.status).toBe(401);
   });
 });
 

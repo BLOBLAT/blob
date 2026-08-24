@@ -55,6 +55,14 @@ enum ChainTransactionKind {
   REFUND
 }
 
+/// Only server-accepted messages are retained. The browser never queries this
+/// audit table directly; name and text are immutable snapshots for review.
+enum ArenaChatMessageStatus {
+  VISIBLE
+  HIDDEN
+  REMOVED
+}
+
 model User {
   id                  String       @id @default(uuid())
   displayName         String
@@ -68,6 +76,7 @@ model User {
   deaths              DeathEvent[]
   reviveRequests      ReviveRequest[]
   auditEvents         AuditEvent[]
+  arenaChatMessages   ArenaChatMessageAudit[]
 
   @@unique([displayNameKey])
 }
@@ -308,4 +317,25 @@ model AuditEvent {
 
   @@index([entityType, entityId, createdAt])
   @@index([userId, createdAt])
+}
+
+model ArenaChatMessageAudit {
+  id                   String                 @id
+  roomId               String
+  matchId              String?
+  roundId              String?
+  profileUserId        String?
+  profileUser          User?                  @relation(fields: [profileUserId], references: [id], onDelete: SetNull)
+  anonymousAuthorKey   String?
+  authorName           String
+  text                 String
+  status               ArenaChatMessageStatus @default(VISIBLE)
+  sentAt               DateTime
+  expiresAt            DateTime
+  createdAt            DateTime               @default(now())
+
+  @@index([roomId, sentAt])
+  @@index([matchId, roundId, sentAt])
+  @@index([profileUserId, sentAt])
+  @@index([expiresAt])
 }

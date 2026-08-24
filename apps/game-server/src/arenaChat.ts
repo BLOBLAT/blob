@@ -1,5 +1,6 @@
 import { type ArenaChatMessage, type ArenaChatRejectedEvent } from "@blob/protocol";
 import { validateChatMessage } from "@blob/validation";
+import { randomUUID } from "node:crypto";
 
 const MAX_HISTORY = 80;
 const MIN_MESSAGE_INTERVAL_MS = 1_250;
@@ -16,9 +17,13 @@ interface SenderWindow {
 export class ArenaChat {
   private readonly history: ArenaChatMessage[] = [];
   private readonly senderWindows = new Map<string, SenderWindow>();
-  private sequence = 0;
 
-  send(input: { playerId: string; name: string; payload: unknown; now: number }):
+  /**
+   * Validates and reserves a chat send. Callers must persist the resulting
+   * message before calling `commit`; this keeps a durable audit record ahead
+   * of every message broadcast to other players.
+   */
+  prepare(input: { playerId: string; name: string; payload: unknown; now: number }):
     | { message: ArenaChatMessage }
     | { rejected: ArenaChatRejectedEvent } {
     const parsed = validateChatMessage(input.payload);
@@ -43,17 +48,20 @@ export class ArenaChat {
     window.lastTextAt = input.now;
     this.senderWindows.set(input.playerId, window);
     const message: ArenaChatMessage = {
-      id: "chat-" + (++this.sequence),
+      id: randomUUID(),
       playerId: input.playerId,
       name: input.name,
       text: parsed.data.text,
       sentAt: input.now
     };
+    return { message };
+  }
+
+  commit(message: ArenaChatMessage): void {
     this.history.push(message);
     if (this.history.length > MAX_HISTORY) {
       this.history.splice(0, this.history.length - MAX_HISTORY);
     }
-    return { message };
   }
 
   getHistory(): readonly ArenaChatMessage[] {

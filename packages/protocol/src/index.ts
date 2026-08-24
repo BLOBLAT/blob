@@ -60,7 +60,14 @@ export interface ArenaChatMessage {
 }
 
 export interface ArenaChatRejectedEvent {
-  code: "CHAT_INVALID" | "CHAT_LINKS_NOT_ALLOWED" | "CHAT_RATE_LIMITED" | "CHAT_DUPLICATE";
+  code:
+    | "CHAT_INVALID"
+    | "CHAT_LINKS_NOT_ALLOWED"
+    | "CHAT_CONTACT_DETAILS_NOT_ALLOWED"
+    | "CHAT_SCAM_CONTENT_NOT_ALLOWED"
+    | "CHAT_RATE_LIMITED"
+    | "CHAT_DUPLICATE"
+    | "CHAT_AUDIT_UNAVAILABLE";
 }
 
 export interface ArenaPlayerView {
