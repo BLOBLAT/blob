@@ -95,6 +95,13 @@ deadline; the unique Solana signature and unique entry-to-transaction relation
 make both duplicate and cross-entry reuse fail closed. It has no browser or
 HTTP route, and does not submit transfers.
 
+Before that funding stage, the internal `PrismaPaidMatchTermsRepository`
+persists the server-created immutable match terms as `DRAFT`; an exact retry
+reuses that record, while a divergent rules hash or any differing immutable
+term fails closed. A future controlled orchestration service may move the
+record through the defined paid lifecycle, but no browser can create terms or
+select a mint, escrow, fee, or payout split.
+
 ## Authority flow
 
 ```text
