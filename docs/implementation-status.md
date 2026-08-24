@@ -258,8 +258,9 @@ wallet/profile boundary intact while doing it.
 
 ### Verified current behaviour
 
-- The current pushed revision is `0d6727bc69dce63c56843dc08e31d00e83cb03f4`.
-  Confirm `HEAD` still equals `origin/main` before assuming that remains true.
+- Do not rely on a hard-coded revision in this handoff. Confirm `HEAD` still
+  equals `origin/main` before assuming any deployment or implementation detail
+  remains current.
 - A signed-in wallet creates one durable `User` and `Wallet` record in the
   Platform API PostgreSQL database. `User.displayNameKey` has a database
   uniqueness constraint, so an authenticated display name belongs to one
