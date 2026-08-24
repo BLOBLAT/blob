@@ -183,6 +183,9 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   terms and verified player entries. Identical retries reuse the same derived
   settlement ID; conflicting results fail closed. It has no public route and
   cannot sign, send, or accept a USDC transfer.
+- Railway deployment `8bab46b7-67bd-48b0-8d41-d29ff8fda90a` successfully
+  applied migration `20260824150000_persist_immutable_paid_results`; its
+  post-deploy Platform API health check returned HTTP 200.
 - Platform API now returns a deliberate `403 ORIGIN_NOT_ALLOWED` response for
   browser Origins outside its explicit allowlist, rather than an ambiguous
   internal error. It is deployed with a durable-store health check, and Vercel
