@@ -102,6 +102,30 @@ describe("paid-match finalization", () => {
       confirmedRevives: [],
       settlementId: ""
     })).toThrow("settlement ID is invalid");
+
+    expect(() => finalizePaidMatch({
+      terms,
+      result: createPaidResult(terms.matchId, terms.roundId),
+      verifiedParticipants: participants(),
+      confirmedRevives: [],
+      settlementId: "settlement\nretry"
+    })).toThrow("settlement ID is invalid");
+  });
+
+  it("rejects control characters in authoritative player and revive identifiers", () => {
+    const terms = createPaidMatchTerms({ usdcMint: USDC_MINT, escrowAddress: ESCROW, now: NOW, ruleset: PaidRuleset.REBUY });
+    expect(() => finalizePaidMatch({
+      terms,
+      result: createPaidResult(terms.matchId, terms.roundId),
+      verifiedParticipants: [{ ...participants()[0]!, playerId: "player\n1" }, ...participants().slice(1)],
+      confirmedRevives: []
+    })).toThrow("Each paid participant must be unique");
+    expect(() => finalizePaidMatch({
+      terms,
+      result: createPaidResult(terms.matchId, terms.roundId),
+      verifiedParticipants: participants(),
+      confirmedRevives: [{ playerId: "player-1", deathId: "death\n1" }]
+    })).toThrow("Confirmed revive does not belong to a unique paid death");
   });
 
   it("uses a stable settlement identifier when immutable finalization is retried", () => {

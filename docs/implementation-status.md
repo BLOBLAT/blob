@@ -194,6 +194,9 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   payout's place, verified winning entry, atomic amount, and idempotency key,
   rather than trusting a matching payout count. A durable mismatch fails
   closed before any future settlement worker could consume the result.
+- Paid-domain match, player, revive, and settlement identifiers now use one
+  bounded ASCII-safe format before they can reach an immutable hash, audit
+  event, or idempotency key; control and separator characters fail closed.
 - Railway deployment `8bab46b7-67bd-48b0-8d41-d29ff8fda90a` successfully
   applied migration `20260824150000_persist_immutable_paid_results`; its
   post-deploy Platform API health check returned HTTP 200.

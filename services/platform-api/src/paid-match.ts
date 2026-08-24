@@ -394,7 +394,7 @@ function assertInternalIdentifier(value: unknown, label: string): asserts value 
 }
 
 function isInternalIdentifier(value: unknown): value is string {
-  return typeof value === "string" && value.length >= 1 && value.length <= 128;
+  return typeof value === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(value);
 }
 
 function isNonNegativeSafeInteger(value: unknown): value is number {
