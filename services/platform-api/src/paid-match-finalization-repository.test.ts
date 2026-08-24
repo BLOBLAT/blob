@@ -5,7 +5,7 @@ import {
   PaidMatchPersistenceError,
   PrismaPaidMatchFinalizationRepository,
 } from "./paid-match-finalization-repository.js";
-import type { PrismaClient } from "./generated/prisma/client.js";
+import { Prisma, type PrismaClient } from "./generated/prisma/client.js";
 
 const NOW = new Date("2026-08-24T10:00:00.000Z");
 const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
@@ -85,6 +85,20 @@ describe("durable paid-match finalization", () => {
     await expect(repository.persist(createInput(terms)))
       .rejects.toMatchObject({ code: "MATCH_NOT_FINALIZABLE" } satisfies Partial<PaidMatchPersistenceError>);
   });
+
+  it("retries one serializable-write conflict before freezing the same result", async () => {
+    const terms = createTerms();
+    const state = createState(terms);
+    state.serializationFailures = 1;
+    const repository = new PrismaPaidMatchFinalizationRepository(createPrisma(state));
+
+    await expect(repository.persist(createInput(terms))).resolves.toMatchObject({ created: true });
+    expect(state.transactionCalls).toBe(2);
+    expect(state.isolationLevels).toEqual([
+      Prisma.TransactionIsolationLevel.Serializable,
+      Prisma.TransactionIsolationLevel.Serializable,
+    ]);
+  });
 });
 
 function createTerms(): PaidMatchTerms {
@@ -130,6 +144,9 @@ interface TestState {
   attempt?: { resultId: string; resultHash: string; settlementId: string; idempotencyKey: string };
   payouts: Array<{ resultId: string; entryId: string; place: number }>;
   auditEvents: unknown[];
+  serializationFailures: number;
+  transactionCalls: number;
+  isolationLevels: unknown[];
 }
 
 function createState(terms: PaidMatchTerms): TestState {
@@ -167,6 +184,9 @@ function createState(terms: PaidMatchTerms): TestState {
     })),
     payouts: [],
     auditEvents: [],
+    serializationFailures: 0,
+    transactionCalls: 0,
+    isolationLevels: [],
   };
 }
 
@@ -212,6 +232,17 @@ function createPrisma(state: TestState): PrismaClient {
     }
   };
   return {
-    $transaction: async <T>(callback: (client: typeof transaction) => Promise<T>) => callback(transaction)
+    $transaction: async <T>(
+      callback: (client: typeof transaction) => Promise<T>,
+      options?: { isolationLevel?: unknown },
+    ) => {
+      state.transactionCalls += 1;
+      state.isolationLevels.push(options?.isolationLevel);
+      if (state.serializationFailures > 0) {
+        state.serializationFailures -= 1;
+        throw { code: "P2034" };
+      }
+      return callback(transaction);
+    }
   } as unknown as PrismaClient;
 }

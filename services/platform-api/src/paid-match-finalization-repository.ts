@@ -44,6 +44,27 @@ export class PrismaPaidMatchFinalizationRepository {
 
   async persist(input: PersistPaidMatchFinalizationInput): Promise<PersistedPaidMatchFinalization> {
     const finalized = finalizePaidMatch(input);
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        return await this.persistOnce(input, finalized);
+      } catch (error) {
+        // PostgreSQL may abort one of two concurrent serializable result
+        // writes. Retrying once makes identical finalization idempotent; a
+        // divergent retry then observes the immutable stored result and fails
+        // with RESULT_IMMUTABLE_CONFLICT below.
+        if (attempt === 0 && isSerializationConflict(error)) {
+          continue;
+        }
+        throw error;
+      }
+    }
+    throw new PaidMatchPersistenceError("FINALIZATION_RETRY_EXHAUSTED", "Could not persist the immutable paid result.");
+  }
+
+  private async persistOnce(
+    input: PersistPaidMatchFinalizationInput,
+    finalized: FinalizedPaidMatch,
+  ): Promise<PersistedPaidMatchFinalization> {
     return this.prisma.$transaction(async (transaction) => {
       const match = await transaction.match.findUnique({
         where: { id: input.terms.matchId },
@@ -147,7 +168,7 @@ export class PrismaPaidMatchFinalizationRepository {
         immutableResultHash: finalized.immutableResultHash,
         settlementId: finalized.settlementRequest.settlementId,
       };
-    });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
 
   private async reuseExistingFinalization(
@@ -305,4 +326,11 @@ function toStoredResultPayload(finalized: FinalizedPaidMatch): Prisma.InputJsonV
 
 function equalNumberArrays(left: readonly number[], right: readonly number[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function isSerializationConflict(error: unknown): boolean {
+  return typeof error === "object"
+    && error !== null
+    && "code" in error
+    && (error as { code?: unknown }).code === "P2034";
 }
