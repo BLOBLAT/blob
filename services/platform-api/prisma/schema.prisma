@@ -246,6 +246,9 @@ model SettlementAttempt {
   error               String?
 
   @@index([matchId, settledAt])
+  // A match result is immutable. Retries update this one durable attempt,
+  // rather than creating another settlement authority path.
+  @@unique([matchId])
 }
 
 model Payout {
@@ -262,6 +265,8 @@ model Payout {
   createdAt           DateTime     @default(now())
 
   @@unique([matchId, place])
+  // One enrolled entry can occupy only one final prize place.
+  @@unique([matchId, entryId])
   @@index([entryId])
 }
 
