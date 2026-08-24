@@ -107,6 +107,12 @@ export class BlobArenaRoom extends Room<{ state: BlobArenaState }> {
     const now = Date.now();
     const result = this.arenaChat.prepare({
       playerId: client.sessionId,
+      // A signed profile ticket carries only an internal user ID. Reusing it
+      // here keeps short anti-spam limits across a reconnect without sending
+      // a wallet address into Colyseus or its chat state.
+      senderKey: this.profileUserIds.get(client.sessionId)
+        ? "profile:" + this.profileUserIds.get(client.sessionId)
+        : client.sessionId,
       name: player.name,
       payload,
       now

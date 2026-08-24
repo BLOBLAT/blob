@@ -317,6 +317,10 @@ in-memory chat behaviour unless the audit bridge is configured.
   wallet addresses, scam phrases, malformed payloads, flooding, and duplicate
   sends are rejected server-side. There is still intentionally no direct
   message feature, moderator role, report queue, or mute UI.
+- A signed profile's short chat rate-limit state survives a reconnect for only
+  the bounded anti-spam window, keyed by its internal profile ID rather than a
+  wallet address. Anonymous sessions remain bounded by their room session;
+  stale sender state is discarded automatically.
 - The direct `api.blob.lat` certificate is still stuck in Railway
   `VALIDATING_OWNERSHIP` despite its propagated CNAME/TXT, no CAA record, and
   no DNSSEC delegation. Do not remove the working Vercel same-site `/v1/*`

@@ -116,8 +116,7 @@ export function createPlatformApp(options: PlatformAppOptions): express.Express 
       service: "blob-platform-api",
       event: "arena_chat_recorded",
       messageId: verified.record.id,
-      roomId: verified.record.roomId,
-      profileUserId: verified.record.profileUserId
+      roomId: verified.record.roomId
     }));
     response.status(201).json({ status: "recorded" });
   }));
