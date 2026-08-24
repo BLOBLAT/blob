@@ -269,6 +269,37 @@ curl -i https://api.blob.lat/health
 Only after that exact test succeeds should Vercel receive
 `VITE_PLATFORM_API_URL=https://api.blob.lat`.
 
+#### Railway certificate still validating ownership
+
+Use the Railway CLI to inspect the Railway-side domain state without exposing
+or changing any variable values:
+
+```sh
+railway domain status api.blob.lat \
+  --service platform-api \
+  --environment production \
+  --project <railway-project-id> \
+  --json
+```
+
+If the status says the CNAME has propagated but `verification.verified` remains
+`false` and the certificate is still `VALIDATING_OWNERSHIP`, first compare the
+Cloudflare CNAME and `_railway-verify.api` TXT records character-for-character
+with the active Railway domain status. Both records must be **DNS only**; do
+not proxy this API hostname through Cloudflare while Railway is issuing its
+certificate. Do not remove the working Vercel `/v1/*` bridge during this
+state. It keeps Wallet Standard sessions same-site at `blob.lat` while the
+direct hostname is unavailable.
+
+`railway domain certificate retry` is only valid after Railway reports a
+failed issuance. Do not delete and recreate an otherwise correctly configured
+custom domain just to force a retry: that can replace the ownership token and
+create a new DNS propagation delay. If the exact records have propagated and
+Railway remains in ownership validation, open a Railway support request with
+the custom-domain status output. Keep
+`VITE_PLATFORM_API_URL=https://blob.lat` and the server-only
+`PLATFORM_API_PROXY_ORIGIN` in Vercel until `api.blob.lat/health` returns 200.
+
 ## 4. Connect `blob.lat` through Cloudflare to Vercel
 
 **MANUAL DASHBOARD ACTION REQUIRED:** DNS, Cloudflare SSL, and Vercel domain configuration cannot be changed by Git commits.
@@ -331,4 +362,5 @@ The client reports these states without exposing server error messages or stack 
 | Browser cannot establish WebSocket | Use an HTTPS game URL, confirm `/health` works, and ensure the browser origin appears exactly in `BLOB_WEB_ORIGIN`. |
 | CORS/origin rejection | Use comma-separated full origins in `BLOB_WEB_ORIGIN`; do not use `*` in production. |
 | `blob.lat` returns Cloudflare 525 | Correct Cloudflare → Vercel DNS/origin/TLS configuration using the Vercel Domain screen; this cannot be repaired in Git. |
+| Railway API custom domain remains in certificate validation | Compare the exact CNAME and `_railway-verify.api` TXT values with `railway domain status`; keep both DNS only. Retain the same-site Vercel `/v1/*` bridge and contact Railway if verification remains false after propagation. |
 | Custom domain does not resolve | Wait for DNS propagation and Vercel/Railway domain verification; check for stale A, AAAA, or CNAME records. |
