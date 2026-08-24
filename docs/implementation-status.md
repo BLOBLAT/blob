@@ -107,6 +107,9 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   with the allocation constant, preventing an under-allocation during
   `create_match`; the isolated localnet smoke script runs those Rust tests
   before it builds and deploys its throwaway copy.
+- GitHub Actions now runs the escrow crate's locked native Rust tests only
+  when escrow source or its workflow changes. It is an isolated compile/test
+  gate; it has no wallet, Solana RPC, deployment, or production credentials.
 - Added tests for signed, short-lived, match/round-bound Ed25519 paid-admission
   tickets. The Platform API would retain the private signing key while a future
   paid room receives only the public verification key. These tickets are not
