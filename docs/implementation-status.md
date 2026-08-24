@@ -351,7 +351,9 @@ in-memory chat behaviour unless the audit bridge is configured.
   exposed to browsers and no caller/key has been provisioned because Paid Mode
   remains disabled.
 - `8cc5ce9` added `@blob/paid-admission-client`, a backend-only future Paid
-  Room client which signs the exact consume body with the third service key
+  Room client. It now verifies the Platform API ticket signature locally with
+  the issuer's public key, requires the exact match/round binding and valid
+  short lifetime, then signs the exact consume body with the third service key
   and accepts only Platform API's `204` response. `3db48bf` removed duplicated
   claim parsing by placing the exact ticket/payload schema in
   `@blob/validation`; issuer, Platform API verifier, and consumer therefore

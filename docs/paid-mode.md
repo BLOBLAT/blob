@@ -156,9 +156,12 @@ with `503 ADMISSION_UNAVAILABLE`; configuring the key alone does not enable
 Paid Mode.
 
 `@blob/paid-admission-client` is the intentionally backend-only client for
-that future Paid Room. It validates bounded claims, signs the exact raw JSON
-body with the caller key, and accepts only a `204` consume response. It is not
-an app, has no browser entrypoint, and is not deployed by `railway.toml`.
+that future Paid Room. Before it sends the signed consume request, it verifies
+the Platform API's Ed25519 ticket locally against a separately configured
+ticket-issuer public key and requires an exact expected match and round. It
+then validates bounded claims, signs the exact raw JSON body with the caller
+key, and accepts only a `204` consume response. It is not an app, has no
+browser entrypoint, and is not deployed by `railway.toml`.
 
 Before it creates a settlement request, the paid domain validates the complete
 server result: valid timestamp, every funded participant exactly once,

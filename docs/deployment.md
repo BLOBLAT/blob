@@ -216,6 +216,15 @@ Never set either key as a `VITE_` variable, commit it, reuse the API private
 key for Solana, or give the game server the private key. These keys authenticate
 only ephemeral display-name tickets; they do not authorize payments.
 
+When a separately reviewed Paid Room is eventually introduced, it must run as
+an internal Railway service, not as the Free Mode game server. It needs only
+the Platform API ticket **public** key, its own distinct 32-byte Ed25519
+consume-request private key, and the Railway-private Platform API origin. The
+backend-only admission client verifies the ticket's signature and exact
+match/round before it sends that signed one-time consume request. Do not add
+any of these values to Vite or configure them before the escrow, audit, and
+legal release gates are complete.
+
 Arena Chat uses a separate one-way audit signer. Generate an independent
 32-byte Ed25519 key pair outside source control. Configure **only** its base58
 public key above on `platform-api`, then configure these values only on the
