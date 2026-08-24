@@ -131,9 +131,9 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   `LIVE` and `FINALIZING` can only settle a result.
 - Added an immutable maximum-15-minute pre-game funding deadline to paid terms
   and the escrow. It is included in the rules hash; the controller cannot
-  start a paid round after it, while anyone can transition a never-started
-  escrow to individual refunds after expiry. The controller, result authority,
-  and treasury must now be distinct roles.
+  start a paid round or accept a new entry after it, while anyone can
+  transition a never-started escrow to individual refunds after expiry. The
+  controller, result authority, and treasury must now be distinct roles.
 - Ran `cargo test --manifest-path programs/blob-escrow/Cargo.toml --locked`:
   11 escrow host-side tests passed. Build output was kept in and removed from
   the Windows temporary directory.
