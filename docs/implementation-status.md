@@ -93,7 +93,7 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   calculations, Rebuy policy, finalization validation, and payment parsing.
 - Ran the equivalent split verification successfully: 60 tests passed, all workspace typechecks
   passed, and the web, game-server, and platform API production builds passed.
-- The current JavaScript suite has 76 tests passing. The root workspace check
+- The current JavaScript suite has 130 tests passing. The root workspace check
   now executes TypeScript workspaces sequentially, avoiding the Windows
   parallel-compiler memory failure without dropping any package check.
 - `npm audit --omit=dev` currently reports three high findings through
@@ -147,6 +147,18 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   rejects malformed values and refuses to start if it matches the Free Mode
   display-name ticket key. The obsolete HMAC shared-secret configuration was
   removed; setting the future key does not enable Paid Mode.
+- Finalization now requires the durable paid round to have started, rejects a
+  result timestamp before its immutable ten-minute end or in the future, and
+  rejects malformed 32-byte Solana addresses or 64-byte transaction signatures
+  before a payment-receipt transaction reaches PostgreSQL.
+- The controller, result authority, and treasury owner are ineligible paid
+  entrants on-chain. The future backend-only admission consumer normalizes its
+  Railway-private origin before it signs the exact raw consume request, so an
+  optional trailing slash cannot alter the requested path.
+- The escrow Rebuy instruction now also rejects a death attestation from before
+  that escrow's live round started. The 30-second death window and final-minute
+  cutoff remain independent on-chain guards. GitHub Actions completed the
+  isolated locked Rust regression suite successfully for `d4c30db`.
 - Railway deployment watch patterns are scoped per service. A Platform API
   commit deploys only that service; game-server/game-core/protocol changes
   deploy the authoritative arena. Root dependency/configuration changes still
