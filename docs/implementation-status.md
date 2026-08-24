@@ -110,6 +110,7 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
 - GitHub Actions now runs the escrow crate's locked native Rust tests only
   when escrow source or its workflow changes. It is an isolated compile/test
   gate; it has no wallet, Solana RPC, deployment, or production credentials.
+  Its first run (`32715817480`) completed successfully for commit `4f28fcb`.
 - Added tests for signed, short-lived, match/round-bound Ed25519 paid-admission
   tickets. The Platform API would retain the private signing key while a future
   paid room receives only the public verification key. These tickets are not
