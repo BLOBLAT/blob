@@ -157,8 +157,10 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   smoke-test session left the room cleanly.
 - Added privacy-minimal live landing-page metrics: a random per-tab presence
   ID is retained only in game-server memory for 75 seconds, and the footer
-  renders actual active browser sessions plus connected arena BLOBs. No
-  historical visitor analytics, account data, wallet data, IP address, or
+  renders actual active browser sessions plus connected arena BLOBs. The write
+  endpoint requires the explicit web origin and uses a one-minute,
+  process-local salted source fingerprint only as an anti-abuse brake. No
+  historical visitor analytics, account data, wallet data, raw IP address, or
   tracking service was added.
 - Added a Free Mode-only, server-authoritative Arena Bot roster. Each round
   with a human player gets a deterministic varied set of three to five bots;
@@ -342,9 +344,12 @@ in-memory chat behaviour unless the audit bridge is configured.
   itself expose a match, enter funding, accept a payment, or run Paid Mode.
 - Paid admission tickets now have an internal hashed, expiring, single-use
   entry lifecycle. A future Paid Room must independently verify the Ed25519
-  ticket, then consume its exact hash through an authenticated internal API
-  call while the match is `STARTING`. The transport/authentication for that
-  call is still a required gate; it is intentionally not exposed to browsers.
+  ticket, then consume its exact hash through the implemented raw-body,
+  third-key-signed private Platform API endpoint while the match is
+  `STARTING`. The endpoint fails closed with `503 ADMISSION_UNAVAILABLE`
+  until its distinct caller public key is configured; it is intentionally not
+  exposed to browsers and no caller/key has been provisioned because Paid Mode
+  remains disabled.
 
 ### Approved direction to implement next
 

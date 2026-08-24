@@ -23,7 +23,8 @@ export interface ConsumePaidAdmissionTicketInput {
  * The issuing service holds the Ed25519 private key. A future Paid Room must
  * first verify the ticket signature with its public key, then call this
  * repository over an authenticated internal channel to consume it exactly
- * once. No HTTP route exposes these methods while Paid Mode is disabled.
+ * once. The raw signed internal route is deliberately unavailable until its
+ * separate caller public key is configured; no browser route exposes it.
  */
 export class PrismaPaidAdmissionRepository {
   constructor(private readonly prisma: PrismaClient) {}

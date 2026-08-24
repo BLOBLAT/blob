@@ -1,5 +1,10 @@
+import { createHash, randomBytes } from "node:crypto";
+
 const VISITOR_TTL_MS = 75_000;
 const MAX_LIVE_VISITORS = 10_000;
+const PRESENCE_RATE_WINDOW_MS = 60_000;
+const MAX_PRESENCE_REQUESTS_PER_SOURCE = 120;
+const MAX_RATE_LIMIT_SOURCES = 4_096;
 
 export interface LiveMetricsSnapshot {
   liveVisitors: number;
@@ -54,4 +59,57 @@ export class LiveMetrics {
 
 export function isValidVisitorId(value: unknown): value is string {
   return typeof value === "string" && /^[A-Za-z0-9_-]{16,128}$/.test(value);
+}
+
+/**
+ * A small process-local abuse brake for the unauthenticated presence endpoint.
+ * The rate-limit map contains only a salted one-way fingerprint of the source
+ * address, never the address itself, and is discarded when the process exits.
+ */
+export class PresenceRateLimiter {
+  private readonly sources = new Map<string, { windowStartedAt: number; requestCount: number; lastSeenAt: number }>();
+  private readonly salt = randomBytes(32);
+
+  constructor(
+    private readonly maxRequests = MAX_PRESENCE_REQUESTS_PER_SOURCE,
+    private readonly windowMs = PRESENCE_RATE_WINDOW_MS,
+  ) {}
+
+  consume(sourceAddress: string | undefined, now = Date.now()): boolean {
+    if (!sourceAddress) {
+      return false;
+    }
+    this.prune(now);
+    const key = createHash("sha256").update(this.salt).update(sourceAddress).digest("base64url");
+    const previous = this.sources.get(key);
+    if (!previous || now - previous.windowStartedAt >= this.windowMs) {
+      this.enforceCapacity();
+      this.sources.set(key, { windowStartedAt: now, requestCount: 1, lastSeenAt: now });
+      return true;
+    }
+    previous.lastSeenAt = now;
+    if (previous.requestCount >= this.maxRequests) {
+      return false;
+    }
+    previous.requestCount += 1;
+    return true;
+  }
+
+  private prune(now: number): void {
+    for (const [key, value] of this.sources) {
+      if (now - value.lastSeenAt >= this.windowMs) {
+        this.sources.delete(key);
+      }
+    }
+  }
+
+  private enforceCapacity(): void {
+    if (this.sources.size < MAX_RATE_LIMIT_SOURCES) {
+      return;
+    }
+    const oldestKey = this.sources.keys().next().value;
+    if (oldestKey) {
+      this.sources.delete(oldestKey);
+    }
+  }
 }

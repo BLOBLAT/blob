@@ -4,6 +4,7 @@ import type { ArenaChatAuditRecord } from "@blob/validation";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ARENA_ROOM_NAME } from "./BlobArenaRoom.js";
 import { ARENA_STATE_ENCODER_BUFFER_BYTES, createGameServer, type GameServerHandle } from "./server.js";
+import { PresenceRateLimiter } from "./liveMetrics.js";
 import { ClientMessage, ServerEvent, type ArenaChatMessage } from "@blob/protocol";
 
 let server: GameServerHandle;
@@ -75,6 +76,30 @@ describe("BLOB arena room", () => {
     });
     expect(presence.headers.get("access-control-allow-origin")).toBe("http://127.0.0.1:5173");
     await expect(presence.json()).resolves.toEqual({ liveVisitors: 1, arenaPlayers: 0 });
+
+    const missingOrigin = await fetch(`${endpoint}/presence`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ visitorId: "abcdefghijklmnopqrstuv" })
+    });
+    expect(missingOrigin.status).toBe(403);
+    await expect(missingOrigin.json()).resolves.toEqual({ error: "PRESENCE_ORIGIN_NOT_ALLOWED" });
+
+    const foreignOrigin = await fetch(`${endpoint}/presence`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: "https://example.invalid" },
+      body: JSON.stringify({ visitorId: "abcdefghijklmnopqrstuv" })
+    });
+    expect(foreignOrigin.status).toBe(403);
+    await expect(foreignOrigin.json()).resolves.toEqual({ error: "PRESENCE_ORIGIN_NOT_ALLOWED" });
+  });
+
+  it("rate limits live-presence updates with an ephemeral non-IP key", () => {
+    const limiter = new PresenceRateLimiter(2, 1_000);
+    expect(limiter.consume("203.0.113.8", 1_000)).toBe(true);
+    expect(limiter.consume("203.0.113.8", 1_001)).toBe(true);
+    expect(limiter.consume("203.0.113.8", 1_002)).toBe(false);
+    expect(limiter.consume("203.0.113.8", 2_000)).toBe(true);
   });
 
   it("starts a room where two clients receive authoritative state and input-driven movement", async () => {

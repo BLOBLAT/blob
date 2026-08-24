@@ -144,13 +144,16 @@ while the match is `STARTING`. Finalization accepts both verified and consumed
 entries. This state exists before the transport is enabled; no browser route
 or Paid Room currently invokes it.
 
-The eventual consume call is a separate Railway-private raw-body request,
-signed by a third Ed25519 service-identity pair. Platform API holds only
+The implemented (but disabled) consume route is a separate Railway-private
+raw-body request, signed by a third Ed25519 service-identity pair. Platform
+API holds only
 `BLOB_PAID_ADMISSION_CONSUMER_PUBLIC_KEY_BASE58`; the future Paid Room holds
 the matching private key. This is neither a wallet key nor a settlement key.
 It authenticates the caller while the Platform API still validates the stored
 ticket hash and immutable entry/match bindings. Do not configure it on the
-Free Mode room or in Vite.
+Free Mode room or in Vite. Without that public key, the endpoint fails closed
+with `503 ADMISSION_UNAVAILABLE`; configuring the key alone does not enable
+Paid Mode.
 
 Before it creates a settlement request, the paid domain validates the complete
 server result: valid timestamp, every funded participant exactly once,
