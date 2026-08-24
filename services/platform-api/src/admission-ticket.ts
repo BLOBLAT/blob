@@ -6,7 +6,6 @@ export interface PaidAdmissionClaims {
   matchId: string;
   roundId: string;
   playerId: string;
-  walletAddress: string;
   rulesHash: string;
   issuedAt: number;
   expiresAt: number;
@@ -29,7 +28,6 @@ export function issuePaidAdmissionTicket(input: {
   matchId: string;
   roundId: string;
   playerId: string;
-  walletAddress: string;
   rulesHash: string;
   now?: Date;
   ttlMs?: number;
@@ -47,7 +45,6 @@ export function issuePaidAdmissionTicket(input: {
     matchId: input.matchId,
     roundId: input.roundId,
     playerId: input.playerId,
-    walletAddress: input.walletAddress,
     rulesHash: input.rulesHash,
     issuedAt: now.getTime(),
     expiresAt: now.getTime() + ttlMs,
@@ -78,7 +75,7 @@ export function verifyPaidAdmissionTicket(input: {
   if (claims.audience !== "blob-game-server"
     || claims.matchId !== input.expectedMatchId
     || claims.roundId !== input.expectedRoundId
-    || !claims.entryId || !claims.playerId || !claims.walletAddress || !claims.rulesHash
+    || !claims.entryId || !claims.playerId || !claims.rulesHash
     || !Number.isSafeInteger(claims.issuedAt) || !Number.isSafeInteger(claims.expiresAt)
     || claims.expiresAt <= claims.issuedAt || claims.expiresAt <= (input.now ?? new Date()).getTime()) {
     throw new AdmissionTicketError("ADMISSION_CLAIMS_INVALID", "Paid admission ticket is expired or does not match this round.");
@@ -111,7 +108,7 @@ function assertSecret(secret: string): void {
 }
 
 function assertRequiredFields(input: Omit<PaidAdmissionClaims, "audience" | "issuedAt" | "expiresAt" | "nonce"> & { secret: string; now?: Date; ttlMs?: number }): void {
-  for (const value of [input.entryId, input.matchId, input.roundId, input.playerId, input.walletAddress, input.rulesHash]) {
+  for (const value of [input.entryId, input.matchId, input.roundId, input.playerId, input.rulesHash]) {
     if (!value || value.length > 256) {
       throw new AdmissionTicketError("ADMISSION_CLAIMS_INVALID", "Paid admission ticket claims are invalid.");
     }

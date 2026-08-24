@@ -12,15 +12,16 @@ describe("paid admission tickets", () => {
       matchId: "match-1",
       roundId: "round-1",
       playerId: "player-1",
-      walletAddress: "wallet-1",
       rulesHash: "rules-hash",
       now: NOW
     });
-    expect(verifyPaidAdmissionTicket({ token: issued.token, secret: SECRET, expectedMatchId: "match-1", expectedRoundId: "round-1", now: NOW })).toMatchObject({ entryId: "entry-1", playerId: "player-1" });
+    const claims = verifyPaidAdmissionTicket({ token: issued.token, secret: SECRET, expectedMatchId: "match-1", expectedRoundId: "round-1", now: NOW });
+    expect(claims).toMatchObject({ entryId: "entry-1", playerId: "player-1" });
+    expect(claims).not.toHaveProperty("walletAddress");
   });
 
   it("rejects tampering, a wrong match, and an expired ticket", () => {
-    const issued = issuePaidAdmissionTicket({ secret: SECRET, entryId: "entry", matchId: "match", roundId: "round", playerId: "player", walletAddress: "wallet", rulesHash: "hash", now: NOW, ttlMs: 10_000 });
+    const issued = issuePaidAdmissionTicket({ secret: SECRET, entryId: "entry", matchId: "match", roundId: "round", playerId: "player", rulesHash: "hash", now: NOW, ttlMs: 10_000 });
     expect(() => verifyPaidAdmissionTicket({ token: issued.token + "x", secret: SECRET, expectedMatchId: "match", expectedRoundId: "round", now: NOW })).toThrow(AdmissionTicketError);
     expect(() => verifyPaidAdmissionTicket({ token: issued.token, secret: SECRET, expectedMatchId: "other", expectedRoundId: "round", now: NOW })).toThrow(AdmissionTicketError);
     expect(() => verifyPaidAdmissionTicket({ token: issued.token, secret: SECRET, expectedMatchId: "match", expectedRoundId: "round", now: new Date(NOW.getTime() + 10_000) })).toThrow(AdmissionTicketError);

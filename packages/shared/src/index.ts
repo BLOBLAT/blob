@@ -351,7 +351,6 @@ export interface PaidDeathEvent {
   matchId: string;
   roundId: string;
   playerId: string;
-  walletAddress: string;
   diedAt: Date;
   reviveExpiresAt: Date;
   reviveCutoffAt: Date;
@@ -360,14 +359,14 @@ export interface PaidDeathEvent {
 /**
  * A one-time authorization issued only after the game server records an
  * authoritative death and the settlement service confirms the matching USDC
- * revive transaction. It is not a client-generated respawn request.
+ * revive transaction. It is not a client-generated respawn request and
+ * deliberately contains no wallet address.
  */
 export interface RevivePermit {
   permitId: string;
   matchId: string;
   roundId: string;
   playerId: string;
-  walletAddress: string;
   deathId: string;
   paymentId: string;
   expiresAt: Date;
@@ -404,7 +403,6 @@ export interface MatchEntry {
 
 export interface AuthoritativePlayerResult {
   playerId: string;
-  walletAddress?: string;
   finalRank: number;
   finalMass: number;
   foodCollected: number;
@@ -415,7 +413,8 @@ export interface AuthoritativePlayerResult {
 
 /**
  * The game service can publish this immutable record after its authoritative
- * round is finalized. It does not initiate payment or blockchain transfers.
+ * round is finalized. It does not initiate payment or blockchain transfers,
+ * and it never carries a wallet address.
  */
 export interface AuthoritativeMatchResult {
   matchId: string;

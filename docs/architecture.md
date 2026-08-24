@@ -34,6 +34,11 @@ display name, and never receives a wallet address, session cookie, private
 key, or payment state. A missing, invalid, or expired ticket simply produces a
 server-assigned anonymous BLOB name, so Free Mode remains available.
 
+The future paid admission ticket follows the same privacy rule: it binds only
+an internal entry ID, player ID, match ID, round ID, rules hash, expiry, and
+server-to-server signature. Wallet addresses stay in the Platform API and
+settlement records; neither Colyseus nor an authoritative result receives one.
+
 Arena Chat uses the already-authoritative Colyseus room. It is intentionally
 transient: each room keeps at most 80 messages in process memory and replays
 that small buffer to a newly joined client. It accepts plain text from only a

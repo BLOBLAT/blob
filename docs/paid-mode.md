@@ -98,7 +98,8 @@ The platform API signs a short-lived, HMAC-protected admission ticket only
 after the entry is durably verified. A future paid room verifies its match ID,
 round ID, expiration, and signature with the server-to-server
 `PLATFORM_GAME_SERVER_SHARED_SECRET`; it must also mark the underlying entry
-as consumed. The ticket neither grants payment credit nor changes combat or
+as consumed. It carries internal entry/player identifiers but no wallet
+address. The ticket neither grants payment credit nor changes combat or
 ranking authority.
 
 ## Required before enabling paid play
