@@ -74,6 +74,11 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   returns `409 PROFILE_NAME_UNAVAILABLE` for a claimed name, and generated
   anonymous-looking profile defaults retry a collision without exposing a
   wallet suffix in the arena.
+- Public wallet authentication now applies both per-wallet and aggregate
+  process-local limits for challenge and verification routes. The aggregate
+  default bounds distinct-address challenge abuse to 120 requests per route
+  per ten-minute window on the single Platform API replica; it is an explicit
+  safety brake, not a substitute for future edge/WAF enforcement.
 - Railway production deployment `683bc940-3b01-47ba-a625-57c8e1d9d15c`
   applied `20260824133000_enforce_unique_display_names` successfully; its
   post-deploy Platform API health check returned HTTP 200.
