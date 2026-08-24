@@ -43,7 +43,7 @@ export class SolanaPaymentVerifier {
 
     const transaction = await this.getTransaction(input.signature);
     const slot = transaction?.slot;
-    if (!transaction || transaction.meta?.err !== null || typeof slot !== "number" || !Number.isSafeInteger(slot)) {
+    if (!transaction || transaction.meta?.err !== null || typeof slot !== "number" || !Number.isSafeInteger(slot) || slot < 0) {
       throw new SolanaPaymentVerificationError("PAYMENT_NOT_FINALIZED", "USDC payment is not finalized successfully.");
     }
     if (!hasSigner(transaction.transaction?.message?.accountKeys, input.senderWalletAddress)) {
@@ -133,9 +133,14 @@ function isExpectedUsdcTransfer(
     && tokenAmount?.amount === expectedAmount;
 }
 
-function assertPositiveAmount(value: bigint): void {
-  if (value <= 0n) {
-    throw new SolanaPaymentVerificationError("PAYMENT_AMOUNT_INVALID", "Expected USDC amount must be positive.");
+const MAX_SPL_TOKEN_AMOUNT = 18_446_744_073_709_551_615n;
+
+function assertPositiveAmount(value: unknown): asserts value is bigint {
+  if (typeof value !== "bigint" || value <= 0n || value > MAX_SPL_TOKEN_AMOUNT) {
+    throw new SolanaPaymentVerificationError(
+      "PAYMENT_AMOUNT_INVALID",
+      "Expected USDC amount must be a positive SPL-token base-unit amount."
+    );
   }
 }
 

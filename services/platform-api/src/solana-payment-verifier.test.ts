@@ -51,6 +51,34 @@ describe("Solana USDC verification", () => {
     })).rejects.toMatchObject({ code: "PAYMENT_REFERENCE_INVALID" });
     expect(rpcRequests).toBe(0);
   });
+
+  it("rejects invalid token amounts before contacting RPC", async () => {
+    let rpcRequests = 0;
+    const verifier = new SolanaPaymentVerifier({
+      rpcUrl: "https://rpc.example.test",
+      fetch: async () => {
+        rpcRequests += 1;
+        return new Response(JSON.stringify({ result: createTransaction() }), { status: 200 });
+      }
+    });
+
+    await expect(verifier.verifyFinalizedUsdcTransfer({ ...input(), expectedAmountBaseUnits: 0n }))
+      .rejects.toMatchObject({ code: "PAYMENT_AMOUNT_INVALID" });
+    await expect(verifier.verifyFinalizedUsdcTransfer({
+      ...input(),
+      expectedAmountBaseUnits: 18_446_744_073_709_551_616n
+    })).rejects.toMatchObject({ code: "PAYMENT_AMOUNT_INVALID" });
+    await expect(verifier.verifyFinalizedUsdcTransfer({
+      ...input(),
+      expectedAmountBaseUnits: 1_000_000 as unknown as bigint
+    })).rejects.toMatchObject({ code: "PAYMENT_AMOUNT_INVALID" });
+    expect(rpcRequests).toBe(0);
+  });
+
+  it("rejects a malformed RPC slot even when the transfer fields match", async () => {
+    const verifier = createVerifier({ ...createTransaction(), slot: -1 });
+    await expect(verifier.verifyFinalizedUsdcTransfer(input())).rejects.toMatchObject({ code: "PAYMENT_NOT_FINALIZED" });
+  });
 });
 
 function input() {
