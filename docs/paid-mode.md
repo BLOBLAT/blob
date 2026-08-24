@@ -19,7 +19,8 @@ required before it can be enabled.
 - Before any terms can be persisted, the platform domain rejects values that
   the escrow program would reject: exactly three positive payout places
   (1/2/3) totaling 10,000 basis points, the fixed 5% fee, at most 32 players,
-  and the current ten-minute round.
+  the current ten-minute round, and a funding deadline no later than that
+  term's immutable funding window (which itself is capped at 15 minutes).
 - A Standard Skill policy is represented by canonical zero Rebuy fields. A
   Rebuy Arena policy is exactly one 0.50 USDC revive, a 30-second death window,
   and a final-60-second cutoff. This prevents a late on-chain configuration

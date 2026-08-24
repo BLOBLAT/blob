@@ -74,6 +74,9 @@ export function createPaidMatchTerms(input: CreatePaidMatchTermsInput): PaidMatc
   assertSolanaAddress(input.usdcMint, "USDC mint");
   assertSolanaAddress(input.escrowAddress, "escrow address");
   const now = input.now ?? new Date();
+  if (!Number.isFinite(now.getTime())) {
+    throw new PaidMatchDomainError("FUNDING_DEADLINE_INVALID", "Funding time is invalid.");
+  }
   const ruleset = input.ruleset ?? input.configuration?.ruleset ?? PaidRuleset.SKILL;
   const configuration: PaidMatchConfiguration = {
     ...(input.configuration ?? DEFAULT_PAID_MATCH_CONFIGURATION),
@@ -85,8 +88,11 @@ export function createPaidMatchTerms(input: CreatePaidMatchTermsInput): PaidMatc
     ? { ...(input.reviveConfiguration ?? DEFAULT_REBUY_REVIVE_CONFIGURATION) }
     : disabledReviveConfiguration();
   const fundingDeadline = input.fundingDeadline ?? new Date(now.getTime() + configuration.fundingTimeoutMs);
-  if (fundingDeadline <= now) {
+  if (!Number.isFinite(fundingDeadline.getTime()) || fundingDeadline <= now) {
     throw new PaidMatchDomainError("FUNDING_DEADLINE_INVALID", "Funding deadline must be in the future.");
+  }
+  if (fundingDeadline.getTime() > now.getTime() + configuration.fundingTimeoutMs) {
+    throw new PaidMatchDomainError("FUNDING_DEADLINE_EXCEEDS_CONFIG", "Funding deadline exceeds the immutable funding window.");
   }
   assertEscrowCompatibleTerms(configuration, reviveConfiguration);
   const matchId = "paid-match-" + randomUUID();

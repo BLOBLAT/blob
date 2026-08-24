@@ -116,10 +116,26 @@ describe("paid-match finalization", () => {
       usdcMint: USDC_MINT,
       escrowAddress: ESCROW,
       now: NOW,
-      fundingDeadline: new Date("2026-08-19T12:06:00.000Z")
+      fundingDeadline: new Date("2026-08-19T12:04:00.000Z")
     });
 
     expect(early.rulesHash).not.toBe(late.rulesHash);
+  });
+
+  it("does not allow an explicit funding deadline to outlive the immutable funding window", () => {
+    expect(() => createPaidMatchTerms({
+      usdcMint: USDC_MINT,
+      escrowAddress: ESCROW,
+      now: NOW,
+      fundingDeadline: new Date(NOW.getTime() + DEFAULT_PAID_MATCH_CONFIGURATION.fundingTimeoutMs + 1)
+    })).toThrow("Funding deadline exceeds the immutable funding window");
+
+    expect(() => createPaidMatchTerms({
+      usdcMint: USDC_MINT,
+      escrowAddress: ESCROW,
+      now: NOW,
+      fundingDeadline: new Date("invalid")
+    })).toThrow("Funding deadline must be in the future");
   });
 });
 
