@@ -134,6 +134,7 @@ pub mod blob_escrow {
             escrow.lifecycle == MatchLifecycle::Funding,
             EscrowError::MatchNotFunding
         );
+        validate_funding_open(Clock::get()?.unix_timestamp, escrow.funding_deadline_at)?;
         require!(
             escrow.participant_count < escrow.maximum_players,
             EscrowError::MaximumPlayersReached
@@ -181,7 +182,7 @@ pub mod blob_escrow {
             EscrowError::MinimumPlayersNotMet
         );
         let now = Clock::get()?.unix_timestamp;
-        require!(now < escrow.funding_deadline_at, EscrowError::FundingDeadlineExpired);
+        validate_funding_open(now, escrow.funding_deadline_at)?;
         escrow.round_ends_at = now
             .checked_add(escrow.round_duration_seconds)
             .ok_or(EscrowError::ArithmeticOverflow)?;
@@ -770,13 +771,28 @@ fn validate_match_configuration(
 }
 
 fn validate_funding_deadline(now: i64, funding_deadline_at: i64) -> Result<()> {
-    require!(funding_deadline_at > now, EscrowError::FundingDeadlineInvalid);
+    require!(
+        funding_deadline_at > now,
+        EscrowError::FundingDeadlineInvalid
+    );
     let maximum_deadline = now
         .checked_add(MAX_FUNDING_DURATION_SECONDS)
         .ok_or(EscrowError::ArithmeticOverflow)?;
     require!(
         funding_deadline_at <= maximum_deadline,
         EscrowError::FundingDeadlineInvalid
+    );
+    Ok(())
+}
+
+/// Entry and match start share the same strict deadline: a contribution at
+/// the exact funding deadline is too late. This prevents a stale funding
+/// escrow from accepting a new USDC transfer while it awaits its permissionless
+/// expiry/refund transition.
+fn validate_funding_open(now: i64, funding_deadline_at: i64) -> Result<()> {
+    require!(
+        now < funding_deadline_at,
+        EscrowError::FundingDeadlineExpired
     );
     Ok(())
 }
@@ -1161,7 +1177,11 @@ mod tests {
     fn bounds_the_funding_deadline() {
         assert!(validate_funding_deadline(1_000, 1_001).is_ok());
         assert!(validate_funding_deadline(1_000, 1_000).is_err());
-        assert!(validate_funding_deadline(1_000, 1_000 + MAX_FUNDING_DURATION_SECONDS + 1).is_err());
+        assert!(
+            validate_funding_deadline(1_000, 1_000 + MAX_FUNDING_DURATION_SECONDS + 1).is_err()
+        );
+        assert!(validate_funding_open(1_000, 1_001).is_ok());
+        assert!(validate_funding_open(1_000, 1_000).is_err());
     }
 
     #[test]

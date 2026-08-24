@@ -47,7 +47,8 @@ cannot change an existing escrow.
 The implemented instructions are deliberately narrow:
 
 - `enter_match` creates one PDA entry per wallet and transfers exactly the
-  immutable entry amount to the match PDA's native-USDC token account.
+  immutable entry amount to the match PDA's native-USDC token account, but
+  rejects every contribution at or after the immutable funding deadline.
 - `start_match` is controller-only and records the authoritative on-chain
   round end timestamp after the configured minimum funded count is reached,
   but only before its immutable 15-minute maximum funding deadline.
