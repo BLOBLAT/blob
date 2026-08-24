@@ -125,6 +125,9 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   paid room receives only the public verification key. These tickets are not
   yet accepted by a Colyseus room because Paid Mode remains disabled until the
   escrow and deployment gates are complete.
+- Hardened that verifier to reject even correctly signed tickets with future
+  issuance times, lifetimes outside 10 seconds to five minutes, malformed
+  internal identifiers, non-UUID nonces, or a non-SHA-256 rules hash.
 - Profile identity tickets now contain a unique ID and are consumed exactly
   once by the arena. Replayed tickets fall back to an anonymous Free Mode name;
   the browser requests a fresh ticket on each connection or reconnect.

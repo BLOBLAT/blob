@@ -42,9 +42,10 @@ invalid, expired, replayed, or legacy protected-name ticket simply produces a
 server-assigned anonymous BLOB name, so Free Mode remains available.
 
 The future paid admission ticket follows the same privacy rule: it binds only
-an internal entry ID, player ID, match ID, round ID, rules hash, expiry, and
-an Ed25519 signature. The Platform API retains its private signing key; a
-future game server receives only its public verification key. Wallet addresses
+bounded internal entry/player/match/round IDs, a SHA-256 rules hash, a UUID
+nonce, a 10-second-to-five-minute issued/expiry window, and an Ed25519
+signature. The Platform API retains its private signing key; a future game
+server receives only its public verification key. Wallet addresses
 stay in the Platform API and settlement records; neither Colyseus nor an
 authoritative result receives one.
 

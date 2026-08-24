@@ -4,6 +4,11 @@ import * as ed25519 from "@noble/ed25519";
 const MAX_ENCODED_PAYLOAD_LENGTH = 2_048;
 const MAX_ENCODED_SIGNATURE_LENGTH = 128;
 const MAX_TICKET_LENGTH = MAX_ENCODED_PAYLOAD_LENGTH + MAX_ENCODED_SIGNATURE_LENGTH + 1;
+const MIN_TICKET_TTL_MS = 10_000;
+const MAX_TICKET_TTL_MS = 5 * 60_000;
+const SHA256_HEX_PATTERN = /^[a-f0-9]{64}$/;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const INTERNAL_IDENTIFIER_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 
 export interface PaidAdmissionClaims {
   audience: "blob-game-server";
@@ -44,7 +49,7 @@ export async function issuePaidAdmissionTicket(input: {
     throw new AdmissionTicketError("ADMISSION_TIME_INVALID", "Admission ticket time is invalid.");
   }
   const ttlMs = input.ttlMs ?? 60_000;
-  if (!Number.isSafeInteger(ttlMs) || ttlMs < 10_000 || ttlMs > 5 * 60_000) {
+  if (!Number.isSafeInteger(ttlMs) || ttlMs < MIN_TICKET_TTL_MS || ttlMs > MAX_TICKET_TTL_MS) {
     throw new AdmissionTicketError("ADMISSION_TTL_INVALID", "Admission ticket lifetime is invalid.");
   }
   const expiresAt = now.getTime() + ttlMs;
@@ -111,11 +116,15 @@ export async function verifyPaidAdmissionTicket(input: {
   if (claims.audience !== "blob-game-server"
     || claims.matchId !== input.expectedMatchId
     || claims.roundId !== input.expectedRoundId
-    || !isBoundedText(claims.entryId) || !isBoundedText(claims.playerId)
-    || !isBoundedText(claims.matchId) || !isBoundedText(claims.roundId)
-    || !isBoundedText(claims.rulesHash) || !isBoundedText(claims.nonce)
+    || !isInternalIdentifier(claims.entryId) || !isInternalIdentifier(claims.playerId)
+    || !isInternalIdentifier(claims.matchId) || !isInternalIdentifier(claims.roundId)
+    || !SHA256_HEX_PATTERN.test(claims.rulesHash) || !UUID_PATTERN.test(claims.nonce)
     || !Number.isSafeInteger(claims.issuedAt) || !Number.isSafeInteger(claims.expiresAt)
-    || claims.expiresAt <= claims.issuedAt || claims.expiresAt <= now.getTime()) {
+    || claims.issuedAt > now.getTime()
+    || claims.expiresAt <= claims.issuedAt
+    || claims.expiresAt - claims.issuedAt < MIN_TICKET_TTL_MS
+    || claims.expiresAt - claims.issuedAt > MAX_TICKET_TTL_MS
+    || claims.expiresAt <= now.getTime()) {
     throw new AdmissionTicketError("ADMISSION_CLAIMS_INVALID", "Paid admission ticket is expired or does not match this round.");
   }
   return claims;
@@ -150,13 +159,15 @@ function assertVerificationPublicKey(publicKey: Uint8Array): void {
 }
 
 function assertRequiredFields(input: Omit<PaidAdmissionClaims, "audience" | "issuedAt" | "expiresAt" | "nonce"> & { privateKey: Uint8Array; now?: Date; ttlMs?: number }): void {
-  for (const value of [input.entryId, input.matchId, input.roundId, input.playerId, input.rulesHash]) {
-    if (!isBoundedText(value)) {
-      throw new AdmissionTicketError("ADMISSION_CLAIMS_INVALID", "Paid admission ticket claims are invalid.");
-    }
+  if (!isInternalIdentifier(input.entryId)
+    || !isInternalIdentifier(input.matchId)
+    || !isInternalIdentifier(input.roundId)
+    || !isInternalIdentifier(input.playerId)
+    || !SHA256_HEX_PATTERN.test(input.rulesHash)) {
+    throw new AdmissionTicketError("ADMISSION_CLAIMS_INVALID", "Paid admission ticket claims are invalid.");
   }
 }
 
-function isBoundedText(value: unknown): value is string {
-  return typeof value === "string" && value.length >= 1 && value.length <= 256;
+function isInternalIdentifier(value: unknown): value is string {
+  return typeof value === "string" && INTERNAL_IDENTIFIER_PATTERN.test(value);
 }

@@ -101,11 +101,13 @@ chain transfer. A revive permit may be issued only after both an authoritative
 death event and a verified payment, and it must be consumed by the room once.
 
 The platform API signs a short-lived Ed25519 admission ticket only after the
-entry is durably verified. Its private signing key remains in the Platform API;
-a future paid room receives only the matching public verification key, verifies
-match ID, round ID, expiration, and signature, and marks the underlying entry
-as consumed. It carries internal entry/player identifiers but no wallet address.
-The ticket neither grants payment credit nor changes combat or ranking
+entry is durably verified. The issuer and verifier require bounded internal
+IDs, an exact SHA-256 rules hash, a UUID nonce, and a 10-second-to-five-minute
+issued/expiry window. Its private signing key remains in the Platform API; a
+future paid room receives only the matching public verification key, verifies
+those claims plus match ID/round ID/signature, and marks the underlying entry
+as consumed. It carries internal entry/player identifiers but no wallet
+address. The ticket neither grants payment credit nor changes combat or ranking
 authority.
 
 The future paid-admission signer is configured separately as
