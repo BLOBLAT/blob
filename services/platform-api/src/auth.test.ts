@@ -8,6 +8,7 @@ import type {
   AuthSessionRecord,
   PlatformAuthRepository
 } from "./auth-types.js";
+import { DisplayNameConflictError } from "./auth-types.js";
 import { encodeBase64 } from "./security.js";
 
 const NOW = new Date("2026-08-19T12:00:00.000Z");
@@ -33,7 +34,7 @@ describe("wallet sign-in", () => {
     }, NOW);
 
     expect(session.user.walletAddress).toBe(wallet.address);
-    expect(session.user.displayName).toBe("BLOB-" + wallet.address.slice(-5).toUpperCase());
+    expect(session.user.displayName).toMatch(/^BLOB-[A-F0-9]{11}$/);
     expect(session.token).toHaveLength(43);
     expect(await auth.getSession(session.token, NOW)).toMatchObject({ userId: session.user.userId, walletAddress: wallet.address });
   });
@@ -81,6 +82,26 @@ describe("wallet sign-in", () => {
 
     await expect(auth.rename(unchanged, "Blob Prime", NOW)).resolves.toMatchObject({ displayName: "Blob Prime" });
   });
+
+  it("keeps canonical display names unique across wallets", async () => {
+    const repository = new InMemoryAuthRepository();
+    const auth = new AuthService(repository, OPTIONS);
+    const first = await authenticate(auth, await createTestWallet());
+    const second = await authenticate(auth, await createTestWallet());
+
+    await auth.rename(first.user, "Blob Prime", NOW);
+    await expect(auth.rename(second.user, "  blob   prime  ", NOW))
+      .rejects.toMatchObject({ code: "PROFILE_NAME_UNAVAILABLE" });
+  });
+
+  it("retries a rare generated-name collision before creating a wallet profile", async () => {
+    const repository = new InMemoryAuthRepository();
+    repository.rejectNextGeneratedName();
+    const auth = new AuthService(repository, OPTIONS);
+    const session = await authenticate(auth, await createTestWallet());
+
+    expect(session.user.displayName).toMatch(/^BLOB-[A-Z0-9_-]{11}$/);
+  });
 });
 
 async function authenticate(auth: AuthService, wallet: TestWallet) {
@@ -104,6 +125,11 @@ class InMemoryAuthRepository implements PlatformAuthRepository {
   private readonly challenges = new Map<string, AuthChallengeRecord>();
   private readonly usersByWallet = new Map<string, AuthenticatedUser>();
   private readonly sessions = new Map<string, AuthSessionRecord>();
+  private pendingGeneratedNameConflicts = 0;
+
+  rejectNextGeneratedName(): void {
+    this.pendingGeneratedNameConflicts += 1;
+  }
 
   async createChallenge(challenge: AuthChallengeRecord): Promise<void> {
     this.challenges.set(challenge.id, { ...challenge });
@@ -127,6 +153,13 @@ class InMemoryAuthRepository implements PlatformAuthRepository {
     const existing = this.usersByWallet.get(input.walletAddress);
     if (existing) {
       return { user: existing, created: false };
+    }
+    if (this.pendingGeneratedNameConflicts > 0) {
+      this.pendingGeneratedNameConflicts -= 1;
+      throw new DisplayNameConflictError("Display name is already in use.");
+    }
+    if ([...this.usersByWallet.values()].some((user) => canonicalizeDisplayName(user.displayName) === input.displayNameKey)) {
+      throw new DisplayNameConflictError("Display name is already in use.");
     }
     const user = {
       userId: "user-" + (this.usersByWallet.size + 1),
@@ -162,6 +195,9 @@ class InMemoryAuthRepository implements PlatformAuthRepository {
     const current = [...this.usersByWallet.values()].find((user) => user.userId === input.userId);
     if (!current) {
       throw new Error("Test user was not found.");
+    }
+    if ([...this.usersByWallet.values()].some((user) => user.userId !== input.userId && canonicalizeDisplayName(user.displayName) === input.displayNameKey)) {
+      throw new DisplayNameConflictError("Display name is already in use.");
     }
     const renamed = { ...current, displayName: input.displayName, renamedAt: input.renamedAt };
     this.usersByWallet.set(renamed.walletAddress, renamed);

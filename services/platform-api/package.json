@@ -29,6 +29,7 @@
     "build": "npm run prisma:generate && tsc --noEmit -p tsconfig.json",
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
+    "test": "vitest run --root ../.. services/platform-api/src",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "prisma:generate": "prisma generate",
     "prisma:migrate:dev": "prisma migrate dev",

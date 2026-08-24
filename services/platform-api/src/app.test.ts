@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createPlatformApp } from "./app.js";
-import type { PlatformAuthRepository } from "./auth-types.js";
+import { DisplayNameConflictError, type PlatformAuthRepository } from "./auth-types.js";
 import type { PlatformApiConfig } from "./config.js";
 
 const config: PlatformApiConfig = {
@@ -98,6 +98,49 @@ describe("platform API health", () => {
     expect(await response.json()).toEqual({
       error: "ORIGIN_NOT_ALLOWED",
       message: "This browser origin is not allowed to access the platform API."
+    });
+  });
+
+  it("returns a deliberate conflict when another profile owns a display name", async () => {
+    const repository = {
+      findActiveSession: async () => ({
+        id: "session-1",
+        tokenHash: "hash",
+        user: {
+          userId: "user-1",
+          displayName: "BLOB-EXAMPLE",
+          walletAddress: "11111111111111111111111111111111",
+          renamedAt: null
+        },
+        expiresAt: new Date(Date.now() + 60_000),
+        revokedAt: null
+      }),
+      renameUser: async () => {
+        throw new DisplayNameConflictError("Display name is already in use.");
+      }
+    } as unknown as PlatformAuthRepository;
+    const app = createPlatformApp({ config, repository, healthCheck: async () => undefined });
+    const server = createServer(app);
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("Could not start test HTTP server.");
+    }
+
+    const response = await fetch("http://127.0.0.1:" + address.port + "/v1/me/profile", {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: "blob_session=" + "x".repeat(43)
+      },
+      body: JSON.stringify({ displayName: "Claimed Name" })
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: "PROFILE_NAME_UNAVAILABLE",
+      message: "That display name is already in use."
     });
   });
 });

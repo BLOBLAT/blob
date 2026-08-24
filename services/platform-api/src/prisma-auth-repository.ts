@@ -4,6 +4,7 @@ import type {
   AuthSessionRecord,
   PlatformAuthRepository
 } from "./auth-types.js";
+import { DisplayNameConflictError } from "./auth-types.js";
 import type { PrismaClient } from "./generated/prisma/client.js";
 
 export class PrismaAuthRepository implements PlatformAuthRepository {
@@ -76,22 +77,33 @@ export class PrismaAuthRepository implements PlatformAuthRepository {
         created: false
       };
     }
-    const wallet = await this.prisma.wallet.upsert({
-      where: { address: input.walletAddress },
-      update: {},
-      create: {
-        address: input.walletAddress,
-        verifiedAt: input.now,
-        user: {
-          create: {
-            displayName: input.displayName,
-            displayNameKey: input.displayNameKey,
-            createdAt: input.now
+    let wallet: {
+      address: string;
+      user: { id: string; displayName: string; renamedAt: Date | null };
+    };
+    try {
+      wallet = await this.prisma.wallet.upsert({
+        where: { address: input.walletAddress },
+        update: {},
+        create: {
+          address: input.walletAddress,
+          verifiedAt: input.now,
+          user: {
+            create: {
+              displayName: input.displayName,
+              displayNameKey: input.displayNameKey,
+              createdAt: input.now
+            }
           }
-        }
-      },
-      include: { user: true }
-    });
+        },
+        include: { user: true }
+      });
+    } catch (error) {
+      if (isDisplayNameKeyConflict(error)) {
+        throw new DisplayNameConflictError("Display name is already in use.");
+      }
+      throw error;
+    }
     return {
       user: {
         userId: wallet.user.id,
@@ -148,14 +160,22 @@ export class PrismaAuthRepository implements PlatformAuthRepository {
     displayNameKey: string;
     renamedAt: Date;
   }): Promise<AuthenticatedUser> {
-    const user = await this.prisma.user.update({
-      where: { id: input.userId },
-      data: {
-        displayName: input.displayName,
-        displayNameKey: input.displayNameKey,
-        renamedAt: input.renamedAt
+    let user: { id: string; displayName: string; renamedAt: Date | null };
+    try {
+      user = await this.prisma.user.update({
+        where: { id: input.userId },
+        data: {
+          displayName: input.displayName,
+          displayNameKey: input.displayNameKey,
+          renamedAt: input.renamedAt
+        }
+      });
+    } catch (error) {
+      if (isDisplayNameKeyConflict(error)) {
+        throw new DisplayNameConflictError("Display name is already in use.");
       }
-    });
+      throw error;
+    }
     const wallet = await this.prisma.wallet.findFirst({
       where: { userId: user.id },
       orderBy: { createdAt: "asc" }
@@ -188,4 +208,21 @@ export class PrismaAuthRepository implements PlatformAuthRepository {
       }
     });
   }
+}
+
+function isDisplayNameKeyConflict(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+  const candidate = error as { code?: unknown; meta?: { target?: unknown } };
+  if (candidate.code !== "P2002") {
+    return false;
+  }
+  const target = candidate.meta?.target;
+  const fields = Array.isArray(target)
+    ? target.filter((value): value is string => typeof value === "string")
+    : typeof target === "string"
+      ? [target]
+      : [];
+  return fields.some((field) => field.includes("displayNameKey"));
 }

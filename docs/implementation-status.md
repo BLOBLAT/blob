@@ -69,6 +69,11 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
 - Added Wallet Standard client discovery, explicit wallet selection, one-time
   message sign-in, profile UI, and Free Mode name reuse. The UI remains honest
   when the profile API or a compatible wallet is unavailable.
+- Wallet profile display names are now globally unique after canonical
+  case/whitespace normalization. PostgreSQL enforces the invariant, the API
+  returns `409 PROFILE_NAME_UNAVAILABLE` for a claimed name, and generated
+  anonymous-looking profile defaults retry a collision without exposing a
+  wallet suffix in the arena.
 - Added paid-match terms/finalization checks and a dependency-free Solana RPC
   verifier for finalized exact `transferChecked` USDC deposits. Neither module
   can sign, send, or claim a payment automatically.

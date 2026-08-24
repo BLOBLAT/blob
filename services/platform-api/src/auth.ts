@@ -1,6 +1,7 @@
 import * as ed25519 from "@noble/ed25519";
 import { base58 } from "@scure/base";
 import { createOpaqueToken, decodeBase64, sha256 } from "./security.js";
+import { DisplayNameConflictError } from "./auth-types.js";
 import type {
   AuthenticatedUser,
   IssuedAuthChallenge,
@@ -83,13 +84,7 @@ export class AuthService {
       throw new AuthError("AUTH_CHALLENGE_USED", "The sign-in request has already been used.");
     }
 
-    const displayName = createDefaultDisplayName(challenge.walletAddress);
-    const createdUser = await this.repository.findOrCreateUserWithWallet({
-      displayName,
-      displayNameKey: canonicalizeDisplayName(displayName),
-      walletAddress: challenge.walletAddress,
-      now
-    });
+    const createdUser = await this.findOrCreateWalletUser(challenge.walletAddress, now);
     const user = createdUser.user;
     if (createdUser.created) {
       await this.repository.recordAuditEvent({
@@ -137,12 +132,20 @@ export class AuthService {
     if (user.renamedAt && now.getTime() - user.renamedAt.getTime() < this.options.renameCooldownMs) {
       throw new AuthError("PROFILE_RENAME_RATE_LIMITED", "Display name can only be changed once per day.");
     }
-    const renamed = await this.repository.renameUser({
-      userId: user.userId,
-      displayName: normalizedDisplayName,
-      displayNameKey,
-      renamedAt: now
-    });
+    let renamed: AuthenticatedUser;
+    try {
+      renamed = await this.repository.renameUser({
+        userId: user.userId,
+        displayName: normalizedDisplayName,
+        displayNameKey,
+        renamedAt: now
+      });
+    } catch (error) {
+      if (error instanceof DisplayNameConflictError) {
+        throw new AuthError("PROFILE_NAME_UNAVAILABLE", "That display name is already in use.");
+      }
+      throw error;
+    }
     await this.repository.recordAuditEvent({
       userId: user.userId,
       action: "profile_renamed",
@@ -150,6 +153,30 @@ export class AuthService {
       entityId: user.userId
     });
     return renamed;
+  }
+
+  private async findOrCreateWalletUser(walletAddress: string, now: Date): Promise<{ user: AuthenticatedUser; created: boolean }> {
+    let displayName = createDefaultDisplayName(walletAddress);
+    // A default name is privacy-preserving and has more than enough entropy
+    // for normal use. Retrying a database conflict still makes the invariant
+    // absolute under a deliberately generated hash collision or concurrent
+    // account creation.
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      try {
+        return await this.repository.findOrCreateUserWithWallet({
+          displayName,
+          displayNameKey: canonicalizeDisplayName(displayName),
+          walletAddress,
+          now
+        });
+      } catch (error) {
+        if (!(error instanceof DisplayNameConflictError) || attempt === 3) {
+          throw error;
+        }
+        displayName = createFallbackDisplayName();
+      }
+    }
+    throw new AuthError("PROFILE_NAME_UNAVAILABLE", "A unique display name could not be assigned.");
   }
 }
 
@@ -205,5 +232,13 @@ export function canonicalizeDisplayName(displayName: string): string {
 }
 
 function createDefaultDisplayName(walletAddress: string): string {
-  return "BLOB-" + walletAddress.slice(-5).toUpperCase();
+  // Do not derive the public arena name from an easily visible wallet suffix.
+  // Eleven hexadecimal digest characters fit the 16-character profile limit
+  // and make accidental collisions exceptionally unlikely before the durable
+  // uniqueness constraint provides the final guarantee.
+  return "BLOB-" + sha256(walletAddress).slice(0, 11).toUpperCase();
+}
+
+function createFallbackDisplayName(): string {
+  return "BLOB-" + createOpaqueToken(12).slice(0, 11).toUpperCase();
 }

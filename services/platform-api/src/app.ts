@@ -147,7 +147,13 @@ export function createPlatformApp(options: PlatformAppOptions): express.Express 
       return;
     }
     if (error instanceof AuthError) {
-      const status = error.code === "AUTH_REQUIRED" ? 401 : error.code === "PROFILE_RENAME_RATE_LIMITED" ? 429 : 400;
+      const status = error.code === "AUTH_REQUIRED"
+        ? 401
+        : error.code === "PROFILE_RENAME_RATE_LIMITED"
+          ? 429
+          : error.code === "PROFILE_NAME_UNAVAILABLE"
+            ? 409
+            : 400;
       response.status(status).json({ error: error.code, message: error.message });
       return;
     }

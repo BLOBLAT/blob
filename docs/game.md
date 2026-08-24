@@ -74,10 +74,12 @@ The HUD presents mass, rank, alive count, personal food eaten, and the authorita
 
 Wallet connection is optional and never changes Free Mode rules. An anonymous
 player gets a server-assigned temporary `BLOB-…` name. A wallet-backed profile
-can use its chosen display name only after the platform API has verified an
-off-chain message signature and issued an expiring game-identity ticket. The
-browser cannot make the game server accept an arbitrary profile name, and the
-arena never receives the wallet address.
+can use one globally unique, case/spacing-normalized display name only after
+the platform API has verified an off-chain message signature and issued an
+expiring game-identity ticket. A claimed name returns a clear conflict instead
+of silently impersonating another player. The browser cannot make the game
+server accept an arbitrary profile name, and the arena never receives the
+wallet address.
 
 **Arena Chat** appears beneath the active game. It carries messages only
 between currently connected players in that same room. Messages are plain text

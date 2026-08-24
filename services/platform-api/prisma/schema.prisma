@@ -69,7 +69,7 @@ model User {
   reviveRequests      ReviveRequest[]
   auditEvents         AuditEvent[]
 
-  @@index([displayNameKey])
+  @@unique([displayNameKey])
 }
 
 model Wallet {

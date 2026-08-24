@@ -24,6 +24,12 @@ export interface AuthSessionRecord {
   revokedAt: Date | null;
 }
 
+/** Raised by a durable repository when another account already owns a
+ * canonical display name. Keeping this domain error independent of Prisma
+ * lets the authentication service return the same safe response in every
+ * storage implementation. */
+export class DisplayNameConflictError extends Error {}
+
 export interface PlatformAuthRepository {
   createChallenge(challenge: AuthChallengeRecord): Promise<void>;
   findActiveChallenge(challengeId: string, now: Date): Promise<AuthChallengeRecord | null>;
