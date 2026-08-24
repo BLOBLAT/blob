@@ -18,6 +18,11 @@ Division remainders are assigned deterministically to first place. Returned payo
 
 ## Not implemented
 
-No player funds, balances, deposits, prize pools, transaction references, payouts, USDC transfers, wallet connection, or blockchain contracts exist in the application. The calculator is a domain primitive, not a claim that any payment occurred.
+No player funds, balances, accepted deposits, prize pools, confirmed
+transactions, payouts, USDC transfers, or live paid matches exist. Wallet
+sign-in/profile support and the isolated, non-deployed escrow-program source
+exist elsewhere in the repository, but neither is a payment feature and
+neither can accept, custody, or transfer USDC. The calculator is a domain
+primitive, not a claim that any payment occurred.
 
 The same package also defines typed MatchEntry, AuthoritativeMatchResult, SettlementRequest, and SettlementResult boundaries. A future payment or blockchain service may consume a finalized server result through those interfaces, but the game server does not transfer funds or hold private keys.
