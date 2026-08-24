@@ -147,6 +147,33 @@ export const movementIntentSchema = z
 export type ValidatedPlayerJoinOptions = z.infer<typeof playerJoinOptionsSchema>;
 export type ValidatedMovementIntent = z.infer<typeof movementIntentSchema>;
 
+const internalIdentifierSchema = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/);
+
+/** Shared wire contract for the private Paid Room admission handoff. */
+export const paidAdmissionClaimsSchema = z.object({
+  audience: z.literal("blob-game-server"),
+  entryId: internalIdentifierSchema,
+  matchId: internalIdentifierSchema,
+  roundId: internalIdentifierSchema,
+  playerId: internalIdentifierSchema,
+  rulesHash: z.string().regex(/^[a-f0-9]{64}$/),
+  issuedAt: z.number().int().safe(),
+  expiresAt: z.number().int().safe(),
+  nonce: z.string().uuid(),
+}).strict().superRefine((value, context) => {
+  if (value.expiresAt <= value.issuedAt) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "Admission expiry must be after issue time." });
+  }
+});
+
+export const paidAdmissionConsumePayloadSchema = z.object({
+  token: z.string().min(1).max(2_177),
+  claims: paidAdmissionClaimsSchema,
+}).strict();
+
+export type PaidAdmissionClaims = z.infer<typeof paidAdmissionClaimsSchema>;
+export type PaidAdmissionConsumePayload = z.infer<typeof paidAdmissionConsumePayloadSchema>;
+
 const forbiddenLinkPattern = /(?:https?|hxxps?)\s*:\s*\/\/|\bwww\s*(?:\.|\[\.\])|\b(?:[a-z0-9-]+\s*(?:\.|\[\.\])\s*)+(?:com|net|org|io|gg|app|dev|xyz|info|me|ru|lat|sol|click|link|site|online|co|tv|ai)\b/i;
 const forbiddenEmailPattern = /\b[A-Z0-9._%+-]+\s*@\s*[A-Z0-9.-]+\s*\.\s*[A-Z]{2,}\b/i;
 const forbiddenPhonePattern = /(?:\+?\d[\s().-]*){8,15}\d/;

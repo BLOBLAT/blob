@@ -1,22 +1,9 @@
 import * as ed25519 from "@noble/ed25519";
+import { paidAdmissionConsumePayloadSchema, type PaidAdmissionClaims } from "@blob/validation";
+
+export type { PaidAdmissionClaims } from "@blob/validation";
 
 const REQUEST_TIMEOUT_MS = 2_500;
-const MAX_TOKEN_LENGTH = 2_177;
-const IDENTIFIER = /^[A-Za-z0-9_-]{1,128}$/;
-const RULES_HASH = /^[a-f0-9]{64}$/;
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-export interface PaidAdmissionClaims {
-  audience: "blob-game-server";
-  entryId: string;
-  matchId: string;
-  roundId: string;
-  playerId: string;
-  rulesHash: string;
-  issuedAt: number;
-  expiresAt: number;
-  nonce: string;
-}
 
 export interface PaidAdmissionConsumer {
   consume(input: { token: string; claims: PaidAdmissionClaims }): Promise<void>;
@@ -73,13 +60,8 @@ export class PaidAdmissionConsumerError extends Error {
 }
 
 function assertPayload(input: { token: string; claims: PaidAdmissionClaims }): void {
-  const { claims } = input;
-  if (typeof input.token !== "string" || input.token.length === 0 || input.token.length > MAX_TOKEN_LENGTH
-    || claims.audience !== "blob-game-server"
-    || !IDENTIFIER.test(claims.entryId) || !IDENTIFIER.test(claims.matchId) || !IDENTIFIER.test(claims.roundId) || !IDENTIFIER.test(claims.playerId)
-    || !RULES_HASH.test(claims.rulesHash) || !UUID.test(claims.nonce)
-    || !Number.isSafeInteger(claims.issuedAt) || !Number.isSafeInteger(claims.expiresAt)
-    || claims.expiresAt <= claims.issuedAt || claims.expiresAt <= Date.now()) {
+  const parsed = paidAdmissionConsumePayloadSchema.safeParse(input);
+  if (!parsed.success || parsed.data.claims.expiresAt <= Date.now()) {
     throw new PaidAdmissionConsumerError("ADMISSION_CONSUMER_PAYLOAD_INVALID", "Paid admission payload is invalid.");
   }
 }

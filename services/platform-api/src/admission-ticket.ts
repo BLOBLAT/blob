@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
 import * as ed25519 from "@noble/ed25519";
+import type { PaidAdmissionClaims } from "@blob/validation";
+
+export type { PaidAdmissionClaims } from "@blob/validation";
 
 const MAX_ENCODED_PAYLOAD_LENGTH = 2_048;
 const MAX_ENCODED_SIGNATURE_LENGTH = 128;
@@ -9,18 +12,6 @@ const MAX_TICKET_TTL_MS = 5 * 60_000;
 const SHA256_HEX_PATTERN = /^[a-f0-9]{64}$/;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const INTERNAL_IDENTIFIER_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
-
-export interface PaidAdmissionClaims {
-  audience: "blob-game-server";
-  entryId: string;
-  matchId: string;
-  roundId: string;
-  playerId: string;
-  rulesHash: string;
-  issuedAt: number;
-  expiresAt: number;
-  nonce: string;
-}
 
 export class AdmissionTicketError extends Error {
   constructor(readonly code: string, message: string) {

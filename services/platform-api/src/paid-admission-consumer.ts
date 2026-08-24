@@ -1,24 +1,5 @@
 import * as ed25519 from "@noble/ed25519";
-import { z } from "zod";
-import type { PaidAdmissionClaims } from "./admission-ticket.js";
-
-const identifierSchema = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/);
-const claimsSchema = z.object({
-  audience: z.literal("blob-game-server"),
-  entryId: identifierSchema,
-  matchId: identifierSchema,
-  roundId: identifierSchema,
-  playerId: identifierSchema,
-  rulesHash: z.string().regex(/^[a-f0-9]{64}$/),
-  issuedAt: z.number().int().safe(),
-  expiresAt: z.number().int().safe(),
-  nonce: z.string().uuid(),
-}).strict();
-
-const payloadSchema = z.object({
-  token: z.string().min(1).max(2_177),
-  claims: claimsSchema,
-}).strict();
+import { paidAdmissionConsumePayloadSchema, type PaidAdmissionClaims } from "@blob/validation";
 
 /**
  * Authenticates a future paid-room → Platform API consume request. The
@@ -46,8 +27,8 @@ export async function verifyPaidAdmissionConsumeRequest(input: {
   } catch {
     return { success: false, error: "ADMISSION_INVALID" };
   }
-  const parsed = payloadSchema.safeParse(rawPayload);
-  if (!parsed.success || parsed.data.claims.expiresAt <= parsed.data.claims.issuedAt) {
+  const parsed = paidAdmissionConsumePayloadSchema.safeParse(rawPayload);
+  if (!parsed.success) {
     return { success: false, error: "ADMISSION_INVALID" };
   }
   return { success: true, payload: parsed.data };
