@@ -155,6 +155,11 @@ Free Mode room or in Vite. Without that public key, the endpoint fails closed
 with `503 ADMISSION_UNAVAILABLE`; configuring the key alone does not enable
 Paid Mode.
 
+`@blob/paid-admission-client` is the intentionally backend-only client for
+that future Paid Room. It validates bounded claims, signs the exact raw JSON
+body with the caller key, and accepts only a `204` consume response. It is not
+an app, has no browser entrypoint, and is not deployed by `railway.toml`.
+
 Before it creates a settlement request, the paid domain validates the complete
 server result: valid timestamp, every funded participant exactly once,
 contiguous ranks, and non-negative safe-integer competitive statistics. It
