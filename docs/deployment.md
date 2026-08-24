@@ -25,6 +25,41 @@ https://blob.lat -> WSS -> Railway / apps/game-server
 
 The repository root contains [`railway.toml`](../railway.toml). Railway/Railpack discovers it automatically, installs workspace dependencies, then routes build, pre-deploy migration, and start commands by `RAILWAY_SERVICE_NAME`: `blob` runs `@blob/game-server`, while `platform-api` runs `@blob/platform-api`. Both services expose `/health` and use the same explicit `ON_FAILURE` restart policy. The custom build command deliberately does not run a second `npm ci`: Railpack already installs dependencies before it runs that command.
 
+### Railway deployment triggers
+
+Configure service-level Railway watch patterns in addition to the shared root
+`railway.toml`. This prevents a documentation, web-client, or escrow-source
+commit from restarting a live Free Mode arena when the running service has no
+relevant code change. The production `blob` service watches:
+
+```text
+apps/game-server/**
+packages/game-core/**
+packages/protocol/**
+packages/validation/**
+package.json
+package-lock.json
+railway.toml
+tsconfig.base.json
+```
+
+The production `platform-api` service watches:
+
+```text
+services/platform-api/**
+packages/shared/**
+package.json
+package-lock.json
+railway.toml
+tsconfig.base.json
+```
+
+These are Railway service settings rather than `railway.toml` fields because
+the repository uses one conditional root configuration for two services.
+When a shared runtime dependency changes, include its package path in the
+corresponding service's list before merging. Verify both service lists in
+Railway after cloning or recreating an environment.
+
 ## 1. Deploy the persistent game server to Railway
 
 **MANUAL DASHBOARD ACTION REQUIRED:** Railway access is required for these steps.

@@ -14,7 +14,7 @@
     "npm": ">=10"
   },
   "scripts": {
-    "build": "npm run build --workspaces --if-present",
+    "build": "npm run build --workspace=@blob/game-server && npm run build --workspace=@blob/web && npm run build --workspace=@blob/platform-api",
     "check": "npm run typecheck && npm run test && npm run build",
     "dev": "concurrently --kill-others-on-fail --names web,server --prefix-colors magenta,cyan \"npm run dev:web\" \"npm run dev:server\"",
     "dev:web": "npm run dev --workspace=@blob/web",
@@ -23,7 +23,7 @@
     "start": "npm run start --workspace=@blob/game-server",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspace=@blob/game-core && npm run typecheck --workspace=@blob/protocol && npm run typecheck --workspace=@blob/validation && npm run typecheck --workspace=@blob/shared && npm run typecheck --workspace=@blob/game-server && npm run typecheck --workspace=@blob/web && npm run typecheck --workspace=@blob/platform-api"
   },
   "devDependencies": {
     "concurrently": "10.0.5",
