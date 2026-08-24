@@ -69,6 +69,36 @@ describe("platform API health", () => {
     expect(limited.status).toBe(429);
     expect(limited.headers.get("retry-after")).toBe("60");
   });
+
+  it("rejects a browser origin outside the explicit allowlist without a server error", async () => {
+    const app = createPlatformApp({
+      config,
+      repository: { createChallenge: async () => undefined } as unknown as PlatformAuthRepository,
+      healthCheck: async () => undefined
+    });
+    const server = createServer(app);
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("Could not start test HTTP server.");
+    }
+
+    const response = await fetch("http://127.0.0.1:" + address.port + "/v1/auth/challenge", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Origin: "https://untrusted.example"
+      },
+      body: JSON.stringify({ walletAddress: "11111111111111111111111111111111" })
+    });
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({
+      error: "ORIGIN_NOT_ALLOWED",
+      message: "This browser origin is not allowed to access the platform API."
+    });
+  });
 });
 
 async function requestHealth(healthCheck: () => Promise<void>): Promise<Response> {

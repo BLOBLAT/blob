@@ -8,6 +8,8 @@ import type { PlatformApiConfig } from "./config.js";
 import { FixedWindowRateLimiter } from "./rate-limit.js";
 import { issueGameTicket } from "./game-ticket.js";
 
+class OriginNotAllowedError extends Error {}
+
 const challengeRequestSchema = z.object({
   walletAddress: z.string().min(32).max(64)
 }).strict();
@@ -60,7 +62,7 @@ export function createPlatformApp(options: PlatformAppOptions): express.Express 
         callback(null, true);
         return;
       }
-      callback(new Error("Origin is not allowed to access the platform API."));
+      callback(new OriginNotAllowedError("Origin is not allowed to access the platform API."));
     },
     credentials: true,
     methods: ["GET", "PATCH", "POST", "OPTIONS"],
@@ -136,6 +138,10 @@ export function createPlatformApp(options: PlatformAppOptions): express.Express 
   }));
 
   app.use((error: unknown, _request: Request, response: Response, _next: NextFunction) => {
+    if (error instanceof OriginNotAllowedError) {
+      response.status(403).json({ error: "ORIGIN_NOT_ALLOWED", message: "This browser origin is not allowed to access the platform API." });
+      return;
+    }
     if (error instanceof z.ZodError) {
       response.status(400).json({ error: "REQUEST_INVALID", message: "Request data is invalid." });
       return;
