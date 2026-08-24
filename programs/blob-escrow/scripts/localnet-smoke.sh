@@ -22,7 +22,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
-export PATH="${HOME}/.cargo/bin:${HOME}/.avm/bin:${HOME}/.local/share/solana/install/active_release/bin:${PATH}"
+if [[ -x "${HOME}/.local/share/solana/install/active_release/bin/solana" ]]; then
+  SOLANA_BIN_DIR="${HOME}/.local/share/solana/install/active_release/bin"
+else
+  SOLANA_BIN_DIR="$(find "${HOME}/.local/share/solana/install/releases" -type f -name solana -printf '%h\n' 2>/dev/null | sort -V | tail -n 1)"
+fi
+export PATH="${HOME}/.cargo/bin:${HOME}/.avm/bin:${SOLANA_BIN_DIR}:${PATH}"
 export SOLANA_CONFIG_FILE="${CONFIG_FILE}"
 
 for command in anchor solana solana-keygen solana-test-validator; do
