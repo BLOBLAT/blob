@@ -112,6 +112,18 @@ describe("durable paid-match finalization", () => {
     await expect(repository.persist(createInput(terms))).resolves.toMatchObject({ created: true });
   });
 
+  it("rejects a result timestamp in the future", async () => {
+    const terms = createTerms();
+    const state = createState(terms);
+    const repository = new PrismaPaidMatchFinalizationRepository(createPrisma(state));
+    state.match.startsAt = new Date(Date.now() - 600_000);
+    const input = createInput(terms);
+    input.result = { ...input.result, resultTimestamp: new Date(Date.now() + 60_000) };
+
+    await expect(repository.persist(input))
+      .rejects.toMatchObject({ code: "RESULT_TIMING_INVALID" } satisfies Partial<PaidMatchPersistenceError>);
+  });
+
   it("retries one serializable-write conflict before freezing the same result", async () => {
     const terms = createTerms();
     const state = createState(terms);
