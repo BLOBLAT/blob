@@ -69,5 +69,14 @@ describe("platform API production configuration", () => {
       PLATFORM_PAID_ADMISSION_TICKET_PRIVATE_KEY_BASE64: Buffer.alloc(32, 11).toString("base64")
     });
     expect(config.paidAdmissionTicketPrivateKey).toHaveLength(32);
+
+    expect(() => loadPlatformApiConfig({
+      NODE_ENV: "production",
+      DATABASE_URL,
+      PLATFORM_PUBLIC_ORIGIN: "https://blob.lat",
+      PLATFORM_WEB_ORIGIN: "https://blob.lat",
+      PLATFORM_GAME_TICKET_PRIVATE_KEY_BASE64: GAME_TICKET_PRIVATE_KEY,
+      PLATFORM_PAID_ADMISSION_TICKET_PRIVATE_KEY_BASE64: GAME_TICKET_PRIVATE_KEY,
+    })).toThrow("PLATFORM_PAID_ADMISSION_TICKET_PRIVATE_KEY_BASE64 must differ");
   });
 });

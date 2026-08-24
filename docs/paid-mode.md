@@ -111,7 +111,8 @@ The future paid-admission signer is configured separately as
 32-byte Ed25519 key from `PLATFORM_GAME_TICKET_PRIVATE_KEY_BASE64`, which is
 reserved for Free Mode display-name tickets. No HMAC shared secret is used or
 accepted for paid admission, and setting this future key alone does not expose
-Paid Mode.
+Paid Mode. The Platform API rejects a configuration that reuses the
+profile-ticket key.
 
 Before it creates a settlement request, the paid domain validates the complete
 server result: valid timestamp, every funded participant exactly once,

@@ -65,6 +65,10 @@ export function loadPlatformApiConfig(environment: NodeJS.ProcessEnv = process.e
     environment.PLATFORM_PAID_ADMISSION_TICKET_PRIVATE_KEY_BASE64,
     "PLATFORM_PAID_ADMISSION_TICKET_PRIVATE_KEY_BASE64",
   );
+  if (gameTicketPrivateKey && paidAdmissionTicketPrivateKey
+    && timingSafeEqual(Buffer.from(gameTicketPrivateKey), Buffer.from(paidAdmissionTicketPrivateKey))) {
+    throw new Error("PLATFORM_PAID_ADMISSION_TICKET_PRIVATE_KEY_BASE64 must differ from PLATFORM_GAME_TICKET_PRIVATE_KEY_BASE64.");
+  }
 
   return {
     databaseUrl,
@@ -134,3 +138,4 @@ function parsePositiveInteger(value: string | undefined, fallback: number, name:
 function parseInteger(value: string): number {
   return /^\d+$/.test(value) ? Number(value) : Number.NaN;
 }
+import { timingSafeEqual } from "node:crypto";
