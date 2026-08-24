@@ -3,6 +3,12 @@ import { routes, type VercelConfig } from "@vercel/config/v1";
 const platformApiOrigin = readPlatformApiOrigin(
   process.env.PLATFORM_API_PROXY_ORIGIN
 );
+const platformApiRewrite = platformApiOrigin
+  ? {
+      ...routes.rewrite("/v1/:path*", `${platformApiOrigin}/v1/:path*`),
+      respectOriginCacheControl: false
+    }
+  : undefined;
 
 /**
  * Wallet-profile requests are proxied only when Vercel has been given the
@@ -17,15 +23,7 @@ export const config: VercelConfig = {
         ])
       ]
     : [],
-  rewrites: platformApiOrigin
-    ? [
-        routes.rewrite(
-          "/v1/:path*",
-          `${platformApiOrigin}/v1/:path*`,
-          { respectOriginCacheControl: false }
-        )
-      ]
-    : []
+  rewrites: platformApiRewrite ? [platformApiRewrite] : []
 };
 
 function readPlatformApiOrigin(value: string | undefined): string | undefined {
