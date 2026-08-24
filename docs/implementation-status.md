@@ -350,6 +350,13 @@ in-memory chat behaviour unless the audit bridge is configured.
   until its distinct caller public key is configured; it is intentionally not
   exposed to browsers and no caller/key has been provisioned because Paid Mode
   remains disabled.
+- `8cc5ce9` added `@blob/paid-admission-client`, a backend-only future Paid
+  Room client which signs the exact consume body with the third service key
+  and accepts only Platform API's `204` response. `3db48bf` removed duplicated
+  claim parsing by placing the exact ticket/payload schema in
+  `@blob/validation`; issuer, Platform API verifier, and consumer therefore
+  share one strict contract. The package has no browser entrypoint, deployment,
+  configured key, or connection to Free Mode.
 
 ### Approved direction to implement next
 

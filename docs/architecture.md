@@ -73,6 +73,7 @@ messages, public history endpoint, or fabricated messages.
 | Game server (`apps/game-server`) | Deterministic authoritative simulation, validation, collisions, deaths, respawns, score, match result, and privacy-minimal live presence | Wallet custody, blockchain transactions, historical analytics, and client-trusted decisions |
 | Shared game core (`packages/game-core`) | Pure server-consumed simulation and central game configuration | Browser authority or payment/chain logic |
 | Protocol and validation (`packages/protocol`, `packages/validation`) | Shared contracts and runtime validation of untrusted payloads | Simulation authority or business logic |
+| Paid admission client (`packages/paid-admission-client`) | Future backend-only signed consume request from an isolated Paid Room to Platform API | Browser use, wallet custody, Free Mode integration, or result authority |
 | Matchmaking (`services/matchmaking`, planned) | Queues, skill/ruleset selection, capacity allocation, and server assignment | Simulation and prize calculation |
 | Platform API (`services/platform-api`) | Wallet proof, profiles, durable match/payment/audit records, term hashing, and chain verification | Real-time simulation authority, game keys, or browser-trusted payments |
 | Escrow program (`programs/blob-escrow`) | Immutable native-USDC match terms, deposited token custody, authority-gated revives, refunds, and deterministic payout execution | Gameplay simulation, browser trust, private keys, or automatic result selection |
