@@ -4,16 +4,19 @@ import { loadPlatformApiConfig } from "./config.js";
 import { createPrismaClient, verifyPrismaConnection } from "./prisma.js";
 import { PrismaAuthRepository } from "./prisma-auth-repository.js";
 import { PrismaArenaChatAuditRepository } from "./arena-chat-audit.js";
+import { PrismaPaidAdmissionRepository } from "./paid-admission-repository.js";
 
 const config = loadPlatformApiConfig();
 const prisma = createPrismaClient(config.databaseUrl);
 await verifyPrismaConnection(prisma);
 const arenaChatRepository = new PrismaArenaChatAuditRepository(prisma);
+const paidAdmissionRepository = new PrismaPaidAdmissionRepository(prisma);
 await arenaChatRepository.pruneExpired(new Date());
 const app = createPlatformApp({
   config,
   repository: new PrismaAuthRepository(prisma),
   arenaChatRepository,
+  paidAdmissionRepository,
   healthCheck: () => verifyPrismaConnection(prisma)
 });
 const server = createServer(app);

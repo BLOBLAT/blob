@@ -200,6 +200,8 @@ PLATFORM_WEB_ORIGIN=https://blob.lat
 PLATFORM_GAME_TICKET_PRIVATE_KEY_BASE64=<random-32-byte-Ed25519-secret-in-base64>
 BLOB_ARENA_CHAT_AUDIT_PUBLIC_KEY_BASE58=<separate-random-Ed25519-public-key>
 BLOB_CHAT_RETENTION_DAYS=90
+# Future Paid Room only; does not enable Paid Mode.
+# BLOB_PAID_ADMISSION_CONSUMER_PUBLIC_KEY_BASE58=<third-independent-Ed25519-public-key>
 ```
 
 `PLATFORM_GAME_TICKET_PRIVATE_KEY_BASE64` must exist only on `platform-api`.

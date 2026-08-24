@@ -24,6 +24,7 @@ const config: PlatformApiConfig = {
   gameTicketRateLimit: 2,
   gameTicketGlobalRateLimit: 3,
   paidAdmissionTicketPrivateKey: undefined,
+  paidAdmissionConsumerPublicKey: undefined,
   arenaChatAuditPublicKey: undefined,
   arenaChatRetentionDays: 90
 };
@@ -358,6 +359,53 @@ describe("platform API health", () => {
       headers: { "Content-Type": "application/json" },
       body
     });
+    expect(rejected.status).toBe(401);
+  });
+
+  it("accepts a signed private paid-admission consume request only once configured", async () => {
+    const privateKey = new Uint8Array(32).fill(6);
+    const publicKey = await ed25519.getPublicKeyAsync(privateKey);
+    const consume = vi.fn(async () => undefined);
+    const app = createPlatformApp({
+      config: { ...config, paidAdmissionConsumerPublicKey: publicKey },
+      repository: {} as PlatformAuthRepository,
+      paidAdmissionRepository: { consume },
+      healthCheck: async () => undefined
+    });
+    const server = createServer(app);
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("Could not start test HTTP server.");
+    const payload = {
+      token: "ticket-value",
+      claims: {
+        audience: "blob-game-server",
+        entryId: "entry-1",
+        matchId: "match-1",
+        roundId: "round-1",
+        playerId: "player-1",
+        rulesHash: "a".repeat(64),
+        issuedAt: Date.now(),
+        expiresAt: Date.now() + 60_000,
+        nonce: "7f9f4c4d-53d1-4cc6-9f8a-90548bef7654"
+      }
+    };
+    const body = Buffer.from(JSON.stringify(payload));
+    const signature = await ed25519.signAsync(body, privateKey);
+    const url = "http://127.0.0.1:" + address.port + "/internal/paid-admissions/consume";
+    const accepted = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-BLOB-Paid-Admission-Signature": Buffer.from(signature).toString("base64")
+      },
+      body
+    });
+    expect(accepted.status).toBe(204);
+    expect(consume).toHaveBeenCalledWith(expect.objectContaining({ token: "ticket-value", claims: expect.objectContaining({ entryId: "entry-1" }) }));
+
+    const rejected = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body });
     expect(rejected.status).toBe(401);
   });
 });

@@ -8,6 +8,8 @@ import type { PlatformApiConfig } from "./config.js";
 import { FixedWindowRateLimiter } from "./rate-limit.js";
 import { GameTicketDisplayNameError, issueGameTicket } from "./game-ticket.js";
 import { verifyArenaChatAuditRequest, type ArenaChatAuditRepository } from "./arena-chat-audit.js";
+import { verifyPaidAdmissionConsumeRequest } from "./paid-admission-consumer.js";
+import type { PrismaPaidAdmissionRepository } from "./paid-admission-repository.js";
 
 class OriginNotAllowedError extends Error {}
 
@@ -29,6 +31,7 @@ export interface PlatformAppOptions {
   config: PlatformApiConfig;
   repository: PlatformAuthRepository;
   arenaChatRepository?: ArenaChatAuditRepository;
+  paidAdmissionRepository?: Pick<PrismaPaidAdmissionRepository, "consume">;
   /** The production entrypoint supplies a durable-store readiness probe. */
   healthCheck: () => Promise<void>;
 }
@@ -119,6 +122,33 @@ export function createPlatformApp(options: PlatformAppOptions): express.Express 
       roomId: verified.record.roomId
     }));
     response.status(201).json({ status: "recorded" });
+  }));
+  // Reserved for a future separate Paid Room. This raw signed request is not
+  // a browser API and remains unavailable unless a consumer key is configured.
+  app.post("/internal/paid-admissions/consume", express.raw({ type: "application/json", limit: "4kb" }), asyncRoute(async (request, response) => {
+    const rawBody = Buffer.isBuffer(request.body) ? request.body : undefined;
+    if (!rawBody || !options.paidAdmissionRepository) {
+      response.status(503).json({ error: "ADMISSION_UNAVAILABLE" });
+      return;
+    }
+    const verified = await verifyPaidAdmissionConsumeRequest({
+      rawBody,
+      signatureHeader: request.get("X-BLOB-Paid-Admission-Signature") ?? undefined,
+      publicKey: options.config.paidAdmissionConsumerPublicKey,
+    });
+    if (!verified.success) {
+      response.status(verified.error === "ADMISSION_UNAVAILABLE" ? 503 : verified.error === "ADMISSION_UNAUTHORIZED" ? 401 : 400)
+        .json({ error: verified.error });
+      return;
+    }
+    await options.paidAdmissionRepository.consume(verified.payload);
+    console.info(JSON.stringify({
+      service: "blob-platform-api",
+      event: "paid_admission_consumed",
+      entryId: verified.payload.claims.entryId,
+      matchId: verified.payload.claims.matchId,
+    }));
+    response.status(204).end();
   }));
   app.use(express.json({ limit: "16kb", strict: true, type: "application/json" }));
   app.use(cookieParser());

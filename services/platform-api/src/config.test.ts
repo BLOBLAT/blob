@@ -88,5 +88,10 @@ describe("platform API production configuration", () => {
       PLATFORM_GAME_TICKET_PRIVATE_KEY_BASE64: GAME_TICKET_PRIVATE_KEY,
       PLATFORM_PAID_ADMISSION_TICKET_PRIVATE_KEY_BASE64: GAME_TICKET_PRIVATE_KEY,
     })).toThrow("PLATFORM_PAID_ADMISSION_TICKET_PRIVATE_KEY_BASE64 must differ");
+
+    expect(() => loadPlatformApiConfig({
+      DATABASE_URL,
+      BLOB_PAID_ADMISSION_CONSUMER_PUBLIC_KEY_BASE58: "not-base58!"
+    })).toThrow("BLOB_PAID_ADMISSION_CONSUMER_PUBLIC_KEY_BASE58 must be a base58 Ed25519 public key");
   });
 });

@@ -24,6 +24,8 @@ export interface PlatformApiConfig {
   gameTicketGlobalRateLimit: number;
   /** Reserved for a future paid-room admission signer; it never enables paid play by itself. */
   paidAdmissionTicketPrivateKey: Uint8Array | undefined;
+  /** Public half of the future game-server-only paid-admission consume signer. */
+  paidAdmissionConsumerPublicKey: Uint8Array | undefined;
   /** Public half of the game-server-only arena-chat audit signing key. */
   arenaChatAuditPublicKey: Uint8Array | undefined;
   /** Accepted chat retention window. Cleanup is owned by platform-api. */
@@ -82,6 +84,10 @@ export function loadPlatformApiConfig(environment: NodeJS.ProcessEnv = process.e
     && timingSafeEqual(Buffer.from(gameTicketPrivateKey), Buffer.from(paidAdmissionTicketPrivateKey))) {
     throw new Error("PLATFORM_PAID_ADMISSION_TICKET_PRIVATE_KEY_BASE64 must differ from PLATFORM_GAME_TICKET_PRIVATE_KEY_BASE64.");
   }
+  const paidAdmissionConsumerPublicKey = decodeArenaChatAuditPublicKey(environment.BLOB_PAID_ADMISSION_CONSUMER_PUBLIC_KEY_BASE58);
+  if (environment.BLOB_PAID_ADMISSION_CONSUMER_PUBLIC_KEY_BASE58 && !paidAdmissionConsumerPublicKey) {
+    throw new Error("BLOB_PAID_ADMISSION_CONSUMER_PUBLIC_KEY_BASE58 must be a base58 Ed25519 public key.");
+  }
   const arenaChatAuditPublicKey = decodeArenaChatAuditPublicKey(environment.BLOB_ARENA_CHAT_AUDIT_PUBLIC_KEY_BASE58);
   if (environment.BLOB_ARENA_CHAT_AUDIT_PUBLIC_KEY_BASE58 && !arenaChatAuditPublicKey) {
     throw new Error("BLOB_ARENA_CHAT_AUDIT_PUBLIC_KEY_BASE58 must be a base58 Ed25519 public key.");
@@ -106,6 +112,7 @@ export function loadPlatformApiConfig(environment: NodeJS.ProcessEnv = process.e
     gameTicketRateLimit: parsePositiveInteger(environment.PLATFORM_GAME_TICKET_RATE_LIMIT, 15, "PLATFORM_GAME_TICKET_RATE_LIMIT"),
     gameTicketGlobalRateLimit: parsePositiveInteger(environment.PLATFORM_GAME_TICKET_GLOBAL_RATE_LIMIT, 240, "PLATFORM_GAME_TICKET_GLOBAL_RATE_LIMIT"),
     paidAdmissionTicketPrivateKey,
+    paidAdmissionConsumerPublicKey,
     arenaChatAuditPublicKey,
     arenaChatRetentionDays: parsePositiveInteger(environment.BLOB_CHAT_RETENTION_DAYS, 90, "BLOB_CHAT_RETENTION_DAYS"),
   };
