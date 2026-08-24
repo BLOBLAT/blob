@@ -10,6 +10,12 @@ export interface PlatformApiConfig {
   renameCooldownMs: number;
   authChallengeRateLimit: number;
   authVerifyRateLimit: number;
+  /**
+   * Per-process ceiling shared by each public wallet-auth route. This bounds
+   * distinct-wallet abuse while an external edge/WAF remains the primary
+   * distributed protection.
+   */
+  authGlobalRateLimit: number;
   authRateLimitWindowMs: number;
   gameTicketPrivateKey: Uint8Array | undefined;
   gameTicketTtlMs: number;
@@ -82,6 +88,7 @@ export function loadPlatformApiConfig(environment: NodeJS.ProcessEnv = process.e
     renameCooldownMs: parsePositiveInteger(environment.PLATFORM_RENAME_COOLDOWN_MS, 24 * 60 * 60 * 1_000, "PLATFORM_RENAME_COOLDOWN_MS"),
     authChallengeRateLimit: parsePositiveInteger(environment.PLATFORM_AUTH_CHALLENGE_RATE_LIMIT, 6, "PLATFORM_AUTH_CHALLENGE_RATE_LIMIT"),
     authVerifyRateLimit: parsePositiveInteger(environment.PLATFORM_AUTH_VERIFY_RATE_LIMIT, 12, "PLATFORM_AUTH_VERIFY_RATE_LIMIT"),
+    authGlobalRateLimit: parsePositiveInteger(environment.PLATFORM_AUTH_GLOBAL_RATE_LIMIT, 120, "PLATFORM_AUTH_GLOBAL_RATE_LIMIT"),
     authRateLimitWindowMs: parsePositiveInteger(environment.PLATFORM_AUTH_RATE_LIMIT_WINDOW_MS, 10 * 60 * 1_000, "PLATFORM_AUTH_RATE_LIMIT_WINDOW_MS"),
     gameTicketPrivateKey,
     gameTicketTtlMs: parsePositiveInteger(environment.PLATFORM_GAME_TICKET_TTL_MS, 5 * 60 * 1_000, "PLATFORM_GAME_TICKET_TTL_MS"),

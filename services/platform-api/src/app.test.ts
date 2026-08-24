@@ -16,6 +16,7 @@ const config: PlatformApiConfig = {
   renameCooldownMs: 60_000,
   authChallengeRateLimit: 2,
   authVerifyRateLimit: 2,
+  authGlobalRateLimit: 3,
   authRateLimitWindowMs: 60_000,
   gameTicketPrivateKey: undefined,
   gameTicketTtlMs: 60_000,
@@ -67,6 +68,40 @@ describe("platform API health", () => {
     expect((await request()).status).toBe(201);
     expect((await request()).status).toBe(201);
     const limited = await request();
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("retry-after")).toBe("60");
+  });
+
+  it("limits aggregate challenge creation across different wallet addresses", async () => {
+    const app = createPlatformApp({
+      config,
+      repository: { createChallenge: async () => undefined } as unknown as PlatformAuthRepository,
+      healthCheck: async () => undefined
+    });
+    const server = createServer(app);
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("Could not start test HTTP server.");
+    }
+    const url = "http://127.0.0.1:" + address.port + "/v1/auth/challenge";
+    const request = (walletAddress: string) => fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ walletAddress })
+    });
+
+    const wallets = [
+      "1".repeat(32),
+      "1".repeat(31) + "2",
+      "1".repeat(31) + "3",
+      "1".repeat(31) + "4"
+    ];
+    expect((await request(wallets[0]!)).status).toBe(201);
+    expect((await request(wallets[1]!)).status).toBe(201);
+    expect((await request(wallets[2]!)).status).toBe(201);
+    const limited = await request(wallets[3]!);
     expect(limited.status).toBe(429);
     expect(limited.headers.get("retry-after")).toBe("60");
   });

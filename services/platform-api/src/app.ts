@@ -41,6 +41,16 @@ export function createPlatformApp(options: PlatformAppOptions): express.Express 
     options.config.authVerifyRateLimit,
     options.config.authRateLimitWindowMs
   );
+  const globalChallengeRateLimiter = new FixedWindowRateLimiter(
+    options.config.authGlobalRateLimit,
+    options.config.authRateLimitWindowMs,
+    1
+  );
+  const globalVerifyRateLimiter = new FixedWindowRateLimiter(
+    options.config.authGlobalRateLimit,
+    options.config.authRateLimitWindowMs,
+    1
+  );
   const auth = new AuthService(options.repository, {
     publicOrigin: options.config.publicOrigin,
     challengeTtlMs: options.config.challengeTtlMs,
@@ -84,7 +94,8 @@ export function createPlatformApp(options: PlatformAppOptions): express.Express 
 
   app.post("/v1/auth/challenge", asyncRoute(async (request, response) => {
     const body = challengeRequestSchema.parse(request.body);
-    if (!consumeRateLimit(response, challengeRateLimiter, "challenge:" + body.walletAddress)) {
+    if (!consumeRateLimit(response, challengeRateLimiter, "challenge:" + body.walletAddress)
+      || !consumeRateLimit(response, globalChallengeRateLimiter, "challenge:global")) {
       return;
     }
     const challenge = await auth.issueChallenge(body.walletAddress);
@@ -97,7 +108,8 @@ export function createPlatformApp(options: PlatformAppOptions): express.Express 
 
   app.post("/v1/auth/verify", asyncRoute(async (request, response) => {
     const body = verifyRequestSchema.parse(request.body);
-    if (!consumeRateLimit(response, verifyRateLimiter, "verify:" + body.walletAddress)) {
+    if (!consumeRateLimit(response, verifyRateLimiter, "verify:" + body.walletAddress)
+      || !consumeRateLimit(response, globalVerifyRateLimiter, "verify:global")) {
       return;
     }
     const session = await auth.verifyChallenge(body);

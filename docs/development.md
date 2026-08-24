@@ -158,9 +158,12 @@ PLATFORM_WEB_ORIGIN=https://blob.lat,https://www.blob.lat
 ```
 
 Production uses a host-only `__Host-blob_session` cookie by default and rejects
-a weaker custom cookie name. The API also applies a bounded process-local
-limit to repeated wallet challenge and verification calls; retain an edge/WAF
-limit when the service becomes public.
+a weaker custom cookie name. The API applies both per-wallet limits and a
+bounded process-local aggregate limit to wallet challenge and verification
+calls. The aggregate default is 120 requests per route per 10-minute window;
+configure `PLATFORM_AUTH_GLOBAL_RATE_LIMIT` only when its documented traffic
+capacity is insufficient. Retain an edge/WAF limit when the service becomes
+public: the process-local brake is intentionally not shared across replicas.
 
 Apply the committed baseline before starting the service:
 

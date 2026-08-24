@@ -22,6 +22,11 @@ describe("platform API production configuration", () => {
     })).toThrow("PLATFORM_SESSION_TTL_MS must be a positive integer");
 
     expect(loadPlatformApiConfig({ DATABASE_URL, PORT: "3000oops" }).port).toBe(3000);
+
+    expect(() => loadPlatformApiConfig({
+      DATABASE_URL,
+      PLATFORM_AUTH_GLOBAL_RATE_LIMIT: "0"
+    })).toThrow("PLATFORM_AUTH_GLOBAL_RATE_LIMIT must be a positive integer");
   });
 
   it("accepts the production BLOB origin allowlist", () => {
