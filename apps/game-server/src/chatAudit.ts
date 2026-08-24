@@ -40,8 +40,12 @@ export class SignedArenaChatAuditClient implements ArenaChatPersistence {
       });
       return response.status === 201;
     } catch (error) {
+      const cause = error instanceof Error && error.cause instanceof Error
+        ? error.cause.message
+        : undefined;
       console.warn("[BLOB game server] chat audit persistence unavailable", {
-        error: error instanceof Error ? error.message : "unknown"
+        error: error instanceof Error ? error.message : "unknown",
+        cause
       });
       return false;
     } finally {

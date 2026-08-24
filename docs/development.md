@@ -193,12 +193,14 @@ with the private Railway endpoint:
 ```sh
 BLOB_ARENA_CHAT_AUDIT_PRIVATE_KEY_BASE64=<matching-random-32-byte-private-key>
 BLOB_CHAT_RETENTION_DAYS=90
-PLATFORM_CHAT_AUDIT_ORIGIN=http://${{platform-api.RAILWAY_PRIVATE_DOMAIN}}:${{platform-api.PORT}}
+PLATFORM_CHAT_AUDIT_ORIGIN=http://platform-api.railway.internal:8080
 ```
 
 Accepted messages are signed and persisted before room broadcast. They contain
 no wallet/cookie/IP and Platform API deletes them after the configured retention
-period. If this bridge is unavailable, only chat fails closed; arena gameplay
+period. `8080` is the current production Platform API listener port on Railway;
+if that service's `PORT` changes, update this single game-server variable to
+match. If this bridge is unavailable, only chat fails closed; arena gameplay
 does not depend on it.
 
 Apply the committed baseline before starting the service:

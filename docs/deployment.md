@@ -222,11 +222,14 @@ public key above on `platform-api`, then configure these values only on the
 ```sh
 BLOB_ARENA_CHAT_AUDIT_PRIVATE_KEY_BASE64=<matching-random-32-byte-private-key>
 BLOB_CHAT_RETENTION_DAYS=90
-PLATFORM_CHAT_AUDIT_ORIGIN=http://${{platform-api.RAILWAY_PRIVATE_DOMAIN}}:${{platform-api.PORT}}
+PLATFORM_CHAT_AUDIT_ORIGIN=http://platform-api.railway.internal:8080
 ```
 
 The request stays on Railway private networking and is signed before the
-message is broadcast. Do not set either value in Vercel or a `VITE_` variable.
+message is broadcast. `8080` is Platform API's current Railway listener port;
+if the service's Railway `PORT` changes, set this one variable to the matching
+port before redeploying `blob`. Do not set either value in Vercel or a `VITE_`
+variable.
 If the audit service/database is unavailable, Free Mode continues normally but
 the chat send is rejected rather than publishing an unrecorded message.
 

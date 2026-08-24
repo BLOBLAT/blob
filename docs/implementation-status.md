@@ -256,33 +256,26 @@ protected-name policy and the first durable Arena Chat audit path are now
 implemented. Keep the authoritative Free Mode and the existing wallet/profile
 boundary intact while extending it.
 
-### Immediate continuation checkpoint
+### Deployed chat-audit checkpoint
 
-The durable chat implementation is currently committed locally but has **not
-yet been pushed or deployed**. It passed its focused local tests (25 tests)
-plus the relevant TypeScript checks/builds. Before claiming it deployed, the
-next agent must:
+The durable chat implementation was pushed as `85ba50a` and deployed to the
+production `blob` and `platform-api` Railway services. Railway applied
+`20260824190000_add_arena_chat_audit`; both public `/health` endpoints returned
+HTTP 200. A production Colyseus smoke test sent a safe text message and
+received the server's accepted message only after the Platform API returned
+the audit `201` response. The independent audit key pair exists only in the
+corresponding Railway service variables and was never committed or printed.
 
-1. Inspect `git diff` and retain only the chat-audit scope.
-2. Generate one new independent Ed25519 key pair outside the repository. The
-   32-byte standard-base64 private key belongs only to Railway service `blob`
-   as `BLOB_ARENA_CHAT_AUDIT_PRIVATE_KEY_BASE64`. Its base58 public key belongs
-   only to Railway service `platform-api` as
-   `BLOB_ARENA_CHAT_AUDIT_PUBLIC_KEY_BASE58`. Do not reuse the profile-ticket
-   or paid-admission key and do not print/commit either key.
-3. Set `BLOB_CHAT_RETENTION_DAYS=90` on both services. On `blob`, set
-   `PLATFORM_CHAT_AUDIT_ORIGIN` to Railway private networking, normally
-   `http://${{platform-api.RAILWAY_PRIVATE_DOMAIN}}:${{platform-api.PORT}}`.
-   Set variables with deploys deferred if possible, then publish the source
-   commit so both services deploy the compatible code.
-4. The Platform API Railway build must apply migration
-   `20260824190000_add_arena_chat_audit` before startup. Verify both services'
-   `/health`, then send a normal Free Mode message from two browser clients.
-   Confirm a normal chat message appears, a link/contact/scam message is
-   rejected, and a database record exists only for the accepted message.
-5. Run `npm run check`, `npm audit --omit=dev`, `git diff --check`, then commit
-   and push. The known Prisma transitive audit finding must be reported, not
-   "fixed" by an unreviewed breaking downgrade.
+The working private-route setting on `blob` is:
+
+```sh
+PLATFORM_CHAT_AUDIT_ORIGIN=http://platform-api.railway.internal:8080
+```
+
+`8080` is the Platform API listener port on the current Railway deployment; if
+the Platform API's Railway `PORT` changes, update this single value to match.
+The prior reference form using `${{platform-api.PORT}}` did not resolve to a
+reachable listener and failed closed as designed.
 
 If private audit variables are absent in production, the new game-server code
 fails only **chat** closed with `CHAT_AUDIT_UNAVAILABLE`; authoritative gameplay
