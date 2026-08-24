@@ -1,0 +1,217 @@
+import { describe, expect, it } from "vitest";
+import { PaidRuleset, type AuthoritativeMatchResult } from "@blob/shared";
+import { createPaidMatchTerms, type PaidMatchTerms, type VerifiedParticipant } from "./paid-match.js";
+import {
+  PaidMatchPersistenceError,
+  PrismaPaidMatchFinalizationRepository,
+} from "./paid-match-finalization-repository.js";
+import type { PrismaClient } from "./generated/prisma/client.js";
+
+const NOW = new Date("2026-08-24T10:00:00.000Z");
+const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+const ESCROW = "9xQeWvG816bUx9EPfEZgC3Jk6zR9aM2Qq8F4JZ2xAazC";
+const WALLETS = [
+  "4Nd1m3sW3vJ3zN9WZ1xQ2u5d7i9K6p4YvTq8eR1sA2bC",
+  "7YttLkH3UQJfB73uExyGfEKvwR6LjhQmN6x2PRZKMrP2",
+  "B6xXoQkbXZp27DiNUZCr36N54xe69Bp5uzWUsWeLMYqV"
+];
+
+describe("durable paid-match finalization", () => {
+  it("persists one immutable result, payout plan, and settlement record without wallet data in result payload", async () => {
+    const terms = createTerms();
+    const state = createState(terms);
+    const repository = new PrismaPaidMatchFinalizationRepository(createPrisma(state));
+    const input = createInput(terms);
+
+    const first = await repository.persist(input);
+    const retried = await repository.persist(input);
+
+    expect(first).toMatchObject({ created: true, resultId: "result-1" });
+    expect(retried).toEqual({ ...first, created: false });
+    expect(state.result).toMatchObject({
+      matchId: terms.matchId,
+      roundId: terms.roundId,
+      rulesHash: terms.rulesHash,
+      resultHash: first.immutableResultHash,
+    });
+    expect(JSON.stringify(state.result?.resultPayload)).not.toContain(WALLETS[0]!);
+    expect(state.attempt).toMatchObject({
+      resultId: "result-1",
+      resultHash: first.immutableResultHash,
+      settlementId: first.settlementId,
+    });
+    expect(state.payouts.map((payout) => [payout.place, payout.entryId])).toEqual([
+      [1, "entry-1"],
+      [2, "entry-2"],
+      [3, "entry-3"],
+    ]);
+    expect(state.match.status).toBe("FINALIZING");
+    expect(state.auditEvents).toHaveLength(1);
+  });
+
+  it("rejects a divergent result instead of replacing an immutable finalization", async () => {
+    const terms = createTerms();
+    const state = createState(terms);
+    const repository = new PrismaPaidMatchFinalizationRepository(createPrisma(state));
+    const input = createInput(terms);
+    await repository.persist(input);
+
+    const divergent: AuthoritativeMatchResult = {
+      ...input.result,
+      players: [{ ...input.result.players[0]!, finalMass: 999 }, ...input.result.players.slice(1)]
+    };
+    await expect(repository.persist({ ...input, result: divergent }))
+      .rejects.toMatchObject({ code: "RESULT_IMMUTABLE_CONFLICT" } satisfies Partial<PaidMatchPersistenceError>);
+  });
+
+  it("requires a verified entry bound to each server result participant", async () => {
+    const terms = createTerms();
+    const state = createState(terms);
+    state.entries[1]!.wallet.address = WALLETS[0]!;
+    const repository = new PrismaPaidMatchFinalizationRepository(createPrisma(state));
+
+    await expect(repository.persist(createInput(terms)))
+      .rejects.toMatchObject({ code: "ENTRY_BINDING_INVALID" } satisfies Partial<PaidMatchPersistenceError>);
+    expect(state.result).toBeUndefined();
+    expect(state.attempt).toBeUndefined();
+  });
+
+  it("refuses to freeze a result before the paid match has entered a finalizable lifecycle state", async () => {
+    const terms = createTerms();
+    const state = createState(terms);
+    state.match.status = "FUNDING";
+    const repository = new PrismaPaidMatchFinalizationRepository(createPrisma(state));
+
+    await expect(repository.persist(createInput(terms)))
+      .rejects.toMatchObject({ code: "MATCH_NOT_FINALIZABLE" } satisfies Partial<PaidMatchPersistenceError>);
+  });
+});
+
+function createTerms(): PaidMatchTerms {
+  return createPaidMatchTerms({
+    usdcMint: USDC_MINT,
+    escrowAddress: ESCROW,
+    ruleset: PaidRuleset.SKILL,
+    now: NOW,
+  });
+}
+
+function createInput(terms: PaidMatchTerms) {
+  return {
+    terms,
+    result: createResult(terms.matchId, terms.roundId),
+    verifiedParticipants: participants(),
+    confirmedRevives: [],
+  };
+}
+
+function participants(): VerifiedParticipant[] {
+  return WALLETS.map((walletAddress, index) => ({ playerId: "player-" + (index + 1), walletAddress }));
+}
+
+function createResult(matchId: string, roundId: string): AuthoritativeMatchResult {
+  return {
+    matchId,
+    roundId,
+    mode: "PAID",
+    resultTimestamp: NOW,
+    players: [
+      { playerId: "player-1", finalRank: 1, finalMass: 500, foodCollected: 30, eliminations: 2, deaths: 0, survivalTimeMs: 600_000 },
+      { playerId: "player-2", finalRank: 2, finalMass: 300, foodCollected: 20, eliminations: 1, deaths: 1, survivalTimeMs: 590_000 },
+      { playerId: "player-3", finalRank: 3, finalMass: 180, foodCollected: 10, eliminations: 0, deaths: 2, survivalTimeMs: 570_000 },
+    ]
+  };
+}
+
+interface TestState {
+  match: Record<string, unknown> & { status: string };
+  entries: Array<{ id: string; playerId: string; amountBaseUnits: bigint; wallet: { address: string } }>;
+  result?: { id: string; matchId: string; roundId: string; rulesHash: string; resultHash: string; resultPayload: unknown };
+  attempt?: { resultId: string; resultHash: string; settlementId: string; idempotencyKey: string };
+  payouts: Array<{ resultId: string; entryId: string; place: number }>;
+  auditEvents: unknown[];
+}
+
+function createState(terms: PaidMatchTerms): TestState {
+  const configuration = terms.configuration;
+  const revive = terms.reviveConfiguration;
+  return {
+    match: {
+      id: terms.matchId,
+      roundId: terms.roundId,
+      status: "LIVE",
+      ruleset: terms.ruleset,
+      rulesVersion: terms.rulesVersion,
+      rulesHash: terms.rulesHash,
+      settlementAsset: terms.settlementAsset,
+      usdcMint: terms.usdcMint,
+      entryAmountBaseUnits: configuration.entryAmountBaseUnits,
+      reviveAmountBaseUnits: revive.reviveAmountBaseUnits,
+      maxRevivesPerPlayer: revive.maxRevivesPerPlayer,
+      reviveWindowMs: revive.reviveWindowMs,
+      reviveCutoffMs: revive.reviveCutoffMs,
+      reviveSpawnProtectionMs: revive.spawnProtectionMs,
+      platformFeeBps: Number(configuration.platformFeeBps),
+      payoutBps: configuration.prizeDistribution.map((payout) => Number(payout.basisPoints)),
+      minimumPlayers: configuration.minimumPlayers,
+      maximumPlayers: configuration.maximumPlayers,
+      roundDurationMs: configuration.roundDurationMs,
+      fundingDeadline: terms.fundingDeadline,
+      escrowAddress: terms.escrowAddress,
+    },
+    entries: participants().map((participant, index) => ({
+      id: "entry-" + (index + 1),
+      playerId: participant.playerId,
+      amountBaseUnits: configuration.entryAmountBaseUnits,
+      wallet: { address: participant.walletAddress },
+    })),
+    payouts: [],
+    auditEvents: [],
+  };
+}
+
+function createPrisma(state: TestState): PrismaClient {
+  const transaction = {
+    match: {
+      findUnique: async () => state.match,
+      update: async ({ data }: { data: { status: string; endsAt: Date } }) => {
+        state.match.status = data.status;
+        state.match.endsAt = data.endsAt;
+        return state.match;
+      }
+    },
+    matchResult: {
+      findUnique: async () => state.result ?? null,
+      create: async ({ data }: { data: Omit<NonNullable<TestState["result"]>, "id"> & { finalizedAt: Date } }) => {
+        state.result = { id: "result-1", ...data };
+        return { id: state.result.id };
+      }
+    },
+    matchEntry: {
+      findMany: async () => state.entries
+    },
+    settlementAttempt: {
+      findUnique: async () => state.attempt ?? null,
+      create: async ({ data }: { data: NonNullable<TestState["attempt"]> & { matchId: string } }) => {
+        state.attempt = data;
+        return data;
+      }
+    },
+    payout: {
+      createMany: async ({ data }: { data: Array<{ resultId: string; entryId: string; place: number }> }) => {
+        state.payouts.push(...data);
+        return { count: data.length };
+      },
+      count: async () => state.payouts.length,
+    },
+    auditEvent: {
+      create: async ({ data }: { data: unknown }) => {
+        state.auditEvents.push(data);
+        return data;
+      }
+    }
+  };
+  return {
+    $transaction: async <T>(callback: (client: typeof transaction) => Promise<T>) => callback(transaction)
+  } as unknown as PrismaClient;
+}

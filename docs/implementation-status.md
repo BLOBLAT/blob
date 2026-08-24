@@ -177,6 +177,12 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
 - Added API-signed, short-lived display-name tickets: the Platform API holds
   the private Ed25519 key and the game server holds only its public key. A
   browser cannot submit an authoritative arena name or wallet address.
+- Added the internal immutable paid-result persistence boundary: a canonical
+  server-produced result, its exact three-place payout plan, and one
+  settlement-attempt record are written together only for matching durable
+  terms and verified player entries. Identical retries reuse the same derived
+  settlement ID; conflicting results fail closed. It has no public route and
+  cannot sign, send, or accept a USDC transfer.
 - Platform API now returns a deliberate `403 ORIGIN_NOT_ALLOWED` response for
   browser Origins outside its explicit allowlist, rather than an ambiguous
   internal error. It is deployed with a durable-store health check, and Vercel

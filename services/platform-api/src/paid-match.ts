@@ -184,7 +184,10 @@ export function finalizePaidMatch(input: {
     prizeDistribution: input.terms.configuration.prizeDistribution
   });
   const immutableResultHash = hashResult(input.result, input.verifiedParticipants, input.confirmedRevives, input.terms.rulesHash);
-  const settlementId = input.settlementId ?? "settlement-" + randomUUID();
+  // A retry must identify the same immutable result without relying on a
+  // caller to remember a generated UUID. The resulting identifier is bounded
+  // and contains no wallet or payment credential.
+  const settlementId = input.settlementId ?? "settlement-" + immutableResultHash;
   assertInternalIdentifier(settlementId, "settlement ID");
   return {
     immutableResultHash,

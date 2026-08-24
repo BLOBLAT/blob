@@ -141,6 +141,7 @@ model Match {
   deaths                DeathEvent[]
   reviveRequests        ReviveRequest[]
   chainTransactions     ChainTransaction[]
+  result                MatchResult?
   settlementAttempts    SettlementAttempt[]
   payouts               Payout[]
 
@@ -155,6 +156,7 @@ model MatchEntry {
   user                User         @relation(fields: [userId], references: [id], onDelete: Restrict)
   walletId            String
   wallet              Wallet       @relation(fields: [walletId], references: [id], onDelete: Restrict)
+  playerId            String
   status              EntryStatus  @default(RESERVED)
   amountBaseUnits     BigInt
   idempotencyKey      String       @unique
@@ -167,7 +169,25 @@ model MatchEntry {
   payouts             Payout[]
 
   @@unique([matchId, userId])
+  @@unique([matchId, playerId])
   @@index([matchId, status])
+}
+
+/// Frozen server result plus the exact result-derived payout plan. It is
+/// created before any settlement side effect and cannot be replaced with a
+/// different result for the same match.
+model MatchResult {
+  id                String            @id @default(uuid())
+  matchId           String            @unique
+  match             Match             @relation(fields: [matchId], references: [id], onDelete: Restrict)
+  roundId           String            @unique
+  rulesHash         String
+  resultHash        String            @unique
+  resultPayload     Json
+  finalizedAt       DateTime
+  createdAt         DateTime          @default(now())
+  settlementAttempt SettlementAttempt?
+  payouts           Payout[]
 }
 
 model DeathEvent {
@@ -237,7 +257,10 @@ model SettlementAttempt {
   id                  String       @id @default(uuid())
   matchId             String
   match               Match        @relation(fields: [matchId], references: [id], onDelete: Restrict)
+  resultId            String       @unique
+  result              MatchResult  @relation(fields: [resultId], references: [id], onDelete: Restrict)
   resultHash          String
+  settlementId        String       @unique
   idempotencyKey      String       @unique
   transactionId       String?      @unique
   transaction         ChainTransaction? @relation("SettlementTransaction", fields: [transactionId], references: [id], onDelete: SetNull)
@@ -255,6 +278,8 @@ model Payout {
   id                  String       @id @default(uuid())
   matchId             String
   match               Match        @relation(fields: [matchId], references: [id], onDelete: Restrict)
+  resultId            String
+  result              MatchResult  @relation(fields: [resultId], references: [id], onDelete: Restrict)
   entryId             String
   entry               MatchEntry   @relation(fields: [entryId], references: [id], onDelete: Restrict)
   place               Int

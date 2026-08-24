@@ -119,9 +119,19 @@ server result: valid timestamp, every funded participant exactly once,
 contiguous ranks, and non-negative safe-integer competitive statistics. It
 also validates every confirmed revive/death and caller-supplied settlement ID.
 Malformed values cannot enter the immutable result hash or an idempotency key.
+The Platform API's internal finalization repository then writes the frozen
+`MatchResult`, its canonical statistics/pool/payout payload, three
+result-bound `Payout` records, and one result-bound `SettlementAttempt` in a
+single PostgreSQL transaction. A result is linked to one `matchId`, `roundId`,
+rules hash, and result hash; a retry of identical input reuses the same
+settlement ID. A divergent result, a missing verified entry, a mismatched
+wallet/entry binding, or a non-live match is rejected before any settlement
+adapter could act. Result payloads deliberately contain no wallet address;
+durable entry records provide that mapping only inside the Platform API.
+
 The PostgreSQL schema also requires a persisted payout split and enforces one
-settlement attempt per match plus one prize place per enrolled entry. A retry
-must update the same durable attempt; it cannot create a competing settlement
+settlement attempt per match, one prize place per enrolled entry, and one
+arena player ID per paid entry. A retry cannot create a competing settlement
 or pay one entry twice.
 
 ## Required before enabling paid play

@@ -104,6 +104,22 @@ describe("paid-match finalization", () => {
     })).toThrow("settlement ID is invalid");
   });
 
+  it("uses a stable settlement identifier when immutable finalization is retried", () => {
+    const terms = createPaidMatchTerms({ usdcMint: USDC_MINT, escrowAddress: ESCROW, now: NOW });
+    const input = {
+      terms,
+      result: createPaidResult(terms.matchId, terms.roundId),
+      verifiedParticipants: participants(),
+      confirmedRevives: []
+    };
+    const first = finalizePaidMatch(input);
+    const retried = finalizePaidMatch(input);
+
+    expect(first.immutableResultHash).toBe(retried.immutableResultHash);
+    expect(first.settlementRequest.settlementId).toBe(retried.settlementRequest.settlementId);
+    expect(first.settlementRequest.settlementId).toBe("settlement-" + first.immutableResultHash);
+  });
+
   it("rejects off-chain rules that the native-USDC escrow would reject before entries are accepted", () => {
     expect(() => createPaidMatchTerms({
       usdcMint: USDC_MINT,
