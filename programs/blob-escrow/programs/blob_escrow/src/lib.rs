@@ -680,7 +680,25 @@ impl PlatformConfig {
 }
 
 impl MatchEscrow {
-    pub const SPACE: usize = 8 + 340;
+    // Anchor account allocation must include the eight-byte discriminator.
+    // Keep the Borsh payload calculation beside the account definition rather
+    // than a stale hand-counted total: an undersized account makes
+    // `create_match` fail while serializing the freshly initialized escrow.
+    pub const DATA_LEN: usize = 1 // version
+        + 1 // lifecycle enum
+        + (4 * 32) // match, round, rules, and final-result hashes
+        + (4 * 32) // mint, controller, result authority, and treasury
+        + 8 // entry amount
+        + 1 // revive enabled
+        + 8 // revive amount
+        + 2 // platform fee basis points
+        + (WINNER_COUNT * 2) // three payout basis-point values
+        + (2 * 2) // minimum and maximum player counts
+        + (5 * 8) // round/revive/funding timestamps and duration
+        + (2 * 2) // participant and revive counters
+        + (2 * 8) // total contributions and refunds
+        + 1; // PDA bump
+    pub const SPACE: usize = 8 + Self::DATA_LEN;
 }
 
 #[account]
@@ -1213,5 +1231,43 @@ mod tests {
         assert!(validate_platform_roles(controller, result_authority, Pubkey::default()).is_err());
         assert!(validate_native_usdc_decimals(NATIVE_USDC_DECIMALS).is_ok());
         assert!(validate_native_usdc_decimals(9).is_err());
+    }
+
+    #[test]
+    fn allocates_the_entire_serialized_match_escrow() {
+        let escrow = MatchEscrow {
+            version: 1,
+            lifecycle: MatchLifecycle::Funding,
+            match_id_hash: [1; 32],
+            round_id_hash: [2; 32],
+            rules_hash: [3; 32],
+            final_result_hash: [0; 32],
+            mint: Pubkey::new_from_array([4; 32]),
+            controller: Pubkey::new_from_array([5; 32]),
+            result_authority: Pubkey::new_from_array([6; 32]),
+            treasury: Pubkey::new_from_array([7; 32]),
+            entry_amount: 1_000_000,
+            revive_enabled: true,
+            revive_amount: REBUY_AMOUNT_BASE_UNITS,
+            platform_fee_bps: PLATFORM_FEE_BPS,
+            payout_bps: DEFAULT_PAYOUT_BPS,
+            minimum_players: 3,
+            maximum_players: 32,
+            round_duration_seconds: ROUND_DURATION_SECONDS,
+            revive_window_seconds: REBUY_WINDOW_SECONDS,
+            revive_cutoff_seconds: REBUY_CUTOFF_SECONDS,
+            funding_deadline_at: 100,
+            round_ends_at: 700,
+            participant_count: 3,
+            confirmed_revives: 0,
+            total_contributions: 3_000_000,
+            total_refunded: 0,
+            bump: 1,
+        };
+        let mut serialized = Vec::new();
+        escrow.try_serialize(&mut serialized).unwrap();
+
+        assert_eq!(MatchEscrow::DATA_LEN, 348);
+        assert_eq!(serialized.len(), MatchEscrow::SPACE);
     }
 }

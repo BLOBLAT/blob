@@ -57,6 +57,14 @@ sed -i "s/${PLACEHOLDER_PROGRAM_ID}/${PROGRAM_ID}/g" \
 sed -i "s|~/.config/solana/id.json|${PAYER_KEYPAIR}|" \
   "${WORKSPACE_DIR}/Anchor.toml"
 
+# Run the program's pure Rust regression tests before compiling/deploying the
+# temporary local copy. In particular this catches account-space mistakes that
+# a successful program deployment alone would not exercise.
+(
+  cd "${WORKSPACE_DIR}/programs/blob_escrow"
+  cargo test
+)
+
 (
   cd "${WORKSPACE_DIR}"
   anchor build

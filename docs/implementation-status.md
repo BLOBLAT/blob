@@ -93,6 +93,12 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   exact refunds, and on-chain 5% fee plus immutable configuration-validated
   payout logic. Host-side Rust tests are kept current below; target artifacts
   are kept in the OS temporary directory and ignored by Git.
+- Corrected `MatchEscrow` account allocation to include all 348 serialized
+  payload bytes plus Anchor's eight-byte discriminator. A source-level
+  regression test serializes a populated escrow and compares its exact length
+  with the allocation constant, preventing an under-allocation during
+  `create_match`; the isolated localnet smoke script runs those Rust tests
+  before it builds and deploys its throwaway copy.
 - Added tests for signed, short-lived, match/round-bound Ed25519 paid-admission
   tickets. The Platform API would retain the private signing key while a future
   paid room receives only the public verification key. These tickets are not
