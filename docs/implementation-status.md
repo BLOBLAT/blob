@@ -328,6 +328,18 @@ in-memory chat behaviour unless the audit bridge is configured.
   `VALIDATING_OWNERSHIP` despite its propagated CNAME/TXT, no CAA record, and
   no DNSSEC delegation. Do not remove the working Vercel same-site `/v1/*`
   bridge while that remains true.
+- `ee43cf8` added a server-only, serializable entry-payment receipt boundary.
+  The Solana verifier now uses finalized chain `blockTime` rather than API
+  wall-clock time. A confirmed signature is uniquely linked to exactly one
+  reserved entry, is rejected at/after that match's immutable funding
+  deadline, and cannot be reused for a second admission. Railway applied the
+  matching migration successfully; no browser route or USDC transfer was
+  enabled.
+- `ee2395d` added server-only durable persistence for immutable paid-match
+  terms. The controlled future orchestrator must write exact `DRAFT` terms
+  before any entry is reserved or funding opens. Identical retries reuse the
+  record; any diverging rules hash or immutable term fails closed. It does not
+  itself expose a match, enter funding, accept a payment, or run Paid Mode.
 
 ### Approved direction to implement next
 
