@@ -89,6 +89,7 @@ export class PrismaPaidMatchFinalizationRepository {
           maximumPlayers: true,
           roundDurationMs: true,
           fundingDeadline: true,
+          startsAt: true,
           escrowAddress: true,
         }
       });
@@ -107,6 +108,7 @@ export class PrismaPaidMatchFinalizationRepository {
       if (match.status !== "LIVE" && match.status !== "FINALIZING") {
         throw new PaidMatchPersistenceError("MATCH_NOT_FINALIZABLE", "Paid match is not in a finalizable lifecycle state.");
       }
+      assertResultTiming(match, input.result);
 
       const entriesByPlayer = await loadVerifiedEntries(transaction, input.terms, input.verifiedParticipants);
       const resultRecord = await transaction.matchResult.create({
@@ -254,6 +256,7 @@ function assertStoredTermsMatch(
     maximumPlayers: number;
     roundDurationMs: number;
     fundingDeadline: Date;
+    startsAt: Date | null;
     escrowAddress: string;
   }
 ): void {
@@ -281,6 +284,35 @@ function assertStoredTermsMatch(
     && match.escrowAddress === terms.escrowAddress;
   if (!matches) {
     throw new PaidMatchPersistenceError("MATCH_TERMS_CONFLICT", "Durable paid match terms do not match the immutable rules.");
+  }
+}
+
+/**
+ * An internal caller cannot finalize a match merely by setting its persisted
+ * state to LIVE. The server-produced result must be timestamped at or after
+ * the immutable ten-minute window that began at the durable match start.
+ * On-chain settlement repeats the wall-clock end check independently.
+ */
+function assertResultTiming(
+  match: { startsAt: Date | null; roundDurationMs: number },
+  result: AuthoritativeMatchResult,
+): void {
+  const startMs = match.startsAt?.getTime();
+  const resultMs = result.resultTimestamp.getTime();
+  const nowMs = Date.now();
+  if (typeof startMs !== "number"
+    || !Number.isSafeInteger(startMs)
+    || !Number.isSafeInteger(resultMs)
+    || !Number.isSafeInteger(nowMs)
+    || !Number.isSafeInteger(match.roundDurationMs)
+    || match.roundDurationMs <= 0) {
+    throw new PaidMatchPersistenceError("RESULT_TIMING_INVALID", "Paid match start or result time is invalid.");
+  }
+  const earliestResultMs = startMs + match.roundDurationMs;
+  if (!Number.isSafeInteger(earliestResultMs)
+    || resultMs < earliestResultMs
+    || resultMs > nowMs) {
+    throw new PaidMatchPersistenceError("RESULT_TIMING_INVALID", "Paid match result is outside the authoritative round window.");
   }
 }
 

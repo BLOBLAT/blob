@@ -95,6 +95,23 @@ describe("durable paid-match finalization", () => {
       .rejects.toMatchObject({ code: "MATCH_NOT_FINALIZABLE" } satisfies Partial<PaidMatchPersistenceError>);
   });
 
+  it("requires a durable start and a result no earlier than the full authoritative round", async () => {
+    const terms = createTerms();
+    const state = createState(terms);
+    const repository = new PrismaPaidMatchFinalizationRepository(createPrisma(state));
+
+    state.match.startsAt = null;
+    await expect(repository.persist(createInput(terms)))
+      .rejects.toMatchObject({ code: "RESULT_TIMING_INVALID" } satisfies Partial<PaidMatchPersistenceError>);
+
+    state.match.startsAt = new Date(NOW.getTime() - 599_999);
+    await expect(repository.persist(createInput(terms)))
+      .rejects.toMatchObject({ code: "RESULT_TIMING_INVALID" } satisfies Partial<PaidMatchPersistenceError>);
+
+    state.match.startsAt = new Date(NOW.getTime() - 600_000);
+    await expect(repository.persist(createInput(terms))).resolves.toMatchObject({ created: true });
+  });
+
   it("retries one serializable-write conflict before freezing the same result", async () => {
     const terms = createTerms();
     const state = createState(terms);
@@ -207,6 +224,7 @@ function createState(terms: PaidMatchTerms): TestState {
       maximumPlayers: configuration.maximumPlayers,
       roundDurationMs: configuration.roundDurationMs,
       fundingDeadline: terms.fundingDeadline,
+      startsAt: new Date(NOW.getTime() - configuration.roundDurationMs),
       escrowAddress: terms.escrowAddress,
     },
     entries: participants().map((participant, index) => ({

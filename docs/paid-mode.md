@@ -189,6 +189,12 @@ settlement attempt per match, one prize place per enrolled entry, and one
 arena player ID per paid entry. A retry cannot create a competing settlement
 or pay one entry twice.
 
+Before it persists that immutable result, the Platform API also requires a
+durable `startsAt` and verifies that the server-produced result timestamp is
+not before the configured ten-minute round end or in the future. This is a
+second off-chain chronology guard; the escrow program independently enforces
+its on-chain round-end timestamp before settlement.
+
 ## Required before enabling paid play
 
 1. Provision PostgreSQL for `services/platform-api` and apply the reviewed

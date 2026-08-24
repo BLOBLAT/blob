@@ -367,6 +367,10 @@ in-memory chat behaviour unless the audit bridge is configured.
   wallet and finalized transaction signature to their exact Solana lengths
   before it opens a database transaction. This is a second fail-closed layer
   behind the RPC verifier, not a replacement for finalized-chain verification.
+- Durable paid finalization now requires a persisted match `startsAt` and a
+  server result timestamp at or after the full immutable ten-minute round,
+  never in the future. This closes the off-chain early-finalization path before
+  the independent on-chain end-time guard would be reached.
 
 ### Approved direction to implement next
 
