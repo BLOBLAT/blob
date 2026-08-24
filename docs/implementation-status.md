@@ -248,3 +248,106 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
 
 No real USDC, secrets, database credentials, contract deployment, or mainnet
 transaction has been created in this repository.
+
+## Continuation handoff — 2026-08-24
+
+This section records the next user-requested product work. It is a plan only:
+no durable-chat or reserved-name implementation has been started from this
+request yet. Keep the authoritative Free Mode and the existing wallet/profile
+boundary intact while doing it.
+
+### Verified current behaviour
+
+- The current pushed revision is `0d6727bc69dce63c56843dc08e31d00e83cb03f4`.
+  Confirm `HEAD` still equals `origin/main` before assuming that remains true.
+- A signed-in wallet creates one durable `User` and `Wallet` record in the
+  Platform API PostgreSQL database. `User.displayNameKey` has a database
+  uniqueness constraint, so an authenticated display name belongs to one
+  profile and survives reconnects/browser changes. Rename is rate limited.
+- The game server ignores the browser-supplied join name. It accepts a profile
+  name only from a short-lived, one-time Ed25519 ticket signed by the Platform
+  API; otherwise it assigns a server-generated anonymous `BLOB-…` name. A
+  wallet address never enters Colyseus state or chat.
+- Arena chat is currently room-scoped and transient by design: it normalizes
+  text, limits it to 240 characters, blocks direct and common obfuscated
+  links, rate-limits senders, suppresses duplicates, and retains the newest
+  80 messages only in the authoritative room process. It is not yet a durable
+  archive and has no moderator role, report queue, mute, or retention policy.
+- The direct `api.blob.lat` certificate is still stuck in Railway
+  `VALIDATING_OWNERSHIP` despite its propagated CNAME/TXT, no CAA record, and
+  no DNSSEC delegation. Do not remove the working Vercel same-site `/v1/*`
+  bridge while that remains true.
+
+### Approved direction to implement next
+
+1. **Centralise profile-name policy.** Keep the present ASCII 3–16 character
+   scope for now (it avoids Unicode homoglyph impersonation). Add one shared
+   canonicaliser/policy used by new profile creation, rename, and ticket
+   verification. It must NFKC-normalize, collapse whitespace, case-fold for
+   uniqueness, and derive a comparison skeleton that also defeats separator
+   and common ASCII leetspeak bypasses such as `BLOB-admin`, `m0d_erator`, and
+   `SUP PORT`.
+2. **Reserve system and staff-looking names.** Reject protected roles and
+   namespaces, including at minimum: `admin`, `administrator`, `mod`,
+   `moderator`, `staff`, `support`, `help`, `team`, `official`, `verified`,
+   `owner`, `founder`, `developer`, `dev`, `operator`, `security`, `system`,
+   `server`, `bot`, `arena bot`, `blob admin`, `blob moderator`, `blob mod`,
+   `blob support`, `blob staff`, `blob official`, `railway`, `vercel`,
+   `cloudflare`, `phantom`, `solana`, `usdc`, `treasury`, `escrow`, `wallet`,
+   `payment`, `payout`, and `settlement`. Do not create a privileged role by
+   name; real staff authorisation must be separate, server-side, and audited.
+3. **Protect the existing user population during migration.** Before changing
+   the database uniqueness key, write a migration strategy and tests for
+   historical collisions. An existing invalid/reserved public name must never
+   silently turn into someone else's name. Mark it `rename required` or fall
+   back to a server-generated presentation name until its owner selects a
+   compliant replacement; do not delete users or wallets.
+4. **Add durable chat as an audit log, not a public global archive.** Preserve
+   the real-time Colyseus room as the only chat transport. After its server
+   validation succeeds, persist the normalized message to Platform API
+   PostgreSQL before broadcasting it. Store message ID, room/match/round,
+   server timestamp, a snapshot of the display name, internal profile user ID
+   when present, and a non-wallet anonymous arena-session identifier when not.
+   Never store wallet addresses, session cookies, IP addresses, or raw HTML in
+   chat records. Historical messages retain the original name snapshot even
+   after a profile rename.
+5. **Use an internal authenticated game-server → Platform API path.** Prefer
+   Railway private networking plus a dedicated Ed25519 audit-event signer:
+   the game server receives only the private signing key, the Platform API
+   receives only its public verifier key. Both keys stay in Railway variables,
+   never in Vite or Git. If the API/database is unavailable, reject only the
+   chat message with an explicit unavailable state; never stall, crash, or
+   make Free Mode movement depend on chat persistence.
+6. **Implement minimal deterministic moderation before durable chat is
+   enabled.** Retain the current normalisation/link checks and extend them to
+   email/phone/crypto-address solicitation, control/invisible character
+   stripping, flood/repetition limits, a reviewed server-side prohibited-term
+   list, user/session temporary mutes, soft hide/removal status, and an
+   append-only moderation audit trail. Do not send player text to an external
+   AI moderation provider without an explicit privacy decision. Add a
+   rate-limited `report message` action and retain reports for staff review.
+7. **Use bounded retention and a deliberate staff boundary.** Recommended
+   initial policy: 90-day retained audit messages and moderation actions,
+   followed by automatic purge; no public message-search/history endpoint.
+   Expose only the current room's bounded live history to players. Any future
+   admin/moderator console must use a separately authenticated role grant and
+   log every hide, mute, deletion, and export; a public display name must
+   never grant privileges.
+8. **Test the whole boundary.** Add database migration/repository tests,
+   reserved-name and bypass tests, ticket tests, two-client room tests proving
+   links/spam/prohibited content are rejected, durable records are written
+   once before broadcast, persistence failure cannot affect gameplay, muted
+   users cannot evade a mute by reconnecting, and old chat name snapshots do
+   not change after rename. Run `npm run check`, `npm audit --omit=dev`,
+   `git diff --check`, plus an actual browser two-window smoke test before a
+   deployment.
+
+### External gates still required for live paid USDC
+
+Do not enable a paid queue, payment UI, or transfer flow merely because the
+profile/chat work is complete. Mainnet activation still requires a controlled
+program ID and deployer outside the repository, devnet/localnet escrow
+integration evidence, multisig/treasury and restricted attestation custody,
+an independent contract audit, a production Solana RPC provider, operational
+reconciliation/incident procedures, and legal/compliance approval for paid
+competitive play.
