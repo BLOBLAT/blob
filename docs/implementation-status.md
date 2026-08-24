@@ -23,8 +23,8 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
 
 ## Current repository and deployment baseline
 
-- `main` tracks `origin/main` at `0fa0eb1` (`fix: reject disallowed platform
-  API origins`).
+- `main` tracks `origin/main`; verify the current commit with `git status` and
+  `git rev-parse HEAD origin/main` rather than relying on a stale handoff SHA.
 - Free Mode is live via Vercel (apps/web) and Railway (apps/game-server).
 - The game server is authoritative and must never contain wallet keys,
   payment signing, or client-trusted settlement logic.
@@ -34,14 +34,15 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   managed PostgreSQL instance. The platform API migrations have been applied
   and both its Railway health endpoint and the game-server health endpoint
   return HTTP 200. This does **not** enable paid entry or token transfers.
-- Railway has a pending `api.blob.lat` custom domain. Its Cloudflare CNAME and
-  TXT ownership records have not yet been confirmed, so the browser must not
-  receive `VITE_PLATFORM_API_URL` until `https://api.blob.lat/health` is
-  healthy.
-- Vercel Production retains the game-client configuration; the Platform API,
-  PostgreSQL, and ticket-signing variables were removed from Vercel and remain
-  scoped to Railway. `VITE_PLATFORM_API_URL` is intentionally unset until the
-  same-site API domain is healthy.
+- The Railway `api.blob.lat` custom domain has its required DNS records, but
+  its direct TLS certificate is still awaiting completion. It is not exposed
+  to browsers while invalid.
+- Vercel Production currently serves wallet profiles through the same-site
+  `/v1/*` rewrite: `VITE_PLATFORM_API_URL=https://blob.lat` is browser-visible
+  and `PLATFORM_API_PROXY_ORIGIN` remains server-only. Platform API,
+  PostgreSQL, and ticket-signing secrets remain scoped to Railway. The direct
+  custom domain becomes the preferred endpoint only after
+  `https://api.blob.lat/health` returns HTTP 200.
 
 ## Work completed in this session
 
@@ -110,7 +111,8 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   browser cannot submit an authoritative arena name or wallet address.
 - Platform API now returns a deliberate `403 ORIGIN_NOT_ALLOWED` response for
   browser Origins outside its explicit allowlist, rather than an ambiguous
-  internal error. The Railway production deployment for `0fa0eb1` succeeded.
+  internal error. It is deployed with a durable-store health check, and Vercel
+  production rewrites only `/v1/*` requests through the same-site bridge.
 - Added transient room-scoped Arena Chat below the game. It accepts only plain
   text from live room participants, blocks links both before sending and on
   the server, rate-limits and deduplicates messages, and retains at most 80
@@ -142,21 +144,23 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
 
 ## Next safe steps
 
-1. Add the exact CNAME and TXT records shown in Railway for `api.blob.lat`,
-   wait for the Railway certificate to become active, then verify its health
-   endpoint over HTTPS.
-2. Configure `VITE_PLATFORM_API_URL=https://api.blob.lat` in Vercel
-   Production and redeploy. Test a Phantom Wallet Standard sign-in, profile
-   rename, profile ticket, and anonymous Free Mode fallback from a real
-   browser.
+1. Monitor `https://api.blob.lat/health` until Railway presents a valid
+   certificate. Keep its Cloudflare DNS record **DNS only** while Railway
+   validates the domain; do not interrupt the working same-site bridge.
+2. Test a Phantom Wallet Standard sign-in, profile rename, profile ticket,
+   and anonymous Free Mode fallback from a real browser. Once the direct
+   health endpoint is valid, replace the temporary Vercel values with
+   `VITE_PLATFORM_API_URL=https://api.blob.lat`, remove
+   `PLATFORM_API_PROXY_ORIGIN`, and redeploy.
 3. Create a controlled deployment key outside the repository, then replace the
    placeholder program ID and test on devnet. Actual mint, program, multisig,
    and RPC values remain external.
 
 ## External actions that will eventually be required
 
-- Cloudflare DNS access for the already-created `api.blob.lat` Railway custom
-  domain and Vercel access to set the public API URL after it is healthy.
+- Cloudflare DNS access only if Railway reports the already-created
+  `api.blob.lat` domain is no longer valid; otherwise leave the active DNS-only
+  record untouched while its certificate is issued.
 - A production Solana RPC provider endpoint and credentials.
 - A KMS/HSM or managed signing configuration for restricted settlement
   attestations.

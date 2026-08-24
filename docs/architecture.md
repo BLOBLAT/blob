@@ -79,7 +79,9 @@ For paid modes, entry authorization occurs before matchmaking; settlement consum
 - **Real-time transport:** Colyseus core with its WebSocket transport and built-in `joinOrCreate` matchmaking. No custom socket or matchmaking framework is used.
 - **Validation:** Zod validates join names and each movement intent at the game-server boundary.
 - **Profiles and paid orchestration:** PostgreSQL/Prisma and a separate
-  platform API are implemented but not deployed.
+  Platform API are deployed independently from the game server. Browser
+  profile calls use the same-site Vercel `/v1/*` bridge while the direct
+  `api.blob.lat` certificate is provisioned; this does not enable Paid Mode.
 - **Escrow:** isolated Anchor 0.32.1 source with host-side tests; its native
   USDC mint, governance keys, program ID, deployment, and audit remain
   intentionally external and incomplete.
