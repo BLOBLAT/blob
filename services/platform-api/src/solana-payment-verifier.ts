@@ -1,3 +1,5 @@
+import { base58 } from "@scure/base";
+
 /**
  * Minimal, dependency-free Solana JSON-RPC verifier for a completed SPL USDC
  * transfer. It performs no signing and cannot move funds. The caller must
@@ -34,10 +36,10 @@ export class SolanaPaymentVerifier {
 
   async verifyFinalizedUsdcTransfer(input: VerifySolanaUsdcTransferInput): Promise<VerifiedSolanaUsdcTransfer> {
     assertPositiveAmount(input.expectedAmountBaseUnits);
-    assertSolanaReference(input.signature, "transaction signature");
-    assertSolanaReference(input.senderWalletAddress, "sender wallet");
-    assertSolanaReference(input.expectedMint, "USDC mint");
-    assertSolanaReference(input.expectedDestinationTokenAccount, "destination token account");
+    assertTransactionSignature(input.signature);
+    assertSolanaAddress(input.senderWalletAddress, "sender wallet");
+    assertSolanaAddress(input.expectedMint, "USDC mint");
+    assertSolanaAddress(input.expectedDestinationTokenAccount, "destination token account");
 
     const transaction = await this.getTransaction(input.signature);
     const slot = transaction?.slot;
@@ -137,8 +139,25 @@ function assertPositiveAmount(value: bigint): void {
   }
 }
 
-function assertSolanaReference(value: string, label: string): void {
-  if (!/^[1-9A-HJ-NP-Za-km-z]{32,128}$/.test(value)) {
+function assertTransactionSignature(value: unknown): void {
+  assertBase58Value(value, "transaction signature", 64);
+}
+
+function assertSolanaAddress(value: unknown, label: string): void {
+  assertBase58Value(value, label, 32);
+}
+
+function assertBase58Value(value: unknown, label: string, expectedByteLength: number): void {
+  if (typeof value !== "string" || !/^[1-9A-HJ-NP-Za-km-z]{32,128}$/.test(value)) {
+    throw new SolanaPaymentVerificationError("PAYMENT_REFERENCE_INVALID", "The " + label + " is invalid.");
+  }
+  let decoded: Uint8Array;
+  try {
+    decoded = base58.decode(value);
+  } catch {
+    throw new SolanaPaymentVerificationError("PAYMENT_REFERENCE_INVALID", "The " + label + " is invalid.");
+  }
+  if (decoded.length !== expectedByteLength) {
     throw new SolanaPaymentVerificationError("PAYMENT_REFERENCE_INVALID", "The " + label + " is invalid.");
   }
 }

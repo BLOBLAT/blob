@@ -79,7 +79,9 @@ The game server must never receive a private key.
 finalized Solana JSON-RPC `transferChecked` instruction for the exact signer,
 mint, escrow token account, and base-unit amount. A browser-submitted
 signature is therefore only a claim until this verification passes and its
-unique signature is durably recorded.
+unique signature is durably recorded. Before it calls RPC, the verifier
+Base58-decodes public keys to exactly 32 bytes and transaction signatures to
+exactly 64 bytes; strings that merely resemble Solana references are rejected.
 
 ## Authority flow
 

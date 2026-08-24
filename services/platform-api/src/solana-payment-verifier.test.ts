@@ -30,6 +30,27 @@ describe("Solana USDC verification", () => {
     const failed = createVerifier({ ...createTransaction(), meta: { err: { InstructionError: [0, "Custom"] } } });
     await expect(failed.verifyFinalizedUsdcTransfer(input())).rejects.toMatchObject({ code: "PAYMENT_NOT_FINALIZED" });
   });
+
+  it("rejects base58-shaped references with the wrong decoded byte length before RPC", async () => {
+    let rpcRequests = 0;
+    const verifier = new SolanaPaymentVerifier({
+      rpcUrl: "https://rpc.example.test",
+      fetch: async () => {
+        rpcRequests += 1;
+        return new Response(JSON.stringify({ result: createTransaction() }), { status: 200 });
+      }
+    });
+
+    await expect(verifier.verifyFinalizedUsdcTransfer({
+      ...input(),
+      senderWalletAddress: "1".repeat(33)
+    })).rejects.toMatchObject({ code: "PAYMENT_REFERENCE_INVALID" });
+    await expect(verifier.verifyFinalizedUsdcTransfer({
+      ...input(),
+      signature: "1".repeat(88)
+    })).rejects.toMatchObject({ code: "PAYMENT_REFERENCE_INVALID" });
+    expect(rpcRequests).toBe(0);
+  });
 });
 
 function input() {

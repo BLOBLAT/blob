@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { base58 } from "@scure/base";
 import {
   DEFAULT_PAID_MATCH_CONFIGURATION,
   DEFAULT_REBUY_REVIVE_CONFIGURATION,
@@ -368,8 +369,17 @@ function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function assertSolanaAddress(value: string, label: string): void {
-  if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value)) {
+function assertSolanaAddress(value: unknown, label: string): void {
+  if (typeof value !== "string" || !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value)) {
+    throw new PaidMatchDomainError("SOLANA_ADDRESS_INVALID", "The " + label + " is invalid.");
+  }
+  let decoded: Uint8Array;
+  try {
+    decoded = base58.decode(value);
+  } catch {
+    throw new PaidMatchDomainError("SOLANA_ADDRESS_INVALID", "The " + label + " is invalid.");
+  }
+  if (decoded.length !== 32) {
     throw new PaidMatchDomainError("SOLANA_ADDRESS_INVALID", "The " + label + " is invalid.");
   }
 }

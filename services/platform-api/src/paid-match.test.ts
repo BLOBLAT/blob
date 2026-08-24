@@ -168,6 +168,22 @@ describe("paid-match finalization", () => {
       fundingDeadline: new Date("invalid")
     })).toThrow("Funding deadline must be in the future");
   });
+
+  it("rejects base58-shaped values that are not 32-byte Solana public keys", () => {
+    expect(() => createPaidMatchTerms({
+      usdcMint: "1".repeat(33),
+      escrowAddress: ESCROW,
+      now: NOW
+    })).toThrow("USDC mint is invalid");
+
+    const terms = createPaidMatchTerms({ usdcMint: USDC_MINT, escrowAddress: ESCROW, now: NOW });
+    expect(() => finalizePaidMatch({
+      terms,
+      result: createPaidResult(terms.matchId, terms.roundId),
+      verifiedParticipants: [{ playerId: "player-1", walletAddress: "1".repeat(33) }, ...participants().slice(1)],
+      confirmedRevives: []
+    })).toThrow("participant wallet address is invalid");
+  });
 });
 
 function participants() {
