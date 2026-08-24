@@ -74,6 +74,9 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   returns `409 PROFILE_NAME_UNAVAILABLE` for a claimed name, and generated
   anonymous-looking profile defaults retry a collision without exposing a
   wallet suffix in the arena.
+- Railway production deployment `683bc940-3b01-47ba-a625-57c8e1d9d15c`
+  applied `20260824133000_enforce_unique_display_names` successfully; its
+  post-deploy Platform API health check returned HTTP 200.
 - Added paid-match terms/finalization checks and a dependency-free Solana RPC
   verifier for finalized exact `transferChecked` USDC deposits. Neither module
   can sign, send, or claim a payment automatically.
