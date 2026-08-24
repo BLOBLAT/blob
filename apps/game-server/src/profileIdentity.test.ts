@@ -57,6 +57,23 @@ describe("profile identity ticket verification", () => {
     expect(replay.profileUserId).toBeUndefined();
     expect(replay.name).toMatch(/^BLOB-[A-Z0-9]+$/);
   });
+
+  it("fails closed when a signed legacy ticket contains a protected display name", async () => {
+    const privateKey = ed25519.utils.randomSecretKey();
+    const verifier = ProfileTicketVerifier.fromBase58(base58.encode(await ed25519.getPublicKeyAsync(privateKey)));
+    const ticket = await signTicket(privateKey, {
+      v: 1,
+      sub: "user-7",
+      name: "BLOB-admin",
+      iat: NOW,
+      exp: NOW + 60_000,
+      jti: "reserved-name-ticket"
+    });
+
+    const identity = await verifier.resolve("session-three", { name: "Ignored", profileTicket: ticket }, NOW);
+    expect(identity.profileUserId).toBeUndefined();
+    expect(identity.name).toMatch(/^BLOB-[A-Z0-9]+$/);
+  });
 });
 
 async function signTicket(privateKey: Uint8Array, payload: object): Promise<string> {

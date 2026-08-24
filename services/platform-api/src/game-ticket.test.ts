@@ -1,6 +1,6 @@
 import * as ed25519 from "@noble/ed25519";
 import { describe, expect, it } from "vitest";
-import { issueGameTicket } from "./game-ticket.js";
+import { GameTicketDisplayNameError, issueGameTicket } from "./game-ticket.js";
 
 describe("game identity tickets", () => {
   it("signs a short-lived assertion that excludes wallet and session credentials", async () => {
@@ -35,5 +35,18 @@ describe("game identity tickets", () => {
       new TextEncoder().encode(payload!),
       publicKey
     )).toBe(true);
+  });
+
+  it("does not sign a legacy protected profile name into an arena identity", async () => {
+    await expect(issueGameTicket({
+      user: {
+        userId: "user-42",
+        displayName: "BLOB-admin",
+        walletAddress: "wallet-address-must-not-appear",
+        renamedAt: null
+      },
+      privateKey: ed25519.utils.randomSecretKey(),
+      ttlMs: 60_000
+    })).rejects.toBeInstanceOf(GameTicketDisplayNameError);
   });
 });

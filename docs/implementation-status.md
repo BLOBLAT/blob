@@ -251,10 +251,10 @@ transaction has been created in this repository.
 
 ## Continuation handoff — 2026-08-24
 
-This section records the next user-requested product work. It is a plan only:
-no durable-chat or reserved-name implementation has been started from this
-request yet. Keep the authoritative Free Mode and the existing wallet/profile
-boundary intact while doing it.
+This section records the next user-requested product work. The protected-name
+policy described below is implemented; durable chat moderation/persistence is
+still planned. Keep the authoritative Free Mode and the existing
+wallet/profile boundary intact while doing it.
 
 ### Verified current behaviour
 
@@ -280,14 +280,15 @@ boundary intact while doing it.
 
 ### Approved direction to implement next
 
-1. **Centralise profile-name policy.** Keep the present ASCII 3–16 character
-   scope for now (it avoids Unicode homoglyph impersonation). Add one shared
-   canonicaliser/policy used by new profile creation, rename, and ticket
-   verification. It must NFKC-normalize, collapse whitespace, case-fold for
-   uniqueness, and derive a comparison skeleton that also defeats separator
-   and common ASCII leetspeak bypasses such as `BLOB-admin`, `m0d_erator`, and
-   `SUP PORT`.
-2. **Reserve system and staff-looking names.** Reject protected roles and
+1. **Centralised profile-name policy — implemented.** The present ASCII 3–16
+   character scope remains in place (it avoids Unicode homoglyph
+   impersonation). `@blob/validation` now NFKC-normalizes, collapses
+   whitespace, case-folds for the PostgreSQL uniqueness key, and derives a
+   protected-name comparison skeleton that defeats separator and common ASCII
+   leetspeak bypasses such as `BLOB-admin`, `m0d_erator`, and `SUP PORT`. It
+   runs at rename, game-ticket issuing, and game-ticket verification.
+2. **Reserved system and staff-looking names — implemented for new or renamed
+   profiles.** The policy rejects protected roles and
    namespaces, including at minimum: `admin`, `administrator`, `mod`,
    `moderator`, `staff`, `support`, `help`, `team`, `official`, `verified`,
    `owner`, `founder`, `developer`, `dev`, `operator`, `security`, `system`,
@@ -296,6 +297,8 @@ boundary intact while doing it.
    `cloudflare`, `phantom`, `solana`, `usdc`, `treasury`, `escrow`, `wallet`,
    `payment`, `payout`, and `settlement`. Do not create a privileged role by
    name; real staff authorisation must be separate, server-side, and audited.
+   A signed legacy ticket carrying a newly reserved name fails closed and the
+   arena uses an anonymous server-generated BLOB name instead.
 3. **Protect the existing user population during migration.** Before changing
    the database uniqueness key, write a migration strategy and tests for
    historical collisions. An existing invalid/reserved public name must never

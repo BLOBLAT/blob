@@ -51,6 +51,16 @@ base58 public key, and set that public key as
 `BLOB_PROFILE_TICKET_PUBLIC_KEY` for the game server. Never commit either
 value; do not use a Solana wallet key for this purpose.
 
+Profile display names are globally unique and are restricted to ASCII letters,
+numbers, spaces, underscores, and hyphens (3–16 characters). The Platform API
+normalizes them before storing a uniqueness key and rejects protected staff,
+system, bot, payment, wallet, Solana, and infrastructure-looking names,
+including simple separator/leetspeak variants such as `BLOB-admin` and
+`m0d_erator`. The game server repeats the policy when verifying a signed
+identity ticket. A legacy profile that no longer meets the policy can still
+rename itself, but receives no named arena ticket until it chooses a compliant
+name; Free Mode falls back to an anonymous server-assigned BLOB name.
+
 The web client falls back to `http://127.0.0.1:2567` only while Vite is running in development mode. To point a local browser at another server, create `apps/web/.env.local`:
 
 ```sh

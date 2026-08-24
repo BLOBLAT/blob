@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { movementIntentSchema, playerJoinOptionsSchema, validateChatMessage } from "./index.js";
+import {
+  canonicalizeDisplayName,
+  movementIntentSchema,
+  playerJoinOptionsSchema,
+  validateChatMessage,
+  validateDisplayName
+} from "./index.js";
 
 describe("player join validation", () => {
   it("accepts a bounded display name", () => {
@@ -9,6 +15,38 @@ describe("player join validation", () => {
   it("rejects unsafe or oversized display names", () => {
     expect(playerJoinOptionsSchema.safeParse({ name: "<script>" }).success).toBe(false);
     expect(playerJoinOptionsSchema.safeParse({ name: "A".repeat(17) }).success).toBe(false);
+  });
+});
+
+describe("profile display-name policy", () => {
+  it("normalizes a permitted profile name into a stable uniqueness key", () => {
+    expect(validateDisplayName("  Blob\u00a0Prime  ")).toEqual({
+      success: true,
+      data: { displayName: "Blob Prime", displayNameKey: "BLOB PRIME" }
+    });
+    expect(canonicalizeDisplayName("Blob   Prime")).toBe("BLOB PRIME");
+  });
+
+  it("rejects protected staff, system, payment, and brand-looking names including common bypasses", () => {
+    for (const name of [
+      "Admin",
+      "BLOB-admin",
+      "m0d_erator",
+      "SUP PORT",
+      "Official BLOB",
+      "ARENA 4",
+      "Phantom",
+      "USDC",
+      "Treasury",
+      "Settlement"
+    ]) {
+      expect(validateDisplayName(name)).toEqual({ success: false, code: "DISPLAY_NAME_RESERVED" });
+    }
+  });
+
+  it("keeps generated BLOB names valid while refusing non-ASCII lookalikes", () => {
+    expect(validateDisplayName("BLOB-3F84A1C2D5E").success).toBe(true);
+    expect(validateDisplayName("Аdmin")).toEqual({ success: false, code: "DISPLAY_NAME_INVALID" });
   });
 });
 

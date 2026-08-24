@@ -148,6 +148,47 @@ describe("platform API health", () => {
     expect(limited.headers.get("retry-after")).toBe("60");
   });
 
+  it("requires a legacy reserved profile name to be changed before issuing an arena ticket", async () => {
+    const ticketConfig: PlatformApiConfig = {
+      ...config,
+      gameTicketPrivateKey: new Uint8Array(32).fill(9)
+    };
+    const app = createPlatformApp({
+      config: ticketConfig,
+      repository: {
+        findActiveSession: async () => ({
+          id: "session-1",
+          tokenHash: "hash",
+          user: {
+            userId: "user-1",
+            displayName: "BLOB-admin",
+            walletAddress: "11111111111111111111111111111111",
+            renamedAt: null
+          },
+          expiresAt: new Date(Date.now() + 60_000),
+          revokedAt: null
+        })
+      } as unknown as PlatformAuthRepository,
+      healthCheck: async () => undefined
+    });
+    const server = createServer(app);
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("Could not start test HTTP server.");
+    }
+
+    const response = await fetch("http://127.0.0.1:" + address.port + "/v1/me/game-ticket", {
+      headers: { Cookie: "blob_session=" + "x".repeat(43) }
+    });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: "PROFILE_NAME_CHANGE_REQUIRED",
+      message: "Choose a compliant display name before entering the arena."
+    });
+  });
+
   it("limits signed arena profile tickets across authenticated players", async () => {
     const ticketConfig: PlatformApiConfig = {
       ...config,

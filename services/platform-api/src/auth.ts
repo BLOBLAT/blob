@@ -1,5 +1,9 @@
 import * as ed25519 from "@noble/ed25519";
 import { base58 } from "@scure/base";
+import {
+  canonicalizeDisplayName as canonicalizeProfileDisplayName,
+  validateDisplayName
+} from "@blob/validation";
 import { createOpaqueToken, decodeBase64, sha256 } from "./security.js";
 import { DisplayNameConflictError } from "./auth-types.js";
 import type {
@@ -9,7 +13,7 @@ import type {
   VerifiedAuthSession
 } from "./auth-types.js";
 
-export const DISPLAY_NAME_PATTERN = /^[A-Za-z0-9 _-]{3,16}$/;
+export { DISPLAY_NAME_PATTERN } from "@blob/validation";
 
 export interface AuthServiceOptions {
   publicOrigin: string;
@@ -123,9 +127,16 @@ export class AuthService {
   }
 
   async rename(user: AuthenticatedUser, displayName: string, now = new Date()): Promise<AuthenticatedUser> {
-    assertDisplayName(displayName);
-    const normalizedDisplayName = displayName.trim();
-    const displayNameKey = canonicalizeDisplayName(normalizedDisplayName);
+    const validatedName = validateDisplayName(displayName);
+    if (!validatedName.success) {
+      throw new AuthError(
+        validatedName.code,
+        validatedName.code === "DISPLAY_NAME_RESERVED"
+          ? "That display name is reserved."
+          : "Display name must use 3-16 letters, numbers, spaces, underscores, or hyphens."
+      );
+    }
+    const { displayName: normalizedDisplayName, displayNameKey } = validatedName.data;
     if (displayNameKey === canonicalizeDisplayName(user.displayName)) {
       return user;
     }
@@ -222,13 +233,19 @@ export function assertWalletAddress(walletAddress: string): void {
 }
 
 export function assertDisplayName(displayName: string): void {
-  if (!DISPLAY_NAME_PATTERN.test(displayName.trim())) {
-    throw new AuthError("DISPLAY_NAME_INVALID", "Display name must use 3-16 letters, numbers, spaces, underscores, or hyphens.");
+  const validatedName = validateDisplayName(displayName);
+  if (!validatedName.success) {
+    throw new AuthError(
+      validatedName.code,
+      validatedName.code === "DISPLAY_NAME_RESERVED"
+        ? "That display name is reserved."
+        : "Display name must use 3-16 letters, numbers, spaces, underscores, or hyphens."
+    );
   }
 }
 
 export function canonicalizeDisplayName(displayName: string): string {
-  return displayName.trim().replace(/\s+/g, " ").toLocaleUpperCase("en-US");
+  return canonicalizeProfileDisplayName(displayName);
 }
 
 function createDefaultDisplayName(walletAddress: string): string {

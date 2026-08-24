@@ -72,6 +72,16 @@ describe("wallet sign-in", () => {
     await expect(auth.rename(renamed, "<>", new Date(NOW.getTime() + OPTIONS.renameCooldownMs + 1))).rejects.toBeInstanceOf(AuthError);
   });
 
+  it("refuses protected names and their separator or leetspeak bypasses", async () => {
+    const repository = new InMemoryAuthRepository();
+    const auth = new AuthService(repository, OPTIONS);
+    const session = await authenticate(auth, await createTestWallet());
+
+    for (const name of ["Admin", "BLOB-admin", "m0d_erator", "SUP PORT", "Arena Bot", "Treasury"]) {
+      await expect(auth.rename(session.user, name, NOW)).rejects.toMatchObject({ code: "DISPLAY_NAME_RESERVED" });
+    }
+  });
+
   it("does not consume a rename cooldown when the canonical display name is unchanged", async () => {
     const repository = new InMemoryAuthRepository();
     const auth = new AuthService(repository, OPTIONS);

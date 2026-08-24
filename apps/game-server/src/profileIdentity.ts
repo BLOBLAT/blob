@@ -1,10 +1,9 @@
 import * as ed25519 from "@noble/ed25519";
 import { base58 } from "@scure/base";
-import type { ValidatedPlayerJoinOptions } from "@blob/validation";
+import { validateDisplayName, type ValidatedPlayerJoinOptions } from "@blob/validation";
 
 const PROFILE_TICKET_VERSION = 1;
 const MAX_TICKET_LIFETIME_MS = 10 * 60_000;
-const DISPLAY_NAME_PATTERN = /^[A-Za-z0-9 _-]{3,16}$/;
 
 interface ProfileTicketPayload {
   v: number;
@@ -106,7 +105,7 @@ function isProfileTicketPayload(value: unknown, now: number): value is ProfileTi
   const exp = payload.exp;
   return payload.v === PROFILE_TICKET_VERSION
     && typeof payload.sub === "string" && payload.sub.length >= 1 && payload.sub.length <= 128
-    && typeof payload.name === "string" && DISPLAY_NAME_PATTERN.test(payload.name)
+    && typeof payload.name === "string" && validateDisplayName(payload.name).success
     && typeof payload.jti === "string" && /^[A-Za-z0-9_-]{8,64}$/.test(payload.jti)
     && typeof iat === "number" && Number.isSafeInteger(iat)
     && typeof exp === "number" && Number.isSafeInteger(exp)

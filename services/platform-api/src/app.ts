@@ -6,7 +6,7 @@ import { AuthError, AuthService } from "./auth.js";
 import type { PlatformAuthRepository } from "./auth-types.js";
 import type { PlatformApiConfig } from "./config.js";
 import { FixedWindowRateLimiter } from "./rate-limit.js";
-import { issueGameTicket } from "./game-ticket.js";
+import { GameTicketDisplayNameError, issueGameTicket } from "./game-ticket.js";
 
 class OriginNotAllowedError extends Error {}
 
@@ -180,6 +180,10 @@ export function createPlatformApp(options: PlatformAppOptions): express.Express 
             ? 409
             : 400;
       response.status(status).json({ error: error.code, message: error.message });
+      return;
+    }
+    if (error instanceof GameTicketDisplayNameError) {
+      response.status(409).json({ error: "PROFILE_NAME_CHANGE_REQUIRED", message: error.message });
       return;
     }
     if (error instanceof SyntaxError && "body" in error) {
