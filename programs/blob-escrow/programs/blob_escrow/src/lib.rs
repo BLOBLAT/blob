@@ -212,6 +212,7 @@ pub mod blob_escrow {
             now,
             death_at,
             escrow.round_ends_at,
+            escrow.round_duration_seconds,
             escrow.revive_window_seconds,
             escrow.revive_cutoff_seconds,
         )?;
@@ -925,9 +926,14 @@ fn validate_rebuy_window(
     now: i64,
     death_at: i64,
     round_ends_at: i64,
+    round_duration_seconds: i64,
     revive_window_seconds: i64,
     revive_cutoff_seconds: i64,
 ) -> Result<()> {
+    let round_starts_at = round_ends_at
+        .checked_sub(round_duration_seconds)
+        .ok_or(EscrowError::ArithmeticOverflow)?;
+    require!(death_at >= round_starts_at, EscrowError::InvalidDeathTimestamp);
     require!(death_at <= now, EscrowError::InvalidDeathTimestamp);
     require!(death_at < round_ends_at, EscrowError::InvalidDeathTimestamp);
     let revive_expires_at = death_at
@@ -1242,10 +1248,11 @@ mod tests {
 
     #[test]
     fn enforces_authoritative_rebuy_timing() {
-        assert!(validate_rebuy_window(130, 100, 600, 30, 60).is_ok());
-        assert!(validate_rebuy_window(131, 100, 600, 30, 60).is_err());
-        assert!(validate_rebuy_window(540, 530, 600, 30, 60).is_err());
-        assert!(validate_rebuy_window(99, 100, 600, 30, 60).is_err());
+        assert!(validate_rebuy_window(130, 100, 600, ROUND_DURATION_SECONDS, 30, 60).is_ok());
+        assert!(validate_rebuy_window(131, 100, 600, ROUND_DURATION_SECONDS, 30, 60).is_err());
+        assert!(validate_rebuy_window(540, 530, 600, ROUND_DURATION_SECONDS, 30, 60).is_err());
+        assert!(validate_rebuy_window(99, 100, 600, ROUND_DURATION_SECONDS, 30, 60).is_err());
+        assert!(validate_rebuy_window(130, -1, 600, ROUND_DURATION_SECONDS, 30, 60).is_err());
     }
 
     #[test]

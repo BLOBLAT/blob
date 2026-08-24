@@ -62,8 +62,9 @@ The implemented instructions are deliberately narrow:
   controller cannot leave pre-game USDC locked indefinitely.
 - `purchase_revive` needs both the player and result-authority signatures,
   records an unreusable authoritative death hash, accepts exactly one 0.50
-  USDC contribution only for a disclosed Rebuy match, and enforces both the
-  30-second death window and final-60-second cutoff.
+  USDC contribution only for a disclosed Rebuy match, and enforces that the
+  death occurred inside that escrow's live round, the 30-second death window,
+  and final-60-second cutoff.
 - `settle_match` requires the independent result authority after the round
   ends, accepts only three distinct enrolled winners, records a non-empty
   immutable final-result hash, and derives fee/payouts from the recorded pool
