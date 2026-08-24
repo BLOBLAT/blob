@@ -74,7 +74,12 @@ See `docs/architecture.md` before introducing a cross-boundary dependency.
 - The platform API must establish a real PostgreSQL query before listening and
   its `/health` check must probe that durable store. Before browser wallet
   profiles are enabled, serve the API from a same-site HTTPS host such as
-  `api.blob.lat`; do not depend on third-party Railway cookies.
+  `api.blob.lat`; do not depend on third-party Railway cookies. During custom
+  API-domain certificate provisioning, the version-controlled Vercel rewrite
+  may proxy only `/v1/*` through the server-only
+  `PLATFORM_API_PROXY_ORIGIN`, with the browser using `https://blob.lat` as
+  `VITE_PLATFORM_API_URL`; remove that bridge once `api.blob.lat/health` is
+  healthy.
 - The escrow program accepts only the native-USDC mint stored in its one
   governance configuration PDA. It records immutable match/round/rules and
   final-result hashes, exact entry/revive contributions, and deterministic

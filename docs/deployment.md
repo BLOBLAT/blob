@@ -72,9 +72,8 @@ The service has no filesystem persistence assumption and no browser-only depende
 
 ## 2. Configure Vercel for the web client
 
-**MANUAL DASHBOARD ACTION REQUIRED:** The available Vercel connection does not expose this project, so Vercel project settings and environment variables must be changed by an authorized dashboard user.
-
-Configure the existing Vercel project as follows:
+Configure the existing Vercel project through its dashboard or an authenticated
+Vercel CLI session as follows:
 
 | Setting | Value |
 | --- | --- |
@@ -96,20 +95,44 @@ Add the same variable for Preview only when preview builds are intentionally all
 
 Redeploy Vercel after changing a `VITE_` variable. Vite embeds these variables at build time. Then open the Vercel URL, pass the temporary access gate, select **Play Free**, and confirm the game panel progresses from server health check to **Connected**.
 
-### Enable wallet profiles only after `api.blob.lat` is healthy
+### Enable wallet profiles without third-party cookies
 
-Do not point this variable at a temporary `*.up.railway.app` hostname. A
-wallet session is an HTTP-only same-site cookie, so modern browsers can block
-it across unrelated sites. Once the API custom domain below returns HTTP 200,
-set this additional Production Vercel variable and redeploy:
+Do not expose a temporary `*.up.railway.app` hostname to the browser. A wallet
+session is an HTTP-only same-site cookie, so modern browsers can block it
+across unrelated sites. The preferred permanent configuration, once the API
+custom domain below returns HTTP 200, is:
 
 ```sh
 VITE_PLATFORM_API_URL=https://api.blob.lat
 ```
 
-If this variable is absent, the profile dialog clearly says that profiles are
-not configured and Free Mode remains playable. It must never fall back to a
-production localhost address.
+If Railway is still issuing the `api.blob.lat` certificate, use the checked-in
+same-site Vercel proxy as a temporary bridge instead. Add **both** Production
+variables in Vercel and redeploy:
+
+```sh
+VITE_PLATFORM_API_URL=https://blob.lat
+PLATFORM_API_PROXY_ORIGIN=https://<platform-api-railway-public-host>
+```
+
+`PLATFORM_API_PROXY_ORIGIN` is server-only build configuration; do not prefix
+it with `VITE_`, commit a host value, or use it in browser code. The Vercel
+rewrite forwards only `/v1/*` to the Platform API, preserves the browser's
+same-site cookie scope, and disables caching for that route. This does not put
+the API process on Vercel. With an authenticated CLI, add the variables from
+`apps/web` without writing a local env file:
+
+```sh
+printf '%s' 'https://blob.lat' | vercel env add VITE_PLATFORM_API_URL production --project blob --scope <team>
+printf '%s' 'https://<platform-api-railway-public-host>' | vercel env add PLATFORM_API_PROXY_ORIGIN production --project blob --scope <team>
+```
+
+When `https://api.blob.lat/health` returns HTTP 200, remove
+`PLATFORM_API_PROXY_ORIGIN`, change `VITE_PLATFORM_API_URL` back to
+`https://api.blob.lat`, and redeploy. The proxy route disappears without a
+code change. If `VITE_PLATFORM_API_URL` is absent, the profile dialog clearly
+says that profiles are not configured and Free Mode remains playable. It must
+never fall back to a production localhost address.
 
 ## 3. Deploy the wallet/profile Platform API
 

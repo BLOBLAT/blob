@@ -4,13 +4,13 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@blob/protocol": "file:../../packages/protocol",
     "@blob/validation": "file:../../packages/validation",
+    "@colyseus/sdk": "0.17.43",
     "@solana/wallet-standard-features": "1.4.0",
     "@wallet-standard/app": "1.1.1",
     "@wallet-standard/base": "1.1.1",
     "@wallet-standard/features": "1.1.1",
-    "@blob/protocol": "file:../../packages/protocol",
-    "@colyseus/sdk": "0.17.43",
     "phaser": "3.90.0"
   },
   "scripts": {
@@ -21,6 +21,7 @@
   },
   "devDependencies": {
     "@types/node": "22.10.2",
+    "@vercel/config": "^0.6.1",
     "typescript": "5.7.2",
     "vite": "6.4.3"
   }
