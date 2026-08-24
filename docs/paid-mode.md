@@ -96,13 +96,13 @@ permit, pool, fee, or payout. The game server cannot hold keys or initiate a
 chain transfer. A revive permit may be issued only after both an authoritative
 death event and a verified payment, and it must be consumed by the room once.
 
-The platform API signs a short-lived, HMAC-protected admission ticket only
-after the entry is durably verified. A future paid room verifies its match ID,
-round ID, expiration, and signature with the server-to-server
-`PLATFORM_GAME_SERVER_SHARED_SECRET`; it must also mark the underlying entry
-as consumed. It carries internal entry/player identifiers but no wallet
-address. The ticket neither grants payment credit nor changes combat or
-ranking authority.
+The platform API signs a short-lived Ed25519 admission ticket only after the
+entry is durably verified. Its private signing key remains in the Platform API;
+a future paid room receives only the matching public verification key, verifies
+match ID, round ID, expiration, and signature, and marks the underlying entry
+as consumed. It carries internal entry/player identifiers but no wallet address.
+The ticket neither grants payment credit nor changes combat or ranking
+authority.
 
 ## Required before enabling paid play
 

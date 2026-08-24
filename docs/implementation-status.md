@@ -88,9 +88,11 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   exact refunds, and on-chain 5% fee plus immutable configuration-validated
   payout logic. Host-side Rust tests are kept current below; target artifacts
   are kept in the OS temporary directory and ignored by Git.
-- Added tests for signed, short-lived, match/round-bound paid admission
-  tickets. These tickets are not yet accepted by a Colyseus room because Paid
-  Mode remains disabled until the escrow and deployment gates are complete.
+- Added tests for signed, short-lived, match/round-bound Ed25519 paid-admission
+  tickets. The Platform API would retain the private signing key while a future
+  paid room receives only the public verification key. These tickets are not
+  yet accepted by a Colyseus room because Paid Mode remains disabled until the
+  escrow and deployment gates are complete.
 - Added privacy-minimal live landing-page metrics: a random per-tab presence
   ID is retained only in game-server memory for 75 seconds, and the footer
   renders actual active browser sessions plus connected arena BLOBs. No
