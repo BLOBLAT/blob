@@ -117,7 +117,7 @@ Use the public HTTPS URL of the separately deployed game service, without a trai
 
 Deploy from the repository root so npm workspaces and the shared TypeScript packages resolve correctly. The deployable app directory is `apps/game-server`.
 
-For Railway, the repository-root [`railway.toml`](../railway.toml) makes these commands and the `/health` check explicit. Leave Railway Root Directory empty so it discovers that file and all workspace packages. Do not replace the checked-in commands with a dashboard-only override.
+For Railway, the repository-root [`railway.toml`](../railway.toml) makes these commands and the `/health` check explicit. Leave Railway Root Directory empty so it discovers that file and all workspace packages. Its only valid `RAILWAY_SERVICE_NAME` values are `blob` and `platform-api`; an unknown name fails closed. Do not replace the checked-in commands with a dashboard-only override.
 
 Use these commands:
 

@@ -1,9 +1,9 @@
 [build]
 builder = "RAILPACK"
-buildCommand = "if [ \"$RAILWAY_SERVICE_NAME\" = \"platform-api\" ]; then npm run build --workspace=@blob/platform-api; else npm run build --workspace=@blob/game-server; fi"
+buildCommand = "case \"$RAILWAY_SERVICE_NAME\" in blob) npm run build --workspace=@blob/game-server ;; platform-api) npm run build --workspace=@blob/platform-api ;; *) echo \"Unsupported Railway service: $RAILWAY_SERVICE_NAME\" >&2; exit 64 ;; esac"
 
 [deploy]
-startCommand = "if [ \"$RAILWAY_SERVICE_NAME\" = \"platform-api\" ]; then npm run prisma:migrate:deploy --workspace=@blob/platform-api && npm run start --workspace=@blob/platform-api; else npm run start --workspace=@blob/game-server; fi"
+startCommand = "case \"$RAILWAY_SERVICE_NAME\" in blob) npm run start --workspace=@blob/game-server ;; platform-api) npm run prisma:migrate:deploy --workspace=@blob/platform-api && npm run start --workspace=@blob/platform-api ;; *) echo \"Unsupported Railway service: $RAILWAY_SERVICE_NAME\" >&2; exit 64 ;; esac"
 healthcheckPath = "/health"
 healthcheckTimeout = 100
 restartPolicyType = "ON_FAILURE"
