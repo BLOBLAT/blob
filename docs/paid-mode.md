@@ -135,6 +135,15 @@ accepted for paid admission, and setting this future key alone does not expose
 Paid Mode. The Platform API rejects a configuration that reuses the
 profile-ticket key.
 
+`PrismaPaidAdmissionRepository` stores only a SHA-256 hash of each issued
+ticket, its server-controlled issue/expiry time, and the terminal consumed
+entry state. A live ticket cannot be issued twice; only an expired unused
+ticket may be replaced. A future authenticated internal game-server call must
+verify the Ed25519 ticket first and then atomically consume its matching hash
+while the match is `STARTING`. Finalization accepts both verified and consumed
+entries. This state exists before the transport is enabled; no browser route
+or Paid Room currently invokes it.
+
 Before it creates a settlement request, the paid domain validates the complete
 server result: valid timestamp, every funded participant exactly once,
 contiguous ranks, and non-negative safe-integer competitive statistics. It

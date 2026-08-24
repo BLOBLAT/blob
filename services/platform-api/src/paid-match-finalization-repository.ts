@@ -294,7 +294,7 @@ async function loadVerifiedEntries(
     where: {
       matchId: terms.matchId,
       playerId: { in: playerIds },
-      status: "VERIFIED",
+      status: { in: ["VERIFIED", "CONSUMED"] },
     },
     select: {
       id: true,

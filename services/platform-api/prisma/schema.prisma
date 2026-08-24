@@ -33,6 +33,7 @@ enum EntryStatus {
   RESERVED
   PENDING
   VERIFIED
+  CONSUMED
   REJECTED
   REFUNDING
   REFUNDED
@@ -170,6 +171,8 @@ model MatchEntry {
   amountBaseUnits     BigInt
   idempotencyKey      String       @unique
   admissionTokenHash  String?      @unique
+  admissionIssuedAt   DateTime?
+  admissionExpiresAt  DateTime?
   transactionId       String?      @unique
   transaction         ChainTransaction? @relation("EntryTransaction", fields: [transactionId], references: [id], onDelete: SetNull)
   fundedAt            DateTime?

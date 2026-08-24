@@ -340,6 +340,11 @@ in-memory chat behaviour unless the audit bridge is configured.
   before any entry is reserved or funding opens. Identical retries reuse the
   record; any diverging rules hash or immutable term fails closed. It does not
   itself expose a match, enter funding, accept a payment, or run Paid Mode.
+- Paid admission tickets now have an internal hashed, expiring, single-use
+  entry lifecycle. A future Paid Room must independently verify the Ed25519
+  ticket, then consume its exact hash through an authenticated internal API
+  call while the match is `STARTING`. The transport/authentication for that
+  call is still a required gate; it is intentionally not exposed to browsers.
 
 ### Approved direction to implement next
 

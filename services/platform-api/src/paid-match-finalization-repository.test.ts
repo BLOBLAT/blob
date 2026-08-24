@@ -76,6 +76,15 @@ describe("durable paid-match finalization", () => {
     expect(state.attempt).toBeUndefined();
   });
 
+  it("retains a consumed one-time admission entry as a valid finalization participant", async () => {
+    const terms = createTerms();
+    const state = createState(terms);
+    state.entries[0]!.status = "CONSUMED";
+    const repository = new PrismaPaidMatchFinalizationRepository(createPrisma(state));
+
+    await expect(repository.persist(createInput(terms))).resolves.toMatchObject({ created: true });
+  });
+
   it("refuses to freeze a result before the paid match has entered a finalizable lifecycle state", async () => {
     const terms = createTerms();
     const state = createState(terms);
@@ -163,7 +172,7 @@ function createResult(matchId: string, roundId: string): AuthoritativeMatchResul
 
 interface TestState {
   match: Record<string, unknown> & { status: string };
-  entries: Array<{ id: string; playerId: string; amountBaseUnits: bigint; wallet: { address: string } }>;
+  entries: Array<{ id: string; playerId: string; status: string; amountBaseUnits: bigint; wallet: { address: string } }>;
   result?: { id: string; matchId: string; roundId: string; rulesHash: string; resultHash: string; resultPayload: unknown };
   attempt?: { resultId: string; resultHash: string; settlementId: string; idempotencyKey: string };
   payouts: Array<{ resultId: string; entryId: string; place: number; amountBaseUnits: bigint; idempotencyKey: string }>;
@@ -203,6 +212,7 @@ function createState(terms: PaidMatchTerms): TestState {
     entries: participants().map((participant, index) => ({
       id: "entry-" + (index + 1),
       playerId: participant.playerId,
+      status: "VERIFIED",
       amountBaseUnits: configuration.entryAmountBaseUnits,
       wallet: { address: participant.walletAddress },
     })),
@@ -232,7 +242,8 @@ function createPrisma(state: TestState): PrismaClient {
       }
     },
     matchEntry: {
-      findMany: async () => state.entries
+      findMany: async ({ where }: { where: { status: { in: string[] } } }) => state.entries
+        .filter((entry) => where.status.in.includes(entry.status))
     },
     settlementAttempt: {
       findUnique: async () => state.attempt ?? null,

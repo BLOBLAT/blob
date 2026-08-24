@@ -159,7 +159,7 @@ export class PrismaPaidEntryPaymentRepository {
         idempotencyKey: true,
       }
     });
-    const matches = entry.status === "VERIFIED"
+    const matches = (entry.status === "VERIFIED" || entry.status === "CONSUMED")
       && entry.fundedAt?.getTime() === input.payment.finalizedAt.getTime()
       && existing?.matchId === entry.matchId
       && existing.kind === "ENTRY"
