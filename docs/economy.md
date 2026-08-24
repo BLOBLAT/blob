@@ -7,12 +7,13 @@
 | Setting | Value |
 | --- | --- |
 | Entry amount | `1_000_000n` USDC base units (1 USDC) |
+| Minimum entry amount | `10_000n` USDC base units (0.01 USDC) |
 | Platform fee | `500n` basis points (5%) |
 | First place | `6000n` basis points (60%) |
 | Second place | `3000n` basis points (30%) |
 | Third place | `1000n` basis points (10%) |
 
-Every amount is a `bigint` integer base-unit value. The calculator rejects invalid player counts, negative/invalid fees, duplicate placements, and distributions that do not total exactly 10,000 basis points.
+Every amount is a `bigint` integer base-unit value. Persisted paid-match terms reject entry fees below 0.01 USDC, invalid player counts, negative/invalid fees, duplicate placements, and distributions that do not total exactly 10,000 basis points. The minimum prevents integer rounding from creating a zero atomic payout for a required top-three place.
 
 Division remainders are assigned deterministically to first place. Returned payouts already include that remainder, so `platform fee + all payouts = gross pool` exactly.
 

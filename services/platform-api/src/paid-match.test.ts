@@ -145,6 +145,13 @@ describe("paid-match finalization", () => {
       usdcMint: USDC_MINT,
       escrowAddress: ESCROW,
       now: NOW,
+      configuration: { ...DEFAULT_PAID_MATCH_CONFIGURATION, entryAmountBaseUnits: 9_999n }
+    })).toThrow("at least 0.01 USDC");
+
+    expect(() => createPaidMatchTerms({
+      usdcMint: USDC_MINT,
+      escrowAddress: ESCROW,
+      now: NOW,
       configuration: {
         ...DEFAULT_PAID_MATCH_CONFIGURATION,
         fundingTimeoutMs: PAID_MATCH_MAX_FUNDING_TIMEOUT_MS + 1

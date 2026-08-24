@@ -7,6 +7,8 @@ required before it can be enabled.
 ## Rules fixed in code
 
 - Asset: native USDC on Solana, six decimal base units.
+- Entry amount: at least 0.01 USDC; this avoids a required top-three payout
+  rounding down to zero atomic USDC.
 - Standard **Skill** match: no paid revive.
 - **Rebuy Arena**: a separately disclosed ruleset, one 0.50 USDC revive per
   player; it is available for 30 seconds after an authoritative death and

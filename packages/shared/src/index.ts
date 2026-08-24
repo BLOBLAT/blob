@@ -1,6 +1,13 @@
 export const BASIS_POINTS = 10_000n;
 export const USDC_DECIMALS = 6;
 export const USDC_BASE_UNITS = 1_000_000n;
+/**
+ * A paid round needs to be large enough for every configured top-three
+ * placement to receive at least one atomic USDC unit after integer rounding.
+ * With the immutable minimum of three players and positive basis-point
+ * payouts, 0.01 USDC is sufficient and avoids unusable dust matches.
+ */
+export const PAID_MATCH_MIN_ENTRY_AMOUNT_BASE_UNITS = 10_000n;
 export const PAID_MATCH_PLATFORM_FEE_BPS = 500n;
 export const PAID_MATCH_WINNER_COUNT = 3;
 export const PAID_MATCH_MAX_PLAYERS = 32;
@@ -260,6 +267,9 @@ export function assertPaidMatchConfiguration(configuration: PaidMatchConfigurati
   }
   if (configuration.settlementAsset !== SettlementAsset.NATIVE_SOLANA_USDC) {
     throw new RangeError("Only native Solana USDC is supported.");
+  }
+  if (configuration.entryAmountBaseUnits < PAID_MATCH_MIN_ENTRY_AMOUNT_BASE_UNITS) {
+    throw new RangeError("Paid match entryAmountBaseUnits must be at least 0.01 USDC.");
   }
   if (!Number.isSafeInteger(configuration.minimumPlayers)
     || !Number.isSafeInteger(configuration.maximumPlayers)

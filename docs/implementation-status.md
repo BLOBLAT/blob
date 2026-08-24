@@ -170,6 +170,10 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   three positive payouts, and one 0.50 USDC Rebuy with 30-second/final-minute
   timing. The Solana RPC verifier also requires a six-decimal legacy SPL
   `transferChecked` instruction, matching the on-chain mint guard.
+- Added the same 0.01 USDC minimum entry amount to shared paid terms and the
+  Anchor escrow. With the immutable three-player minimum and positive
+  top-three payout basis points, it prevents any required prize place from
+  rounding down to zero atomic USDC before a match can be funded.
 - Added and deployed an append-only Prisma migration that persists the immutable
   `roundDurationMs` and revive spawn-protection values alongside canonical
   zero Standard Skill revive fields.

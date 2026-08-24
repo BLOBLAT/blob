@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_PAID_MATCH_CONFIGURATION,
   DEFAULT_REBUY_REVIVE_CONFIGURATION,
+  PAID_MATCH_MIN_ENTRY_AMOUNT_BASE_UNITS,
   PaidMatchState,
   PaidReviveBlockReason,
   PaidRuleset,
@@ -154,6 +155,10 @@ describe("paid revive policy", () => {
       ruleset: PaidRuleset.SKILL,
       maximumPlayers: 33
     })).toThrow("player limits");
+    expect(() => assertPaidMatchConfiguration({
+      ...DEFAULT_PAID_MATCH_CONFIGURATION,
+      entryAmountBaseUnits: PAID_MATCH_MIN_ENTRY_AMOUNT_BASE_UNITS - 1n
+    })).toThrow("at least 0.01 USDC");
   });
 });
 

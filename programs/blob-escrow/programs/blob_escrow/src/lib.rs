@@ -10,6 +10,7 @@ declare_id!("11111111111111111111111111111111");
 const BASIS_POINTS: u64 = 10_000;
 const PLATFORM_FEE_BPS: u16 = 500;
 pub const DEFAULT_PAYOUT_BPS: [u16; 3] = [6_000, 3_000, 1_000];
+const MIN_ENTRY_AMOUNT_BASE_UNITS: u64 = 10_000;
 const REBUY_AMOUNT_BASE_UNITS: u64 = 500_000;
 const NATIVE_USDC_DECIMALS: u8 = 6;
 const MAX_PLAYERS: u16 = 32;
@@ -755,7 +756,12 @@ fn validate_match_configuration(
     revive_window_seconds: i64,
     revive_cutoff_seconds: i64,
 ) -> Result<()> {
-    require!(entry_amount > 0, EscrowError::InvalidConfiguration);
+    // With at least three entrants, this prevents a permitted positive payout
+    // split from rounding a second or third place award to zero atomic USDC.
+    require!(
+        entry_amount >= MIN_ENTRY_AMOUNT_BASE_UNITS,
+        EscrowError::EntryAmountTooSmall
+    );
     require!(
         minimum_players >= WINNER_COUNT as u16,
         EscrowError::InvalidConfiguration
@@ -996,6 +1002,8 @@ fn transfer_from_escrow<'info>(
 pub enum EscrowError {
     #[msg("The match configuration is invalid.")]
     InvalidConfiguration,
+    #[msg("The entry amount is too small for a top-three native-USDC payout.")]
+    EntryAmountTooSmall,
     #[msg("The immutable match, round, or rules hash is required.")]
     InvalidIdentifierHash,
     #[msg("The match controller and result authority must be distinct.")]
@@ -1114,7 +1122,19 @@ mod tests {
     #[test]
     fn keeps_standard_and_rebuy_rules_separate() {
         assert!(validate_match_configuration(
-            1_000_000,
+            MIN_ENTRY_AMOUNT_BASE_UNITS - 1,
+            false,
+            0,
+            DEFAULT_PAYOUT_BPS,
+            3,
+            10,
+            600,
+            0,
+            0
+        )
+        .is_err());
+        assert!(validate_match_configuration(
+            MIN_ENTRY_AMOUNT_BASE_UNITS,
             false,
             0,
             DEFAULT_PAYOUT_BPS,
