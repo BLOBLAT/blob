@@ -3,8 +3,7 @@ builder = "RAILPACK"
 buildCommand = "if [ \"$RAILWAY_SERVICE_NAME\" = \"platform-api\" ]; then npm run build --workspace=@blob/platform-api; else npm run build --workspace=@blob/game-server; fi"
 
 [deploy]
-preDeployCommand = "if [ \"$RAILWAY_SERVICE_NAME\" = \"platform-api\" ]; then npm run prisma:migrate:deploy --workspace=@blob/platform-api; else :; fi"
-startCommand = "if [ \"$RAILWAY_SERVICE_NAME\" = \"platform-api\" ]; then npm run start --workspace=@blob/platform-api; else npm run start --workspace=@blob/game-server; fi"
+startCommand = "if [ \"$RAILWAY_SERVICE_NAME\" = \"platform-api\" ]; then npm run prisma:migrate:deploy --workspace=@blob/platform-api && npm run start --workspace=@blob/platform-api; else npm run start --workspace=@blob/game-server; fi"
 healthcheckPath = "/health"
 healthcheckTimeout = 100
 restartPolicyType = "ON_FAILURE"

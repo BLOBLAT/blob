@@ -23,7 +23,7 @@ https://api.blob.lat -> Railway / services/platform-api -> Railway PostgreSQL
 https://blob.lat -> WSS -> Railway / apps/game-server
 ```
 
-The repository root contains [`railway.toml`](../railway.toml). Railway/Railpack discovers it automatically, installs workspace dependencies, then routes build, pre-deploy migration, and start commands by `RAILWAY_SERVICE_NAME`: `blob` runs `@blob/game-server`, while `platform-api` runs `@blob/platform-api`. Both services expose `/health` and use the same explicit `ON_FAILURE` restart policy. The custom build command deliberately does not run a second `npm ci`: Railpack already installs dependencies before it runs that command.
+The repository root contains [`railway.toml`](../railway.toml). Railway/Railpack discovers it automatically, installs workspace dependencies, then routes build and start commands by `RAILWAY_SERVICE_NAME`: `blob` runs `@blob/game-server`, while `platform-api` applies committed Prisma migrations and only then starts `@blob/platform-api`. Keeping that ordered migration in the platform API start command avoids relying on a separate Railway pre-deploy lifecycle hook; a migration failure prevents the new instance from becoming healthy while the prior release remains available. Both services expose `/health` and use the same explicit `ON_FAILURE` restart policy. The custom build command deliberately does not run a second `npm ci`: Railpack already installs dependencies before it runs that command.
 
 ### Railway deployment triggers
 
@@ -178,14 +178,13 @@ For a new environment, create exactly two additional Railway resources in the ex
    `main`.
 
 Keep the Platform API service Root Directory empty so it can access the shared
-npm workspaces. The repository-root `railway.toml` deliberately routes build,
-migration, and start commands by Railway's service name: `blob` runs the game
-server while `platform-api` runs this API. Its effective commands are:
+npm workspaces. The repository-root `railway.toml` deliberately routes build
+and ordered migration/start commands by Railway's service name: `blob` runs
+the game server while `platform-api` runs this API. Its effective commands are:
 
 ```sh
 npm run build --workspace=@blob/platform-api
-npm run prisma:migrate:deploy --workspace=@blob/platform-api
-npm run start --workspace=@blob/platform-api
+npm run prisma:migrate:deploy --workspace=@blob/platform-api && npm run start --workspace=@blob/platform-api
 ```
 
 Use `/health`, one replica, and restart policy `ON_FAILURE`. Railway supplies
