@@ -20,6 +20,8 @@ const config: PlatformApiConfig = {
   authRateLimitWindowMs: 60_000,
   gameTicketPrivateKey: undefined,
   gameTicketTtlMs: 60_000,
+  gameTicketRateLimit: 2,
+  gameTicketGlobalRateLimit: 3,
   paidAdmissionTicketPrivateKey: undefined
 };
 
@@ -104,6 +106,90 @@ describe("platform API health", () => {
     const limited = await request(wallets[3]!);
     expect(limited.status).toBe(429);
     expect(limited.headers.get("retry-after")).toBe("60");
+  });
+
+  it("limits signed arena profile tickets per authenticated player", async () => {
+    const ticketConfig: PlatformApiConfig = {
+      ...config,
+      gameTicketPrivateKey: new Uint8Array(32).fill(7)
+    };
+    const app = createPlatformApp({
+      config: ticketConfig,
+      repository: {
+        findActiveSession: async () => ({
+          id: "session-1",
+          tokenHash: "hash",
+          user: {
+            userId: "user-1",
+            displayName: "BLOB-ONE",
+            walletAddress: "11111111111111111111111111111111",
+            renamedAt: null
+          },
+          expiresAt: new Date(Date.now() + 60_000),
+          revokedAt: null
+        })
+      } as unknown as PlatformAuthRepository,
+      healthCheck: async () => undefined
+    });
+    const server = createServer(app);
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("Could not start test HTTP server.");
+    }
+    const url = "http://127.0.0.1:" + address.port + "/v1/me/game-ticket";
+    const request = () => fetch(url, { headers: { Cookie: "blob_session=" + "x".repeat(43) } });
+
+    expect((await request()).status).toBe(200);
+    expect((await request()).status).toBe(200);
+    const limited = await request();
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("retry-after")).toBe("60");
+  });
+
+  it("limits signed arena profile tickets across authenticated players", async () => {
+    const ticketConfig: PlatformApiConfig = {
+      ...config,
+      gameTicketPrivateKey: new Uint8Array(32).fill(8),
+      gameTicketRateLimit: 4,
+      gameTicketGlobalRateLimit: 2
+    };
+    let sessionLookup = 0;
+    const app = createPlatformApp({
+      config: ticketConfig,
+      repository: {
+        findActiveSession: async () => {
+          sessionLookup += 1;
+          return {
+            id: "session-" + sessionLookup,
+            tokenHash: "hash-" + sessionLookup,
+            user: {
+              userId: "user-" + sessionLookup,
+              displayName: "BLOB-" + sessionLookup,
+              walletAddress: "11111111111111111111111111111111",
+              renamedAt: null
+            },
+            expiresAt: new Date(Date.now() + 60_000),
+            revokedAt: null
+          };
+        }
+      } as unknown as PlatformAuthRepository,
+      healthCheck: async () => undefined
+    });
+    const server = createServer(app);
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("Could not start test HTTP server.");
+    }
+    const url = "http://127.0.0.1:" + address.port + "/v1/me/game-ticket";
+    const request = () => fetch(url, { headers: { Cookie: "blob_session=" + "x".repeat(43) } });
+
+    expect((await request()).status).toBe(200);
+    expect((await request()).status).toBe(200);
+    expect((await request()).status).toBe(429);
   });
 
   it("rejects a browser origin outside the explicit allowlist without a server error", async () => {

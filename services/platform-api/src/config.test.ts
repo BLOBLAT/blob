@@ -27,6 +27,11 @@ describe("platform API production configuration", () => {
       DATABASE_URL,
       PLATFORM_AUTH_GLOBAL_RATE_LIMIT: "0"
     })).toThrow("PLATFORM_AUTH_GLOBAL_RATE_LIMIT must be a positive integer");
+
+    expect(() => loadPlatformApiConfig({
+      DATABASE_URL,
+      PLATFORM_GAME_TICKET_RATE_LIMIT: "0"
+    })).toThrow("PLATFORM_GAME_TICKET_RATE_LIMIT must be a positive integer");
   });
 
   it("accepts the production BLOB origin allowlist", () => {

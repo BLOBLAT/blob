@@ -165,6 +165,13 @@ configure `PLATFORM_AUTH_GLOBAL_RATE_LIMIT` only when its documented traffic
 capacity is insufficient. Retain an edge/WAF limit when the service becomes
 public: the process-local brake is intentionally not shared across replicas.
 
+The separate `GET /v1/me/game-ticket` signing endpoint is also bounded: the
+defaults allow 15 ticket requests per authenticated profile and 240 across the
+single API process in the same ten-minute window. This covers normal arena
+joins and reconnects while preventing an authenticated session from creating
+unbounded Ed25519 signing work. The browser remains able to join Free Mode
+anonymously if an identity ticket cannot be obtained.
+
 Apply the committed baseline before starting the service:
 
 ```sh

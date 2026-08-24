@@ -51,6 +51,15 @@ export function createPlatformApp(options: PlatformAppOptions): express.Express 
     options.config.authRateLimitWindowMs,
     1
   );
+  const gameTicketRateLimiter = new FixedWindowRateLimiter(
+    options.config.gameTicketRateLimit,
+    options.config.authRateLimitWindowMs
+  );
+  const globalGameTicketRateLimiter = new FixedWindowRateLimiter(
+    options.config.gameTicketGlobalRateLimit,
+    options.config.authRateLimitWindowMs,
+    1
+  );
   const auth = new AuthService(options.repository, {
     publicOrigin: options.config.publicOrigin,
     challengeTtlMs: options.config.challengeTtlMs,
@@ -132,6 +141,10 @@ export function createPlatformApp(options: PlatformAppOptions): express.Express 
     const user = await requireUser(auth, options.config, request);
     if (!options.config.gameTicketPrivateKey) {
       response.status(503).json({ error: "GAME_IDENTITY_UNAVAILABLE", message: "Arena profile identity is unavailable." });
+      return;
+    }
+    if (!consumeRateLimit(response, gameTicketRateLimiter, "game-ticket:" + user.userId)
+      || !consumeRateLimit(response, globalGameTicketRateLimiter, "game-ticket:global")) {
       return;
     }
     const issued = await issueGameTicket({

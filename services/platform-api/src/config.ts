@@ -19,6 +19,9 @@ export interface PlatformApiConfig {
   authRateLimitWindowMs: number;
   gameTicketPrivateKey: Uint8Array | undefined;
   gameTicketTtlMs: number;
+  /** Limits profile-ticket signing per authenticated user and process-wide. */
+  gameTicketRateLimit: number;
+  gameTicketGlobalRateLimit: number;
   /** Reserved for a future paid-room admission signer; it never enables paid play by itself. */
   paidAdmissionTicketPrivateKey: Uint8Array | undefined;
 }
@@ -92,6 +95,8 @@ export function loadPlatformApiConfig(environment: NodeJS.ProcessEnv = process.e
     authRateLimitWindowMs: parsePositiveInteger(environment.PLATFORM_AUTH_RATE_LIMIT_WINDOW_MS, 10 * 60 * 1_000, "PLATFORM_AUTH_RATE_LIMIT_WINDOW_MS"),
     gameTicketPrivateKey,
     gameTicketTtlMs: parsePositiveInteger(environment.PLATFORM_GAME_TICKET_TTL_MS, 5 * 60 * 1_000, "PLATFORM_GAME_TICKET_TTL_MS"),
+    gameTicketRateLimit: parsePositiveInteger(environment.PLATFORM_GAME_TICKET_RATE_LIMIT, 15, "PLATFORM_GAME_TICKET_RATE_LIMIT"),
+    gameTicketGlobalRateLimit: parsePositiveInteger(environment.PLATFORM_GAME_TICKET_GLOBAL_RATE_LIMIT, 240, "PLATFORM_GAME_TICKET_GLOBAL_RATE_LIMIT"),
     paidAdmissionTicketPrivateKey,
   };
 }
