@@ -363,6 +363,10 @@ in-memory chat behaviour unless the audit bridge is configured.
   as paid entrants. This on-chain invariant prevents platform operational
   roles from appearing in the funded roster or final three winners before any
   off-chain identity policy is considered.
+- The durable entry-payment repository now independently Base58-decodes the
+  wallet and finalized transaction signature to their exact Solana lengths
+  before it opens a database transaction. This is a second fail-closed layer
+  behind the RPC verifier, not a replacement for finalized-chain verification.
 
 ### Approved direction to implement next
 

@@ -78,6 +78,17 @@ describe("durable paid entry payment receipt", () => {
     })).rejects.toMatchObject({ code: "PAYMENT_AFTER_FUNDING_DEADLINE" } satisfies Partial<PaidEntryPaymentPersistenceError>);
   });
 
+  it("rejects malformed wallet or signature data before opening a database transaction", async () => {
+    const state = createState();
+    const repository = new PrismaPaidEntryPaymentRepository(createPrisma(state));
+
+    await expect(repository.persist({ ...input(), walletAddress: "not-a-solana-address" }))
+      .rejects.toMatchObject({ code: "ENTRY_PAYMENT_INPUT_INVALID" } satisfies Partial<PaidEntryPaymentPersistenceError>);
+    await expect(repository.persist({ ...input(), payment: { ...input().payment, signature: "1".repeat(88) } }))
+      .rejects.toMatchObject({ code: "ENTRY_PAYMENT_INPUT_INVALID" } satisfies Partial<PaidEntryPaymentPersistenceError>);
+    expect(state.transactionCalls).toBe(0);
+  });
+
   it("retries one serializable-write conflict without duplicating the payment", async () => {
     const state = createState();
     state.serializationFailures = 1;

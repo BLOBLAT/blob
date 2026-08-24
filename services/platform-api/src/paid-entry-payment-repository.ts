@@ -1,3 +1,4 @@
+import { base58 } from "@scure/base";
 import { Prisma, type PrismaClient } from "./generated/prisma/client.js";
 import type { VerifiedSolanaUsdcTransfer } from "./solana-payment-verifier.js";
 
@@ -183,8 +184,8 @@ export class PaidEntryPaymentPersistenceError extends Error {
 
 function assertInput(input: PersistVerifiedEntryPaymentInput): void {
   if (!isIdentifier(input.entryId) || !isIdentifier(input.userId) || !isIdentifier(input.walletId)
-    || typeof input.walletAddress !== "string" || input.walletAddress.length === 0 || input.walletAddress.length > 128
-    || typeof input.payment?.signature !== "string" || input.payment.signature.length < 32 || input.payment.signature.length > 128
+    || !isSolanaAddress(input.walletAddress)
+    || !isSolanaSignature(input.payment?.signature)
     || !Number.isSafeInteger(input.payment.slot) || input.payment.slot < 0
     || !(input.payment.finalizedAt instanceof Date) || !Number.isFinite(input.payment.finalizedAt.getTime())) {
     throw new PaidEntryPaymentPersistenceError("ENTRY_PAYMENT_INPUT_INVALID", "Verified entry-payment data is invalid.");
@@ -193,6 +194,25 @@ function assertInput(input: PersistVerifiedEntryPaymentInput): void {
 
 function isIdentifier(value: unknown): value is string {
   return typeof value === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(value);
+}
+
+function isSolanaAddress(value: unknown): boolean {
+  return hasBase58ByteLength(value, 32);
+}
+
+function isSolanaSignature(value: unknown): boolean {
+  return hasBase58ByteLength(value, 64);
+}
+
+function hasBase58ByteLength(value: unknown, expectedByteLength: number): boolean {
+  if (typeof value !== "string" || !/^[1-9A-HJ-NP-Za-km-z]{32,128}$/.test(value)) {
+    return false;
+  }
+  try {
+    return base58.decode(value).length === expectedByteLength;
+  } catch {
+    return false;
+  }
 }
 
 function isSerializationConflict(error: unknown): boolean {

@@ -96,7 +96,10 @@ verified receipt with the exact reserved entry. It permits funding only while
 the match is in `FUNDING` and the finalized chain time precedes the immutable
 deadline; the unique Solana signature and unique entry-to-transaction relation
 make both duplicate and cross-entry reuse fail closed. It has no browser or
-HTTP route, and does not submit transfers.
+HTTP route, and does not submit transfers. As a second boundary check before
+opening its database transaction, it Base58-decodes the supplied wallet and
+signature to their exact Solana byte lengths; an internal caller cannot turn a
+placeholder string into a durable payment receipt.
 
 Before that funding stage, the internal `PrismaPaidMatchTermsRepository`
 persists the server-created immutable match terms as `DRAFT`; an exact retry
