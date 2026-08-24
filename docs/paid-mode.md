@@ -44,7 +44,10 @@ authority and fixes a six-decimal legacy SPL native-USDC mint, future-match cont
 independent result authority, and treasury owner. Each newly created escrow
 copies those values along with immutable match ID hash, round ID hash, rules
 hash, fee, payout, and Rebuy configuration. Changing future platform roles
-cannot change an existing escrow.
+cannot change an existing escrow. Those three operational public keys are
+also ineligible to enter the match, so neither the controller, result
+attestation authority, nor fee-recipient owner can appear in the funded player
+or winner roster.
 
 The implemented instructions are deliberately narrow:
 

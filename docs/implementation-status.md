@@ -359,6 +359,10 @@ in-memory chat behaviour unless the audit bridge is configured.
   `@blob/validation`; issuer, Platform API verifier, and consumer therefore
   share one strict contract. The package has no browser entrypoint, deployment,
   configured key, or connection to Free Mode.
+- The escrow now rejects its controller, result authority, and treasury owner
+  as paid entrants. This on-chain invariant prevents platform operational
+  roles from appearing in the funded roster or final three winners before any
+  off-chain identity policy is considered.
 
 ### Approved direction to implement next
 

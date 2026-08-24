@@ -136,6 +136,7 @@ pub mod blob_escrow {
             EscrowError::MatchNotFunding
         );
         validate_funding_open(Clock::get()?.unix_timestamp, escrow.funding_deadline_at)?;
+        validate_player_is_not_platform_role(ctx.accounts.player.key(), escrow)?;
         require!(
             escrow.participant_count < escrow.maximum_players,
             EscrowError::MaximumPlayersReached
@@ -841,6 +842,21 @@ fn validate_platform_roles(
     Ok(())
 }
 
+/// Operational escrow roles are deliberately ineligible to play. This keeps
+/// the controller, the result-attestation key, and the fee-recipient owner
+/// outside the funded participant and winner sets even before off-chain
+/// identity policy is applied.
+fn validate_player_is_not_platform_role(player: Pubkey, escrow: &MatchEscrow) -> Result<()> {
+    require!(
+        player != Pubkey::default()
+            && player != escrow.controller
+            && player != escrow.result_authority
+            && player != escrow.treasury,
+        EscrowError::PlatformRoleIneligible
+    );
+    Ok(())
+}
+
 fn validate_native_usdc_decimals(decimals: u8) -> Result<()> {
     require!(
         decimals == NATIVE_USDC_DECIMALS,
@@ -1010,6 +1026,8 @@ pub enum EscrowError {
     AuthoritySeparationRequired,
     #[msg("The platform controller, result authority, and treasury must be configured.")]
     InvalidAuthority,
+    #[msg("Platform operational accounts cannot enter a paid match.")]
+    PlatformRoleIneligible,
     #[msg("Only legacy SPL native USDC is accepted.")]
     NativeUsdcOnly,
     #[msg("The supplied mint does not match this escrow.")]
@@ -1251,6 +1269,47 @@ mod tests {
         assert!(validate_platform_roles(controller, result_authority, Pubkey::default()).is_err());
         assert!(validate_native_usdc_decimals(NATIVE_USDC_DECIMALS).is_ok());
         assert!(validate_native_usdc_decimals(9).is_err());
+    }
+
+    #[test]
+    fn keeps_platform_operational_roles_out_of_the_player_roster() {
+        let controller = Pubkey::new_from_array([1; 32]);
+        let result_authority = Pubkey::new_from_array([2; 32]);
+        let treasury = Pubkey::new_from_array([3; 32]);
+        let escrow = MatchEscrow {
+            version: 1,
+            lifecycle: MatchLifecycle::Funding,
+            match_id_hash: [4; 32],
+            round_id_hash: [5; 32],
+            rules_hash: [6; 32],
+            final_result_hash: [0; 32],
+            mint: Pubkey::new_from_array([7; 32]),
+            controller,
+            result_authority,
+            treasury,
+            entry_amount: MIN_ENTRY_AMOUNT_BASE_UNITS,
+            revive_enabled: false,
+            revive_amount: 0,
+            platform_fee_bps: PLATFORM_FEE_BPS,
+            payout_bps: DEFAULT_PAYOUT_BPS,
+            minimum_players: 3,
+            maximum_players: MAX_PLAYERS,
+            round_duration_seconds: ROUND_DURATION_SECONDS,
+            revive_window_seconds: 0,
+            revive_cutoff_seconds: 0,
+            funding_deadline_at: 10,
+            round_ends_at: 0,
+            participant_count: 0,
+            confirmed_revives: 0,
+            total_contributions: 0,
+            total_refunded: 0,
+            bump: 1,
+        };
+        assert!(validate_player_is_not_platform_role(Pubkey::new_from_array([8; 32]), &escrow).is_ok());
+        assert!(validate_player_is_not_platform_role(controller, &escrow).is_err());
+        assert!(validate_player_is_not_platform_role(result_authority, &escrow).is_err());
+        assert!(validate_player_is_not_platform_role(treasury, &escrow).is_err());
+        assert!(validate_player_is_not_platform_role(Pubkey::default(), &escrow).is_err());
     }
 
     #[test]
