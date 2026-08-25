@@ -1,7 +1,8 @@
-import { Client, type Room } from "@colyseus/sdk";
+import { type Room } from "@colyseus/sdk";
 import { ARENA_ROOM_NAME, ServerEvent } from "@blob/protocol";
 import Phaser from "phaser";
 import { ArenaUiState, BlobArenaScene } from "./BlobArenaScene.js";
+import { createGameClient } from "./gameClient.js";
 import { getGamePlayerName } from "../identity.js";
 import { GameServerConfigurationError, resolveGameServerUrl } from "./serverUrl.js";
 
@@ -48,7 +49,7 @@ export async function startFreeGame(options: StartFreeGameOptions): Promise<Free
     } catch (error) {
       console.warn("[BLOB] profile identity ticket was unavailable; joining anonymously", error);
     }
-    const client = new Client(gameServerUrl);
+    const client = createGameClient(gameServerUrl);
     const room = await withConnectionTimeout(
       client.joinOrCreate(ARENA_ROOM_NAME, {
         name: getGamePlayerName(),
