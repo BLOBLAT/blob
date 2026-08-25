@@ -1,66 +1,41 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
+import { resolvePlatformApiProxyOrigin } from "./platformProxyConfig.js";
 
-const originalPlatformApiOrigin = process.env.PLATFORM_API_PROXY_ORIGIN;
-
-afterEach(() => {
-  if (originalPlatformApiOrigin === undefined) {
-    delete process.env.PLATFORM_API_PROXY_ORIGIN;
-  } else {
-    process.env.PLATFORM_API_PROXY_ORIGIN = originalPlatformApiOrigin;
-  }
-  vi.resetModules();
-});
+const vercelConfig = JSON.parse(readFileSync(fileURLToPath(new URL("../vercel.json", import.meta.url)), "utf8")) as {
+  headers: Array<{ source: string; headers: Array<{ key: string; value: string }> }>;
+  rewrites: Array<{ source: string; destination: string }>;
+};
 
 describe.sequential("Vercel Platform API bridge", () => {
-  it("does not add a proxy route without a configured server-only origin", async () => {
-    delete process.env.PLATFORM_API_PROXY_ORIGIN;
-
-    const { config } = await import("../vercel.js");
-
-    expect(config.rewrites).toEqual([]);
-    expect(config.headers).toEqual([{
-      source: "/:path*",
+  it("uses a real Vercel config for the narrow same-site bridge", () => {
+    expect(vercelConfig.rewrites).toEqual([{
+      source: "/v1/(.*)",
+      destination: "/api/platform?__blob_proxy_path=$1"
+    }]);
+    expect(vercelConfig.headers).toEqual([
+      {
+      source: "/(.*)",
       headers: [
         { key: "X-Content-Type-Options", value: "nosniff" },
         { key: "X-Frame-Options", value: "DENY" },
         { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
         { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" }
       ]
-    }]);
-  });
-
-  it("proxies only API paths and disables their caching", async () => {
-    process.env.PLATFORM_API_PROXY_ORIGIN = "https://platform.example.test";
-
-    const { config } = await import("../vercel.js");
-
-    expect(config.rewrites).toEqual([{
-      source: "/v1/:path*",
-      destination: "https://platform.example.test/v1/:path*",
-      respectOriginCacheControl: false
-    }]);
-    expect(config.headers).toEqual([
-      {
-        source: "/:path*",
-        headers: [
-          { key: "X-Content-Type-Options", value: "nosniff" },
-          { key: "X-Frame-Options", value: "DENY" },
-          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" }
-        ]
       },
       {
-        source: "/v1/:path*",
+        source: "/v1/(.*)",
         headers: [{ key: "Cache-Control", value: "private, no-store" }]
       }
     ]);
   });
 
-  it("fails closed for an insecure or path-bearing proxy value", async () => {
-    process.env.PLATFORM_API_PROXY_ORIGIN = "http://platform.example.test/v1";
-
-    await expect(import("../vercel.js"))
-      .rejects
-      .toThrow("PLATFORM_API_PROXY_ORIGIN must be a plain HTTPS origin");
+  it("keeps the upstream host server-only and accepts only a plain HTTPS origin", () => {
+    expect(resolvePlatformApiProxyOrigin(undefined)).toBeUndefined();
+    expect(resolvePlatformApiProxyOrigin("https://platform.example.test")).toBe("https://platform.example.test");
+    expect(resolvePlatformApiProxyOrigin("http://platform.example.test")).toBeUndefined();
+    expect(resolvePlatformApiProxyOrigin("https://user:pass@platform.example.test")).toBeUndefined();
+    expect(resolvePlatformApiProxyOrigin("https://platform.example.test/v1")).toBeUndefined();
   });
 });
