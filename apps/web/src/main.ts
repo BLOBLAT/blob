@@ -14,6 +14,8 @@ if (!appRoot) {
   throw new Error("BLOB app root was not found.");
 }
 const app: HTMLDivElement = appRoot;
+const BLOB_TOKEN_ADDRESS = "6htcaSYtVdDaGtRGn2jPnxc1q2hsAyYCECxteodipump";
+const BLOB_TOKEN_PUMP_URL = `https://pump.fun/coin/${BLOB_TOKEN_ADDRESS}`;
 
 let freeGameController: {
   leave(): Promise<void>;
@@ -93,6 +95,7 @@ function renderSite(): void {
         <a href="#future">Future</a>
         <a href="https://github.com/BLOBLAT/blob" target="_blank" rel="noreferrer">GitHub</a>
         </div>
+        <a class="nav-buy-button" href="${BLOB_TOKEN_PUMP_URL}" target="_blank" rel="noreferrer noopener">Buy $BLOB <span aria-hidden="true">↗</span></a>
         <button class="wallet-button" id="wallet-trigger" type="button">Connect wallet</button>
       </div>
     </nav>
@@ -104,6 +107,7 @@ function renderSite(): void {
         <p class="intro">A multiplayer arena where instinct, movement, and timing decide who gets bigger.</p>
         <div class="hero-actions">
           <button class="play-button" type="button" data-play-free>Play Free <span>→</span></button>
+          <a class="token-button token-button-hero" href="${BLOB_TOKEN_PUMP_URL}" target="_blank" rel="noreferrer noopener">Buy $BLOB <span aria-hidden="true">↗</span></a>
           <span>Wallet not required</span>
         </div>
       </div>
@@ -149,6 +153,23 @@ function renderSite(): void {
       </article>
     </section>
 
+    <section class="token-section" id="token" aria-labelledby="token-title">
+      <div class="token-copy">
+        <p class="eyebrow">BLOB.LAT token</p>
+        <h2 id="token-title">The blob has<br /><em>a ticker.</em></h2>
+        <p>$BLOB is the BLOB.LAT community token on Solana. Free Mode stays free: holding it does not change gameplay, matchmaking, or competitive outcomes.</p>
+      </div>
+      <div class="token-details">
+        <p class="token-label">Solana contract</p>
+        <code id="blob-token-address">${BLOB_TOKEN_ADDRESS}</code>
+        <div class="token-actions">
+          <button class="contract-copy-button" id="copy-token-contract" type="button">Copy address</button>
+          <a class="token-button" href="${BLOB_TOKEN_PUMP_URL}" target="_blank" rel="noreferrer noopener">View on Pump.fun <span aria-hidden="true">↗</span></a>
+        </div>
+        <p class="token-note">Third-party trading link. Memecoins are volatile — verify the contract address before trading.</p>
+      </div>
+    </section>
+
     <section class="live-metrics" aria-label="Live BLOB activity" aria-live="polite">
       <div>
         <strong id="live-visitor-count">—</strong>
@@ -180,7 +201,24 @@ function renderSite(): void {
   }
   requiredElement<HTMLButtonElement>("#wallet-trigger").addEventListener("click", () => openProfileDialog());
   requiredElement<HTMLButtonElement>("#profile-dialog-close").addEventListener("click", () => closeProfileDialog());
+  requiredElement<HTMLButtonElement>("#copy-token-contract").addEventListener("click", () => void copyTokenAddress());
   liveMetricsController = startLiveMetrics(renderLiveMetrics);
+}
+
+async function copyTokenAddress(): Promise<void> {
+  const button = requiredElement<HTMLButtonElement>("#copy-token-contract");
+  const originalLabel = button.textContent;
+
+  try {
+    await navigator.clipboard.writeText(BLOB_TOKEN_ADDRESS);
+    button.textContent = "Copied";
+  } catch {
+    button.textContent = "Copy unavailable";
+  }
+
+  window.setTimeout(() => {
+    button.textContent = originalLabel;
+  }, 2_000);
 }
 
 function renderLiveMetrics(metrics: LiveMetricsSnapshot | undefined): void {
