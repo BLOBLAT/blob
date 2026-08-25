@@ -121,13 +121,20 @@ interface RenderedPlayerPosition {
   alive: boolean;
 }
 
+type DirectionKeys = Record<"up" | "down" | "left" | "right", Phaser.Input.Keyboard.Key>;
+
+interface KeyboardControls {
+  wasd: DirectionKeys;
+  arrows: DirectionKeys;
+}
+
 export class BlobArenaScene extends Phaser.Scene {
   private graphics!: Phaser.GameObjects.Graphics;
   private touchGraphics!: Phaser.GameObjects.Graphics;
   private intent = { x: 0, y: 0 };
   private lastUiUpdate = 0;
   private sendIntentEvent?: Phaser.Time.TimerEvent;
-  private keyboard?: Record<"up" | "down" | "left" | "right", Phaser.Input.Keyboard.Key>;
+  private keyboard?: KeyboardControls;
   private lastLocalMass = 0;
   private collectPulseUntil = 0;
   private deathPulseUntil = 0;
@@ -176,12 +183,26 @@ export class BlobArenaScene extends Phaser.Scene {
     this.input.on("pointerupoutside", this.onPointerUp, this);
     this.input.on("gameout", this.clearPointerIntent, this);
     document.addEventListener("visibilitychange", this.clearHiddenTabIntent);
-    this.keyboard = this.input.keyboard?.addKeys({
-      up: [Phaser.Input.Keyboard.KeyCodes.W, Phaser.Input.Keyboard.KeyCodes.UP],
-      down: [Phaser.Input.Keyboard.KeyCodes.S, Phaser.Input.Keyboard.KeyCodes.DOWN],
-      left: [Phaser.Input.Keyboard.KeyCodes.A, Phaser.Input.Keyboard.KeyCodes.LEFT],
-      right: [Phaser.Input.Keyboard.KeyCodes.D, Phaser.Input.Keyboard.KeyCodes.RIGHT],
-    }) as Record<"up" | "down" | "left" | "right", Phaser.Input.Keyboard.Key> | undefined;
+    const keyboardPlugin = this.input.keyboard;
+    if (keyboardPlugin) {
+      // Phaser's addKeys accepts one key code per action. Keeping WASD and
+      // arrows as explicit bindings avoids silently creating invalid array
+      // keys, while addKeys captures the browser defaults for the arrows.
+      this.keyboard = {
+        wasd: keyboardPlugin.addKeys({
+          up: Phaser.Input.Keyboard.KeyCodes.W,
+          down: Phaser.Input.Keyboard.KeyCodes.S,
+          left: Phaser.Input.Keyboard.KeyCodes.A,
+          right: Phaser.Input.Keyboard.KeyCodes.D,
+        }) as DirectionKeys,
+        arrows: keyboardPlugin.addKeys({
+          up: Phaser.Input.Keyboard.KeyCodes.UP,
+          down: Phaser.Input.Keyboard.KeyCodes.DOWN,
+          left: Phaser.Input.Keyboard.KeyCodes.LEFT,
+          right: Phaser.Input.Keyboard.KeyCodes.RIGHT,
+        }) as DirectionKeys,
+      };
+    }
     this.sendIntentEvent = this.time.addEvent({
       delay: INPUT_SEND_INTERVAL_MS,
       loop: true,
@@ -374,8 +395,8 @@ export class BlobArenaScene extends Phaser.Scene {
     if (!this.keyboard) {
       return;
     }
-    const x = Number(this.keyboard.right.isDown) - Number(this.keyboard.left.isDown);
-    const y = Number(this.keyboard.down.isDown) - Number(this.keyboard.up.isDown);
+    const x = Number(this.isDirectionPressed("right")) - Number(this.isDirectionPressed("left"));
+    const y = Number(this.isDirectionPressed("down")) - Number(this.isDirectionPressed("up"));
     if (x === 0 && y === 0) {
       return;
     }
@@ -384,10 +405,11 @@ export class BlobArenaScene extends Phaser.Scene {
   }
 
   private hasKeyboardInput(): boolean {
-    if (!this.keyboard) {
-      return false;
-    }
-    return this.keyboard.up.isDown || this.keyboard.down.isDown || this.keyboard.left.isDown || this.keyboard.right.isDown;
+    return this.isDirectionPressed("up") || this.isDirectionPressed("down") || this.isDirectionPressed("left") || this.isDirectionPressed("right");
+  }
+
+  private isDirectionPressed(direction: keyof DirectionKeys): boolean {
+    return this.keyboard?.wasd[direction].isDown === true || this.keyboard?.arrows[direction].isDown === true;
   }
 
   private sendIntent(): void {
