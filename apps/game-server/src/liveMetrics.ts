@@ -4,6 +4,8 @@ const VISITOR_TTL_MS = 75_000;
 const MAX_LIVE_VISITORS = 10_000;
 const PRESENCE_RATE_WINDOW_MS = 60_000;
 const MAX_PRESENCE_REQUESTS_PER_SOURCE = 120;
+const WEBSOCKET_UPGRADE_RATE_WINDOW_MS = 10_000;
+const MAX_WEBSOCKET_UPGRADES_PER_SOURCE = 60;
 const MAX_RATE_LIMIT_SOURCES = 4_096;
 
 export interface LiveMetricsSnapshot {
@@ -73,6 +75,61 @@ export class PresenceRateLimiter {
   constructor(
     private readonly maxRequests = MAX_PRESENCE_REQUESTS_PER_SOURCE,
     private readonly windowMs = PRESENCE_RATE_WINDOW_MS,
+  ) {}
+
+  consume(sourceAddress: string | undefined, now = Date.now()): boolean {
+    if (!sourceAddress) {
+      return false;
+    }
+    this.prune(now);
+    const key = createHash("sha256").update(this.salt).update(sourceAddress).digest("base64url");
+    const previous = this.sources.get(key);
+    if (!previous || now - previous.windowStartedAt >= this.windowMs) {
+      this.enforceCapacity();
+      this.sources.set(key, { windowStartedAt: now, requestCount: 1, lastSeenAt: now });
+      return true;
+    }
+    previous.lastSeenAt = now;
+    if (previous.requestCount >= this.maxRequests) {
+      return false;
+    }
+    previous.requestCount += 1;
+    return true;
+  }
+
+  private prune(now: number): void {
+    for (const [key, value] of this.sources) {
+      if (now - value.lastSeenAt >= this.windowMs) {
+        this.sources.delete(key);
+      }
+    }
+  }
+
+  private enforceCapacity(): void {
+    if (this.sources.size < MAX_RATE_LIMIT_SOURCES) {
+      return;
+    }
+    const oldestKey = this.sources.keys().next().value;
+    if (oldestKey) {
+      this.sources.delete(oldestKey);
+    }
+  }
+}
+
+/**
+ * A deliberately bounded, process-local admission brake for a connection
+ * attempt. It stores only a salted one-way fingerprint of the source address
+ * and expires it quickly. This is not an edge DDoS service, but it stops one
+ * source from forcing unlimited matchmaking, room-auth, or upgrade work in a
+ * game process while Cloudflare/Railway handle network-layer traffic.
+ */
+export class WebSocketUpgradeRateLimiter {
+  private readonly sources = new Map<string, { windowStartedAt: number; requestCount: number; lastSeenAt: number }>();
+  private readonly salt = randomBytes(32);
+
+  constructor(
+    private readonly maxRequests = MAX_WEBSOCKET_UPGRADES_PER_SOURCE,
+    private readonly windowMs = WEBSOCKET_UPGRADE_RATE_WINDOW_MS,
   ) {}
 
   consume(sourceAddress: string | undefined, now = Date.now()): boolean {

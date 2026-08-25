@@ -3,8 +3,8 @@ import { Encoder } from "@colyseus/schema";
 import type { ArenaChatAuditRecord } from "@blob/validation";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ARENA_ROOM_NAME } from "./BlobArenaRoom.js";
-import { ARENA_STATE_ENCODER_BUFFER_BYTES, createGameServer, type GameServerHandle } from "./server.js";
-import { PresenceRateLimiter } from "./liveMetrics.js";
+import { ARENA_STATE_ENCODER_BUFFER_BYTES, createGameServer, resolveAllowedOrigins, type GameServerHandle } from "./server.js";
+import { PresenceRateLimiter, WebSocketUpgradeRateLimiter } from "./liveMetrics.js";
 import { ClientMessage, ServerEvent, type ArenaChatMessage } from "@blob/protocol";
 
 let server: GameServerHandle;
@@ -53,6 +53,17 @@ describe("BLOB arena room", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("access-control-allow-origin")).toBe("http://127.0.0.1:5173");
     await expect(response.json()).resolves.toEqual({ service: "blob-game-server", status: "ok" });
+
+    const directResponse = await fetch(`${endpoint}/health`);
+    expect(directResponse.headers.get("access-control-allow-origin")).toBeNull();
+  });
+
+  it("requires explicit production browser origins and normalizes their allowlist", () => {
+    expect(() => resolveAllowedOrigins({ NODE_ENV: "production" })).toThrow("BLOB_WEB_ORIGIN is required in production.");
+    expect([...resolveAllowedOrigins({
+      NODE_ENV: "production",
+      BLOB_WEB_ORIGIN: "https://blob.lat/, https://www.blob.lat"
+    })]).toEqual(["https://blob.lat", "https://www.blob.lat"]);
   });
 
   it("reports privacy-minimal live visitors and rejects malformed presence", async () => {
@@ -100,6 +111,14 @@ describe("BLOB arena room", () => {
     expect(limiter.consume("203.0.113.8", 1_001)).toBe(true);
     expect(limiter.consume("203.0.113.8", 1_002)).toBe(false);
     expect(limiter.consume("203.0.113.8", 2_000)).toBe(true);
+  });
+
+  it("bounds repeated WebSocket upgrades without retaining source addresses", () => {
+    const limiter = new WebSocketUpgradeRateLimiter(2, 1_000);
+    expect(limiter.consume("203.0.113.9", 1_000)).toBe(true);
+    expect(limiter.consume("203.0.113.9", 1_001)).toBe(true);
+    expect(limiter.consume("203.0.113.9", 1_002)).toBe(false);
+    expect(limiter.consume("203.0.113.9", 2_000)).toBe(true);
   });
 
   it("starts a room where two clients receive authoritative state and input-driven movement", async () => {

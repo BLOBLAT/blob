@@ -331,6 +331,13 @@ Do not route `game.blob.lat` through Vercel serverless functions. The Colyseus p
 
 ## Environment matrix
 
+The platform API's public-auth safety defaults are process-local and already
+apply when no extra variables are configured: `PLATFORM_AUTH_GLOBAL_RATE_LIMIT`
+is `180` per wallet-auth route and `PLATFORM_GLOBAL_RATE_LIMIT_WINDOW_MS` is
+`60000`. Keep the per-wallet `PLATFORM_AUTH_RATE_LIMIT_WINDOW_MS=600000` limit
+separate. Do not turn these into a substitute for Cloudflare/Vercel edge
+protection; see [the security and incident guide](security.md).
+
 | Environment | Web: `VITE_GAME_SERVER_URL` | Game server: `NODE_ENV` | Game server: `PORT` | Game server: `BLOB_WEB_ORIGIN` |
 | --- | --- | --- | --- | --- |
 | Local | Optional; Vite-only fallback is `http://127.0.0.1:2567` | optional | optional, defaults to `2567` | optional; local origins are the default |

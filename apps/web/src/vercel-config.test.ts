@@ -18,7 +18,15 @@ describe.sequential("Vercel Platform API bridge", () => {
     const { config } = await import("../vercel.js");
 
     expect(config.rewrites).toEqual([]);
-    expect(config.headers).toEqual([]);
+    expect(config.headers).toEqual([{
+      source: "/:path*",
+      headers: [
+        { key: "X-Content-Type-Options", value: "nosniff" },
+        { key: "X-Frame-Options", value: "DENY" },
+        { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+        { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" }
+      ]
+    }]);
   });
 
   it("proxies only API paths and disables their caching", async () => {
@@ -31,10 +39,21 @@ describe.sequential("Vercel Platform API bridge", () => {
       destination: "https://platform.example.test/v1/:path*",
       respectOriginCacheControl: false
     }]);
-    expect(config.headers).toEqual([{
-      source: "/v1/:path*",
-      headers: [{ key: "Cache-Control", value: "private, no-store" }]
-    }]);
+    expect(config.headers).toEqual([
+      {
+        source: "/:path*",
+        headers: [
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" }
+        ]
+      },
+      {
+        source: "/v1/:path*",
+        headers: [{ key: "Cache-Control", value: "private, no-store" }]
+      }
+    ]);
   });
 
   it("fails closed for an insecure or path-bearing proxy value", async () => {

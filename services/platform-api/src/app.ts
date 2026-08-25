@@ -48,12 +48,12 @@ export function createPlatformApp(options: PlatformAppOptions): express.Express 
   );
   const globalChallengeRateLimiter = new FixedWindowRateLimiter(
     options.config.authGlobalRateLimit,
-    options.config.authRateLimitWindowMs,
+    options.config.globalRateLimitWindowMs,
     1
   );
   const globalVerifyRateLimiter = new FixedWindowRateLimiter(
     options.config.authGlobalRateLimit,
-    options.config.authRateLimitWindowMs,
+    options.config.globalRateLimitWindowMs,
     1
   );
   const gameTicketRateLimiter = new FixedWindowRateLimiter(
@@ -62,9 +62,10 @@ export function createPlatformApp(options: PlatformAppOptions): express.Express 
   );
   const globalGameTicketRateLimiter = new FixedWindowRateLimiter(
     options.config.gameTicketGlobalRateLimit,
-    options.config.authRateLimitWindowMs,
+    options.config.globalRateLimitWindowMs,
     1
   );
+  const cachedHealthCheck = createCachedHealthCheck(options.healthCheck);
   const auth = new AuthService(options.repository, {
     publicOrigin: options.config.publicOrigin,
     challengeTtlMs: options.config.challengeTtlMs,
@@ -78,21 +79,32 @@ export function createPlatformApp(options: PlatformAppOptions): express.Express 
     response.setHeader("X-Content-Type-Options", "nosniff");
     response.setHeader("X-Frame-Options", "DENY");
     response.setHeader("Referrer-Policy", "same-origin");
+    response.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+    response.setHeader("Content-Security-Policy", "default-src 'none'; base-uri 'none'; frame-ancestors 'none'");
+    if (options.config.nodeEnv === "production") {
+      response.setHeader("Strict-Transport-Security", "max-age=63072000; includeSubDomains");
+    }
     next();
   });
-  app.use(cors({
-    origin(origin, callback) {
-      if (!origin || options.config.allowedWebOrigins.has(origin)) {
-        callback(null, true);
-        return;
-      }
-      callback(new OriginNotAllowedError("Origin is not allowed to access the platform API."));
-    },
+  const browserCors = cors({
+    origin: true,
     credentials: true,
     methods: ["GET", "PATCH", "POST", "OPTIONS"],
     allowedHeaders: ["Content-Type"],
     optionsSuccessStatus: 204
-  }));
+  });
+  app.use((request, response, next) => {
+    const origin = request.get("Origin");
+    if (!origin) {
+      next();
+      return;
+    }
+    if (!options.config.allowedWebOrigins.has(origin)) {
+      next(new OriginNotAllowedError("Origin is not allowed to access the platform API."));
+      return;
+    }
+    browserCors(request, response, next);
+  });
 
   // This endpoint is only for the Railway-private game service. It deliberately
   // uses the exact raw body for Ed25519 verification before any JSON parser
@@ -155,7 +167,7 @@ export function createPlatformApp(options: PlatformAppOptions): express.Express 
 
   app.get("/health", asyncRoute(async (_request, response) => {
     try {
-      await options.healthCheck();
+      await cachedHealthCheck();
       response.status(200).json({ service: "blob-platform-api", status: "ok" });
     } catch (error) {
       console.error("[BLOB platform API] health check failed", error);
@@ -225,6 +237,10 @@ export function createPlatformApp(options: PlatformAppOptions): express.Express 
   }));
 
   app.use((error: unknown, _request: Request, response: Response, _next: NextFunction) => {
+    if (isRequestTooLargeError(error)) {
+      response.status(413).json({ error: "REQUEST_TOO_LARGE", message: "Request data is too large." });
+      return;
+    }
     if (error instanceof OriginNotAllowedError) {
       response.status(403).json({ error: "ORIGIN_NOT_ALLOWED", message: "This browser origin is not allowed to access the platform API." });
       return;
@@ -259,6 +275,12 @@ export function createPlatformApp(options: PlatformAppOptions): express.Express 
   return app;
 }
 
+function isRequestTooLargeError(error: unknown): boolean {
+  return typeof error === "object" && error !== null
+    && "type" in error
+    && (error as { type?: unknown }).type === "entity.too.large";
+}
+
 function consumeRateLimit(response: Response, limiter: FixedWindowRateLimiter, key: string): boolean {
   const decision = limiter.consume(key);
   if (decision.allowed) {
@@ -267,6 +289,43 @@ function consumeRateLimit(response: Response, limiter: FixedWindowRateLimiter, k
   response.setHeader("Retry-After", decision.retryAfterSeconds.toString());
   response.status(429).json({ error: "RATE_LIMITED", message: "Please wait before trying again." });
   return false;
+}
+
+/**
+ * Railway and load-balancer probes hit /health frequently. Coalescing and
+ * briefly caching the durable-store probe avoids turning that public endpoint
+ * into an unbounded PostgreSQL query amplifier during an HTTP flood.
+ */
+function createCachedHealthCheck(healthCheck: () => Promise<void>, successTtlMs = 5_000, failureTtlMs = 1_000): () => Promise<void> {
+  let inFlight: Promise<void> | undefined;
+  let cachedUntil = 0;
+  let cachedError: unknown;
+
+  return async () => {
+    const now = Date.now();
+    if (cachedUntil > now) {
+      if (cachedError) {
+        throw cachedError;
+      }
+      return;
+    }
+    if (!inFlight) {
+      inFlight = healthCheck()
+        .then(() => {
+          cachedError = undefined;
+          cachedUntil = Date.now() + successTtlMs;
+        })
+        .catch((error: unknown) => {
+          cachedError = error;
+          cachedUntil = Date.now() + failureTtlMs;
+          throw error;
+        })
+        .finally(() => {
+          inFlight = undefined;
+        });
+    }
+    return inFlight;
+  };
 }
 
 function asyncRoute(handler: (request: Request, response: Response) => Promise<void>): (request: Request, response: Response, next: NextFunction) => void {

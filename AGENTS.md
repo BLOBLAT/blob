@@ -104,6 +104,15 @@ See `docs/architecture.md` before introducing a cross-boundary dependency.
 - Update documentation when a boundary, authority rule, or operational command changes.
 - The browser obtains its server endpoint only from `VITE_GAME_SERVER_URL` (with a local Vite fallback). Never hardcode a production game-server hostname in browser code.
 - The game server must honor `PORT`; configure `BLOB_WEB_ORIGIN` with the exact comma-separated browser origins permitted to use it. Vercel is web-only and must never host the persistent Colyseus process.
+- Treat Colyseus matchmaking and WebSocket upgrades as public, expensive
+  ingress. Preserve their exact-origin checks, bounded payloads, message and
+  connection admission limits, and the single canonical Free Mode arena unless
+  a scaled multi-room matchmaker is deliberately designed and load-tested.
+- Treat `/health` as a public endpoint: keep it cheap, no-store, and bounded.
+  Do not add database work to it without coalescing/caching and a test.
+- Production incident operations are documented in `docs/security.md`. Never
+  disable Vercel's automatic DDoS mitigations. Stage WAF changes in log mode
+  and require human review before publishing a production block or challenge.
 - `railway.toml` is the repository-owned Railway configuration for the shared
   monorepo. Keep it rooted at the repository and route by
   `RAILWAY_SERVICE_NAME`: `blob` targets `@blob/game-server`; `platform-api`

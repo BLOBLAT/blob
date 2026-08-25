@@ -30,6 +30,15 @@ interface AuthenticatedPlayerJoinOptions extends ValidatedPlayerJoinOptions {
 
 export class BlobArenaRoom extends Room<{ state: BlobArenaState }> {
   override maxClients = DEFAULT_ARENA_CONFIG.maxPlayers;
+  /**
+   * The browser sends movement at 20 Hz; this leaves a small allowance for
+   * stop/chat messages while bounding schema/Zod work before game-core's own
+   * input limiter applies. Clients never need an unbounded message stream.
+   */
+  override maxMessagesPerSecond = 35;
+  /** Do not hold all arena seats for the default 15 seconds on a half-open
+   * join. A normal browser WebSocket finishes this handshake immediately. */
+  override seatReservationTimeout = 8;
   private simulation!: ArenaSimulation;
   private liveMetrics: LiveMetrics | undefined;
   private profileTicketVerifier!: ProfileTicketVerifier;

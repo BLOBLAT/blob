@@ -173,9 +173,12 @@ BLOB_CHAT_RETENTION_DAYS=90
 Production uses a host-only `__Host-blob_session` cookie by default and rejects
 a weaker custom cookie name. The API applies both per-wallet limits and a
 bounded process-local aggregate limit to wallet challenge and verification
-calls. The aggregate default is 120 requests per route per 10-minute window;
-configure `PLATFORM_AUTH_GLOBAL_RATE_LIMIT` only when its documented traffic
-capacity is insufficient. Retain an edge/WAF limit when the service becomes
+calls. The aggregate default is 180 requests per route per 60-second window;
+configure `PLATFORM_AUTH_GLOBAL_RATE_LIMIT` and
+`PLATFORM_GLOBAL_RATE_LIMIT_WINDOW_MS` together only when the documented
+traffic capacity is insufficient. The separate short global window prevents a
+small random-wallet burst from locking legitimate wallets out for the
+per-wallet 10-minute period. Retain an edge/WAF limit when the service becomes
 public: the process-local brake is intentionally not shared across replicas.
 
 The separate `GET /v1/me/game-ticket` signing endpoint is also bounded: the

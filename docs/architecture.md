@@ -114,6 +114,10 @@ For paid modes, entry authorization occurs before matchmaking; settlement consum
 
 - Clients are untrusted and must send intent/input, never results.
 - Validate message schema, rate, session identity, and allowed state transitions at each server boundary.
+- Public ingress is bounded at the game and platform process, but distributed
+  DDoS protection remains an edge responsibility. See
+  [the security and incident guide](security.md) before changing firewall,
+  CORS, health-check, or WebSocket admission behaviour.
 - Run deterministic server simulation so results can be reproduced and investigated.
 - Store a minimal audit trail for competitive matches and future settlement decisions.
 - Keep secrets outside source control. Only committed `.env.example` files may document required variables.

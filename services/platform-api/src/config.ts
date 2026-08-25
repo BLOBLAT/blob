@@ -16,6 +16,12 @@ export interface PlatformApiConfig {
    * distributed protection.
    */
   authGlobalRateLimit: number;
+  /**
+   * Short global protection window. Keeping this separate from the per-wallet
+   * window prevents a small burst of random-wallet requests from locking out
+   * every legitimate wallet for ten minutes.
+   */
+  globalRateLimitWindowMs: number;
   authRateLimitWindowMs: number;
   gameTicketPrivateKey: Uint8Array | undefined;
   gameTicketTtlMs: number;
@@ -105,12 +111,13 @@ export function loadPlatformApiConfig(environment: NodeJS.ProcessEnv = process.e
     renameCooldownMs: parsePositiveInteger(environment.PLATFORM_RENAME_COOLDOWN_MS, 24 * 60 * 60 * 1_000, "PLATFORM_RENAME_COOLDOWN_MS"),
     authChallengeRateLimit: parsePositiveInteger(environment.PLATFORM_AUTH_CHALLENGE_RATE_LIMIT, 6, "PLATFORM_AUTH_CHALLENGE_RATE_LIMIT"),
     authVerifyRateLimit: parsePositiveInteger(environment.PLATFORM_AUTH_VERIFY_RATE_LIMIT, 12, "PLATFORM_AUTH_VERIFY_RATE_LIMIT"),
-    authGlobalRateLimit: parsePositiveInteger(environment.PLATFORM_AUTH_GLOBAL_RATE_LIMIT, 120, "PLATFORM_AUTH_GLOBAL_RATE_LIMIT"),
+    authGlobalRateLimit: parsePositiveInteger(environment.PLATFORM_AUTH_GLOBAL_RATE_LIMIT, 180, "PLATFORM_AUTH_GLOBAL_RATE_LIMIT"),
     authRateLimitWindowMs: parsePositiveInteger(environment.PLATFORM_AUTH_RATE_LIMIT_WINDOW_MS, 10 * 60 * 1_000, "PLATFORM_AUTH_RATE_LIMIT_WINDOW_MS"),
+    globalRateLimitWindowMs: parsePositiveInteger(environment.PLATFORM_GLOBAL_RATE_LIMIT_WINDOW_MS, 60_000, "PLATFORM_GLOBAL_RATE_LIMIT_WINDOW_MS"),
     gameTicketPrivateKey,
     gameTicketTtlMs: parsePositiveInteger(environment.PLATFORM_GAME_TICKET_TTL_MS, 5 * 60 * 1_000, "PLATFORM_GAME_TICKET_TTL_MS"),
     gameTicketRateLimit: parsePositiveInteger(environment.PLATFORM_GAME_TICKET_RATE_LIMIT, 15, "PLATFORM_GAME_TICKET_RATE_LIMIT"),
-    gameTicketGlobalRateLimit: parsePositiveInteger(environment.PLATFORM_GAME_TICKET_GLOBAL_RATE_LIMIT, 240, "PLATFORM_GAME_TICKET_GLOBAL_RATE_LIMIT"),
+    gameTicketGlobalRateLimit: parsePositiveInteger(environment.PLATFORM_GAME_TICKET_GLOBAL_RATE_LIMIT, 180, "PLATFORM_GAME_TICKET_GLOBAL_RATE_LIMIT"),
     paidAdmissionTicketPrivateKey,
     paidAdmissionConsumerPublicKey,
     arenaChatAuditPublicKey,

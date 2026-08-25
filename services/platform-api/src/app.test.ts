@@ -19,6 +19,7 @@ const config: PlatformApiConfig = {
   authVerifyRateLimit: 2,
   authGlobalRateLimit: 3,
   authRateLimitWindowMs: 60_000,
+  globalRateLimitWindowMs: 60_000,
   gameTicketPrivateKey: undefined,
   gameTicketTtlMs: 60_000,
   gameTicketRateLimit: 2,
@@ -42,6 +43,29 @@ describe("platform API health", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ service: "blob-platform-api", status: "ok" });
     expect(check).toHaveBeenCalledTimes(1);
+  });
+
+  it("coalesces concurrent health requests so a flood cannot multiply database probes", async () => {
+    const check = vi.fn(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    const app = createPlatformApp({
+      config,
+      repository: {} as PlatformAuthRepository,
+      healthCheck: check
+    });
+    const server = createServer(app);
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("Could not start test HTTP server.");
+    }
+    const url = "http://127.0.0.1:" + address.port + "/health";
+    const responses = await Promise.all([fetch(url), fetch(url), fetch(url)]);
+    expect(responses.map((response) => response.status)).toEqual([200, 200, 200]);
+    expect(check).toHaveBeenCalledTimes(1);
+    expect(responses[0]?.headers.get("access-control-allow-origin")).toBeNull();
   });
 
   it("reports unavailable without exposing a database error", async () => {
@@ -264,6 +288,32 @@ describe("platform API health", () => {
     expect(await response.json()).toEqual({
       error: "ORIGIN_NOT_ALLOWED",
       message: "This browser origin is not allowed to access the platform API."
+    });
+  });
+
+  it("rejects oversized public JSON without returning an internal error", async () => {
+    const app = createPlatformApp({
+      config,
+      repository: {} as PlatformAuthRepository,
+      healthCheck: async () => undefined
+    });
+    const server = createServer(app);
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("Could not start test HTTP server.");
+    }
+
+    const response = await fetch("http://127.0.0.1:" + address.port + "/v1/auth/challenge", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payload: "x".repeat(17 * 1024) })
+    });
+    expect(response.status).toBe(413);
+    expect(await response.json()).toEqual({
+      error: "REQUEST_TOO_LARGE",
+      message: "Request data is too large."
     });
   });
 

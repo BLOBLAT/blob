@@ -86,3 +86,5 @@ npm run check
 - `docs` — architecture and engineering decisions
 
 Read [the architecture guide](docs/architecture.md) and [contributor guide](AGENTS.md) before extending the platform.
+For the current threat model, incident procedure, and explicit paid-launch
+security gates, read [the security guide](docs/security.md).

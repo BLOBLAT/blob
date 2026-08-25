@@ -10,19 +10,34 @@ const platformApiRewrite = platformApiOrigin
     }
   : undefined;
 
+// Keep these response headers intentionally conservative: the Phaser client
+// connects to a configurable WSS host and browser wallets may be extensions,
+// so a guessed restrictive CSP could break real play. These headers remove
+// browser capabilities the public landing/game never needs without affecting
+// the wallet-standard integration.
+const browserSecurityHeaders = routes.header("/:path*", [
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "X-Frame-Options", value: "DENY" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" }
+]);
+
 /**
  * Wallet-profile requests are proxied only when Vercel has been given the
  * server-only origin. The browser still calls its own HTTPS origin, keeping
  * opaque session cookies same-site while api.blob.lat is provisioned.
  */
 export const config: VercelConfig = {
-  headers: platformApiOrigin
-    ? [
-        routes.header("/v1/:path*", [
-          { key: "Cache-Control", value: "private, no-store" }
-        ])
-      ]
-    : [],
+  headers: [
+    browserSecurityHeaders,
+    ...(platformApiOrigin
+      ? [
+          routes.header("/v1/:path*", [
+            { key: "Cache-Control", value: "private, no-store" }
+          ])
+        ]
+      : [])
+  ],
   rewrites: platformApiRewrite ? [platformApiRewrite] : []
 };
 

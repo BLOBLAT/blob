@@ -20,6 +20,14 @@ const app = createPlatformApp({
   healthCheck: () => verifyPrismaConnection(prisma)
 });
 const server = createServer(app);
+// Bound incomplete HTTP requests before they can occupy Node sockets or
+// PostgreSQL-facing request handlers during a slow-request flood. WebSockets
+// are owned by the separate game service, not this API.
+server.headersTimeout = 10_000;
+server.requestTimeout = 15_000;
+server.keepAliveTimeout = 5_000;
+server.maxHeadersCount = 64;
+server.maxRequestsPerSocket = 100;
 const chatCleanupTimer = setInterval(() => {
   void arenaChatRepository.pruneExpired(new Date()).catch((error: unknown) => {
     console.error("[BLOB platform API] arena chat retention cleanup failed", error);
