@@ -125,7 +125,25 @@ export async function startFreeGame(options: StartFreeGameOptions): Promise<Free
     }, RECONNECT_DELAY_MS);
   };
 
-  await connect();
+  let initialConnectionFailure: unknown;
+  for (let attempt = 0; attempt < MAX_INITIAL_CONNECTION_ATTEMPTS; attempt += 1) {
+    try {
+      await connect(attempt > 0);
+      initialConnectionFailure = undefined;
+      break;
+    } catch (error) {
+      initialConnectionFailure = error;
+      if (attempt === MAX_INITIAL_CONNECTION_ATTEMPTS - 1) {
+        break;
+      }
+      const nextAttempt = attempt + 1;
+      options.onConnectionStatus(`Connection interrupted — retrying (${nextAttempt}/${MAX_INITIAL_CONNECTION_ATTEMPTS - 1})…`);
+      await waitForReconnect(INITIAL_RECONNECT_DELAY_MS * nextAttempt);
+    }
+  }
+  if (initialConnectionFailure) {
+    throw initialConnectionFailure;
+  }
 
   return {
     async leave(): Promise<void> {
@@ -168,6 +186,8 @@ export async function startFreeGame(options: StartFreeGameOptions): Promise<Free
 const CONNECTION_TIMEOUT_MS = 8_000;
 const RECONNECT_DELAY_MS = 1_500;
 const MAX_RECONNECT_ATTEMPTS = 3;
+const MAX_INITIAL_CONNECTION_ATTEMPTS = 4;
+const INITIAL_RECONNECT_DELAY_MS = 1_250;
 
 export class GameServerHealthError extends Error {
   constructor() {
@@ -246,4 +266,8 @@ function withConnectionTimeout<T>(connection: Promise<T>): Promise<T> {
       }
     );
   });
+}
+
+function waitForReconnect(delayMs: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, delayMs));
 }

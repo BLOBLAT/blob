@@ -1,4 +1,4 @@
-export const ACCESS_GATE_ENABLED = true;
+export const ACCESS_GATE_ENABLED = false;
 
 const ACCESS_PASSWORD = "https://blob.lat/";
 const ACCESS_SESSION_KEY = "blob.private-build.access";

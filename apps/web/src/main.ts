@@ -4,7 +4,7 @@ import { validateChatMessage } from "@blob/validation";
 import { ACCESS_GATE_ENABLED, hasPrivateBuildAccess, unlockPrivateBuild } from "./accessGate.js";
 import { setProfileGameName } from "./identity.js";
 import { type BlobProfile, PlatformApiError, resolvePlatformApi } from "./platformApi.js";
-import { type AvailableWallet, connectWalletAndCreateProfile, watchAvailableSolanaWallets } from "./wallet.js";
+import { type AvailableWallet, connectWalletAndCreateProfile, isMobileBrowser, openInPhantomMobileBrowser, watchAvailableSolanaWallets } from "./wallet.js";
 import { startLiveMetrics, type LiveMetricsController, type LiveMetricsSnapshot } from "./liveMetrics.js";
 import type { TouchJoystickHand } from "./game/arenaPresentation.js";
 
@@ -282,8 +282,18 @@ function renderWalletSelection(container: HTMLElement): void {
   if (availableWallets.length === 0) {
     const empty = document.createElement("p");
     empty.className = "profile-state";
-    empty.textContent = "No compatible Solana wallet was detected. Install or unlock a Wallet Standard-compatible wallet, then reopen this panel.";
+    empty.textContent = isMobileBrowser()
+      ? "No wallet is available in this browser. Open BLOB in Phantom to connect your existing Solana wallet safely."
+      : "No compatible Solana wallet was detected. Install or unlock a Wallet Standard-compatible wallet, then reopen this panel.";
     container.append(empty);
+    if (isMobileBrowser()) {
+      const openPhantom = document.createElement("button");
+      openPhantom.type = "button";
+      openPhantom.className = "wallet-option";
+      openPhantom.textContent = "OPEN BLOB IN PHANTOM";
+      openPhantom.addEventListener("click", () => openInPhantomMobileBrowser(window.location));
+      container.append(openPhantom);
+    }
     return;
   }
   const list = document.createElement("div");
