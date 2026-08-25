@@ -12,6 +12,8 @@ export interface FreeGameController {
   sendChat(text: string): void;
   setTouchHand(hand: TouchJoystickHand): void;
   getTouchHand(): TouchJoystickHand;
+  setTouchIntent(input: { x: number; y: number }): void;
+  clearTouchIntent(): void;
 }
 
 export interface StartFreeGameOptions {
@@ -69,12 +71,26 @@ export async function startFreeGame(options: StartFreeGameOptions): Promise<Free
     }
 
     activeRoom = room;
+    // State patches drive rendering. Register the server's transient gameplay
+    // events as well so Colyseus does not emit a console warning for every
+    // collected pellet (which can itself make a busy arena feel sluggish).
+    for (const event of [
+      ServerEvent.PLAYER_JOINED,
+      ServerEvent.PLAYER_DIED,
+      ServerEvent.FOOD_EATEN,
+      ServerEvent.PLAYER_ELIMINATED,
+      ServerEvent.ROUND_STARTED,
+      ServerEvent.ROUND_FINISHED,
+      ServerEvent.MATCH_FINALIZED,
+    ]) {
+      room.onMessage(event, () => undefined);
+    }
     room.onMessage(ServerEvent.CHAT_MESSAGE, (message: ArenaChatMessage) => options.onChatMessage?.(message));
     room.onMessage(ServerEvent.CHAT_REJECTED, (event: { code?: unknown }) => {
       options.onChatRejected?.(typeof event.code === "string" ? event.code : "CHAT_INVALID");
     });
     game?.destroy(true);
-    const createdGame = createPhaserGame(options.canvasHost, room, options.onUiState, touchHand);
+    const createdGame = createPhaserGame(options.canvasHost, room, options.onUiState);
     game = createdGame.game;
     arenaScene = createdGame.scene;
     reconnectAttempts = 0;
@@ -132,10 +148,19 @@ export async function startFreeGame(options: StartFreeGameOptions): Promise<Free
     },
     setTouchHand(hand: TouchJoystickHand): void {
       touchHand = hand;
-      arenaScene?.setTouchHand(hand);
+      arenaScene?.clearTouchIntent();
     },
     getTouchHand(): TouchJoystickHand {
-      return arenaScene?.getTouchHand() ?? touchHand;
+      return touchHand;
+    },
+    setTouchIntent(input: { x: number; y: number }): void {
+      if (disposed) {
+        return;
+      }
+      arenaScene?.setTouchIntent(input.x, input.y);
+    },
+    clearTouchIntent(): void {
+      arenaScene?.clearTouchIntent();
     }
   };
 }
@@ -154,9 +179,8 @@ function createPhaserGame(
   canvasHost: HTMLElement,
   room: Room,
   onUiState: (state: ArenaUiState) => void,
-  initialTouchHand: TouchJoystickHand | undefined,
 ): { game: Phaser.Game; scene: BlobArenaScene } {
-  const scene = new BlobArenaScene(room, onUiState, initialTouchHand);
+  const scene = new BlobArenaScene(room, onUiState);
   return {
     scene,
     game: new Phaser.Game({

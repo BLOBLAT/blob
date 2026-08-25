@@ -1,12 +1,8 @@
 import type { Room } from "@colyseus/sdk";
 import Phaser from "phaser";
 import {
-  type TouchJoystickHand,
-  TOUCH_JOYSTICK_RADIUS,
-  canStartTouchJoystick,
   renderInterpolationAlpha,
   targetArenaZoom,
-  touchJoystickAnchor,
 } from "./arenaPresentation.js";
 
 export interface NetworkPlayer {
@@ -130,7 +126,6 @@ interface KeyboardControls {
 
 export class BlobArenaScene extends Phaser.Scene {
   private graphics!: Phaser.GameObjects.Graphics;
-  private touchGraphics!: Phaser.GameObjects.Graphics;
   private intent = { x: 0, y: 0 };
   private lastUiUpdate = 0;
   private sendIntentEvent?: Phaser.Time.TimerEvent;
@@ -139,12 +134,8 @@ export class BlobArenaScene extends Phaser.Scene {
   private collectPulseUntil = 0;
   private deathPulseUntil = 0;
   private mouseTarget: ScreenPosition | undefined;
-  private activeTouchId: number | null = null;
-  private touchOriginX = 0;
-  private touchOriginY = 0;
-  private touchCurrentX = 0;
-  private touchCurrentY = 0;
-  private touchHand: TouchJoystickHand = "right";
+  /** The mobile DOM joystick owns this flag; the canvas never owns touch movement. */
+  private externalTouchInputActive = false;
   private worldWidth = 0;
   private worldHeight = 0;
   private readonly renderedPlayerPositions = new Map<string, RenderedPlayerPosition>();
@@ -152,29 +143,29 @@ export class BlobArenaScene extends Phaser.Scene {
   constructor(
     private readonly room: Room,
     private readonly onUiState: (state: ArenaUiState) => void,
-    initialTouchHand: TouchJoystickHand = "right",
   ) {
     super("blob-arena");
-    this.touchHand = initialTouchHand;
   }
 
-  setTouchHand(hand: TouchJoystickHand): void {
-    if (this.touchHand === hand) {
-      return;
-    }
-    this.touchHand = hand;
-    this.activeTouchId = null;
+  /**
+   * Receives only normalized movement intent from the DOM joystick. The
+   * authoritative server still validates and applies this input.
+   */
+  setTouchIntent(x: number, y: number): void {
+    this.externalTouchInputActive = true;
+    this.mouseTarget = undefined;
+    this.setNormalizedIntent(x, y);
+    this.sendIntent();
+  }
+
+  clearTouchIntent(): void {
+    this.externalTouchInputActive = false;
     this.intent = { x: 0, y: 0 };
     this.sendIntent();
   }
 
-  getTouchHand(): TouchJoystickHand {
-    return this.touchHand;
-  }
-
   create(): void {
     this.graphics = this.add.graphics();
-    this.touchGraphics = this.add.graphics().setScrollFactor(0).setDepth(10);
     this.game.canvas.style.touchAction = "none";
     this.cameras.main.setZoom(0.84);
     this.input.on("pointermove", this.onPointerMove, this);
@@ -183,24 +174,25 @@ export class BlobArenaScene extends Phaser.Scene {
     this.input.on("pointerupoutside", this.onPointerUp, this);
     this.input.on("gameout", this.clearPointerIntent, this);
     document.addEventListener("visibilitychange", this.clearHiddenTabIntent);
+    document.addEventListener("keydown", this.preventArenaArrowScroll, { passive: false });
     const keyboardPlugin = this.input.keyboard;
     if (keyboardPlugin) {
-      // Phaser's addKeys accepts one key code per action. Keeping WASD and
-      // arrows as explicit bindings avoids silently creating invalid array
-      // keys, while addKeys captures the browser defaults for the arrows.
+      // `enableCapture` must remain false: the chat and profile inputs are
+      // regular page controls, not game controls. Arrow scrolling is stopped
+      // selectively below only while the arena owns keyboard input.
       this.keyboard = {
-        wasd: keyboardPlugin.addKeys({
+        wasd: createDirectionKeys(keyboardPlugin, {
           up: Phaser.Input.Keyboard.KeyCodes.W,
           down: Phaser.Input.Keyboard.KeyCodes.S,
           left: Phaser.Input.Keyboard.KeyCodes.A,
           right: Phaser.Input.Keyboard.KeyCodes.D,
-        }) as DirectionKeys,
-        arrows: keyboardPlugin.addKeys({
+        }),
+        arrows: createDirectionKeys(keyboardPlugin, {
           up: Phaser.Input.Keyboard.KeyCodes.UP,
           down: Phaser.Input.Keyboard.KeyCodes.DOWN,
           left: Phaser.Input.Keyboard.KeyCodes.LEFT,
           right: Phaser.Input.Keyboard.KeyCodes.RIGHT,
-        }) as DirectionKeys,
+        }),
       };
     }
     this.sendIntentEvent = this.time.addEvent({
@@ -215,6 +207,7 @@ export class BlobArenaScene extends Phaser.Scene {
       this.input.off("pointerupoutside", this.onPointerUp, this);
       this.input.off("gameout", this.clearPointerIntent, this);
       document.removeEventListener("visibilitychange", this.clearHiddenTabIntent);
+      document.removeEventListener("keydown", this.preventArenaArrowScroll);
       this.sendIntentEvent?.remove();
       this.room.send("input", { x: 0, y: 0 });
     });
@@ -233,8 +226,11 @@ export class BlobArenaScene extends Phaser.Scene {
       if (localPlayer.alive && state.phase === "ACTIVE") {
         if (this.hasKeyboardInput()) {
           this.applyKeyboardIntent();
-        } else if (this.activeTouchId === null) {
+        } else if (!this.externalTouchInputActive && !this.isTextEntryFocused()) {
           this.applyMouseIntent();
+        } else if (this.isTextEntryFocused()) {
+          this.intent = { x: 0, y: 0 };
+          this.mouseTarget = undefined;
         }
       } else {
         this.intent = { x: 0, y: 0 };
@@ -253,7 +249,6 @@ export class BlobArenaScene extends Phaser.Scene {
       this.lastLocalMass = localPlayer.mass;
     }
     this.drawArena(state, localPlayer?.id, time);
-    this.drawTouchJoystick();
 
     if (time - this.lastUiUpdate >= 100) {
       this.lastUiUpdate = time;
@@ -295,48 +290,27 @@ export class BlobArenaScene extends Phaser.Scene {
 
   private onPointerDown(pointer: Phaser.Input.Pointer): void {
     if (pointer.wasTouch) {
-      const anchor = this.getTouchJoystickAnchor();
-      if (!canStartTouchJoystick(pointer, anchor)) {
-        return;
-      }
-      this.activeTouchId = pointer.id;
-      this.mouseTarget = undefined;
-      this.touchOriginX = anchor.x;
-      this.touchOriginY = anchor.y;
-      this.touchCurrentX = pointer.x;
-      this.touchCurrentY = pointer.y;
-      this.updateTouchIntent(pointer);
-      this.sendIntent();
       return;
     }
+    this.blurTextEntryIfFocused();
     this.updateMouseIntent(pointer);
     this.sendIntent();
   }
 
   private onPointerMove(pointer: Phaser.Input.Pointer): void {
-    if (this.activeTouchId === pointer.id) {
-      this.updateTouchIntent(pointer);
-      return;
-    }
     if (!pointer.wasTouch) {
       this.updateMouseIntent(pointer);
     }
   }
 
   private onPointerUp(pointer: Phaser.Input.Pointer): void {
-    if (this.activeTouchId === pointer.id) {
-      this.activeTouchId = null;
-      this.intent = { x: 0, y: 0 };
-      this.sendIntent();
-      return;
-    }
     if (!pointer.wasTouch) {
       this.clearPointerIntent();
     }
   }
 
   private clearPointerIntent(): void {
-    if (this.activeTouchId === null && !this.hasKeyboardInput()) {
+    if (!this.externalTouchInputActive && !this.hasKeyboardInput()) {
       this.intent = { x: 0, y: 0 };
       this.mouseTarget = undefined;
       this.sendIntent();
@@ -345,7 +319,7 @@ export class BlobArenaScene extends Phaser.Scene {
 
   private clearHiddenTabIntent(): void {
     if (document.hidden) {
-      this.activeTouchId = null;
+      this.externalTouchInputActive = false;
       this.mouseTarget = undefined;
       this.intent = { x: 0, y: 0 };
       this.sendIntent();
@@ -378,16 +352,14 @@ export class BlobArenaScene extends Phaser.Scene {
     this.setIntentFromDelta(deltaX, deltaY);
   }
 
-  private updateTouchIntent(pointer: Phaser.Input.Pointer): void {
-    this.touchCurrentX = pointer.x;
-    this.touchCurrentY = pointer.y;
-    this.setIntentFromDelta(pointer.x - this.touchOriginX, pointer.y - this.touchOriginY);
+  private setIntentFromDelta(deltaX: number, deltaY: number): void {
+    this.setNormalizedIntent(deltaX, deltaY, 4);
   }
 
-  private setIntentFromDelta(deltaX: number, deltaY: number): void {
-    const magnitude = Math.hypot(deltaX, deltaY);
-    this.intent = magnitude > 4
-      ? { x: deltaX / magnitude, y: deltaY / magnitude }
+  private setNormalizedIntent(x: number, y: number, deadZone = 0.01): void {
+    const magnitude = Math.hypot(x, y);
+    this.intent = Number.isFinite(magnitude) && magnitude > deadZone
+      ? { x: x / magnitude, y: y / magnitude }
       : { x: 0, y: 0 };
   }
 
@@ -405,12 +377,43 @@ export class BlobArenaScene extends Phaser.Scene {
   }
 
   private hasKeyboardInput(): boolean {
+    if (!this.isKeyboardControlEnabled()) {
+      return false;
+    }
     return this.isDirectionPressed("up") || this.isDirectionPressed("down") || this.isDirectionPressed("left") || this.isDirectionPressed("right");
   }
 
   private isDirectionPressed(direction: keyof DirectionKeys): boolean {
     return this.keyboard?.wasd[direction].isDown === true || this.keyboard?.arrows[direction].isDown === true;
   }
+
+  private isKeyboardControlEnabled(): boolean {
+    return !document.hidden && !this.isTextEntryFocused();
+  }
+
+  private isTextEntryFocused(): boolean {
+    const active = document.activeElement;
+    return active instanceof HTMLInputElement
+      || active instanceof HTMLTextAreaElement
+      || active instanceof HTMLSelectElement
+      || (active instanceof HTMLElement && active.isContentEditable);
+  }
+
+  private blurTextEntryIfFocused(): void {
+    const active = document.activeElement;
+    if (active instanceof HTMLInputElement
+      || active instanceof HTMLTextAreaElement
+      || active instanceof HTMLSelectElement
+      || (active instanceof HTMLElement && active.isContentEditable)) {
+      active.blur();
+    }
+  }
+
+  private preventArenaArrowScroll = (event: KeyboardEvent): void => {
+    if (this.isKeyboardControlEnabled() && isArenaControlKey(event.code)) {
+      event.preventDefault();
+    }
+  };
 
   private sendIntent(): void {
     const state = this.room.state as unknown as NetworkArenaState | undefined;
@@ -458,10 +461,6 @@ export class BlobArenaScene extends Phaser.Scene {
   private getRenderedPosition(player: NetworkPlayer): ScreenPosition {
     const rendered = this.renderedPlayerPositions.get(player.id);
     return rendered ? { x: rendered.x, y: rendered.y } : { x: player.x, y: player.y };
-  }
-
-  private getTouchJoystickAnchor(): ScreenPosition {
-    return touchJoystickAnchor(this.scale.width, this.scale.height, this.touchHand);
   }
 
   private isCompactViewport(): boolean {
@@ -550,28 +549,28 @@ export class BlobArenaScene extends Phaser.Scene {
     this.graphics.fillCircle(x + radius * 0.19, y - radius * 0.07 + wobble, Math.max(1.2, radius * 0.033));
   }
 
-  private drawTouchJoystick(): void {
-    this.touchGraphics.clear();
-    if (!this.isCompactViewport()) {
-      return;
-    }
-    const anchor = this.getTouchJoystickAnchor();
-    const deltaX = this.activeTouchId === null ? 0 : this.touchCurrentX - this.touchOriginX;
-    const deltaY = this.activeTouchId === null ? 0 : this.touchCurrentY - this.touchOriginY;
-    const distance = Math.hypot(deltaX, deltaY);
-    const scale = distance > TOUCH_JOYSTICK_RADIUS ? TOUCH_JOYSTICK_RADIUS / distance : 1;
-    this.touchGraphics.fillStyle(0x160717, 0.35);
-    this.touchGraphics.fillCircle(anchor.x, anchor.y, TOUCH_JOYSTICK_RADIUS);
-    this.touchGraphics.lineStyle(2, 0xfff7f2, this.activeTouchId === null ? 0.2 : 0.46);
-    this.touchGraphics.strokeCircle(anchor.x, anchor.y, TOUCH_JOYSTICK_RADIUS);
-    this.touchGraphics.fillStyle(0xf42b68, this.activeTouchId === null ? 0.28 : 0.7);
-    this.touchGraphics.fillCircle(anchor.x + deltaX * scale, anchor.y + deltaY * scale, 23);
-  }
 }
 
 interface ScreenPosition {
   x: number;
   y: number;
+}
+
+function createDirectionKeys(
+  keyboard: Phaser.Input.Keyboard.KeyboardPlugin,
+  keyCodes: Record<"up" | "down" | "left" | "right", number>,
+): DirectionKeys {
+  return {
+    up: keyboard.addKey(keyCodes.up, false),
+    down: keyboard.addKey(keyCodes.down, false),
+    left: keyboard.addKey(keyCodes.left, false),
+    right: keyboard.addKey(keyCodes.right, false),
+  };
+}
+
+function isArenaControlKey(code: string): boolean {
+  return code === "KeyW" || code === "KeyA" || code === "KeyS" || code === "KeyD"
+    || code === "ArrowUp" || code === "ArrowDown" || code === "ArrowLeft" || code === "ArrowRight";
 }
 
 function toArray<T>(collection: NetworkCollection<T>): T[] {

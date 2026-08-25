@@ -20,6 +20,8 @@ let freeGameController: {
   sendChat(text: string): void;
   setTouchHand(hand: TouchJoystickHand): void;
   getTouchHand(): TouchJoystickHand;
+  setTouchIntent(input: { x: number; y: number }): void;
+  clearTouchIntent(): void;
 } | undefined;
 let openingFreeArena = false;
 const platformApi = resolvePlatformApi();
@@ -367,7 +369,9 @@ async function renameProfile(event: SubmitEvent, input: HTMLInputElement, submit
     profile = await platformApi.renameProfile(input.value);
     setProfileGameName(profile.displayName);
     renderProfileTrigger();
-    renderProfileDialog("Display name saved. It will be used the next time you join an arena.");
+    renderProfileDialog(freeGameController
+      ? "Display name saved. Leave and re-enter Free Mode to apply it to this arena."
+      : "Display name saved. It will be used when you join an arena.");
   } catch (error) {
     renderProfileDialog(describeProfileError(error));
   }
@@ -394,7 +398,28 @@ function describeProfileError(error: unknown): string {
     if (error.code === "PROFILE_RENAME_RATE_LIMITED") {
       return "Display names can be changed once every 24 hours.";
     }
+    if (error.code === "PROFILE_NAME_UNAVAILABLE") {
+      return "That display name is already in use. Please choose another.";
+    }
+    if (error.code === "DISPLAY_NAME_RESERVED") {
+      return "That display name is reserved. Please choose another.";
+    }
     if (error.code === "DISPLAY_NAME_INVALID") {
+      return "Use 3–16 letters, numbers, spaces, underscores, or hyphens.";
+    }
+    if (error.code === "AUTH_REQUIRED") {
+      return "Your BLOB sign-in session expired. Connect your wallet again.";
+    }
+    if (error.code === "ORIGIN_NOT_ALLOWED") {
+      return "This deployment cannot reach the profile service yet.";
+    }
+    if (error.code === "PROFILE_NAME_CHANGE_REQUIRED") {
+      return "Choose a compliant display name before entering the arena.";
+    }
+    if (error.code === "GAME_IDENTITY_UNAVAILABLE") {
+      return "Profile names are temporarily unavailable. Please try again shortly.";
+    }
+    if (error.code === "REQUEST_INVALID") {
       return "Use 3–16 letters, numbers, spaces, underscores, or hyphens.";
     }
     return "BLOB could not verify that request. Please try again.";
@@ -421,9 +446,6 @@ async function openFreeArena(): Promise<void> {
   arenaShell.innerHTML = `
     <div class="game-stage">
       <div class="game-canvas" id="game-canvas" aria-label="Live BLOB arena"></div>
-      <button class="game-joystick-hand" id="game-joystick-hand" type="button" aria-pressed="false">
-        <span aria-hidden="true">⇄</span><span>MOVE JOYSTICK LEFT</span>
-      </button>
       <div class="game-hud" aria-label="Your current arena status">
         <div><span>MASS</span><strong id="game-mass">0</strong></div>
         <div><span>RANK</span><strong id="game-rank">—</strong></div>
@@ -457,6 +479,14 @@ async function openFreeArena(): Promise<void> {
       <p class="game-timer" id="game-timer"></p>
       <h3>LIVE RANKING</h3>
       <ol class="live-leaderboard" id="live-leaderboard"></ol>
+      <section class="mobile-joystick-dock" id="mobile-joystick-dock" aria-label="Mobile movement control">
+        <button class="game-joystick-hand" id="game-joystick-hand" type="button" aria-pressed="false">
+          <span aria-hidden="true">⇄</span><span>MOVE JOYSTICK LEFT</span>
+        </button>
+        <div class="mobile-joystick" id="mobile-joystick" role="application" aria-label="Touch and drag to steer your BLOB">
+          <span class="mobile-joystick-knob" id="mobile-joystick-knob" aria-hidden="true"></span>
+        </div>
+      </section>
     </aside>
   `;
   document.querySelector<HTMLElement>("#arena-chat")?.remove();
@@ -499,13 +529,18 @@ async function openFreeArena(): Promise<void> {
   const chatForm = requiredElement<HTMLFormElement>("#arena-chat-form");
   const chatInput = requiredElement<HTMLInputElement>("#arena-chat-input");
   const joystickHandButton = requiredElement<HTMLButtonElement>("#game-joystick-hand");
+  const joystickDock = requiredElement<HTMLElement>("#mobile-joystick-dock");
+  const joystick = requiredElement<HTMLElement>("#mobile-joystick");
+  const joystickKnob = requiredElement<HTMLElement>("#mobile-joystick-knob");
   let touchHand = getPreferredTouchHand();
-  renderTouchHandButton(joystickHandButton, touchHand);
+  const externalJoystick = bindExternalTouchJoystick(joystick, joystickKnob, () => freeGameController);
+  renderTouchHandButton(joystickHandButton, joystickDock, touchHand);
   joystickHandButton.addEventListener("click", () => {
     touchHand = touchHand === "right" ? "left" : "right";
     savePreferredTouchHand(touchHand);
+    externalJoystick.reset();
     freeGameController?.setTouchHand(touchHand);
-    renderTouchHandButton(joystickHandButton, touchHand);
+    renderTouchHandButton(joystickHandButton, joystickDock, touchHand);
   });
   const seenChatMessageIds = new Set<string>();
   requiredElement<HTMLButtonElement>("#leave-game").addEventListener("click", () => void leaveFreeArena());
@@ -527,6 +562,10 @@ async function openFreeArena(): Promise<void> {
 
   try {
     const { startFreeGame } = await import("./game/playFree.js");
+    // A session restore can finish after the landing page renders. Resolve it
+    // immediately before the authoritative room join so chat and arena names
+    // always use the same server-signed profile identity.
+    const profileForArena = await resolveProfileForArena();
     freeGameController = await startFreeGame({
       canvasHost: requiredElement("#game-canvas"),
       initialTouchHand: touchHand,
@@ -534,7 +573,7 @@ async function openFreeArena(): Promise<void> {
         connection.textContent = message;
         chatStatus.textContent = message.startsWith("Connected") ? "Connected to this arena." : "Chat connects with the arena.";
       },
-      getProfileTicket: profile && platformApi
+      getProfileTicket: profileForArena && platformApi
         ? async () => (await platformApi.getGameIdentityTicket()).ticket
         : undefined,
       onChatMessage(message) {
@@ -580,6 +619,20 @@ async function openFreeArena(): Promise<void> {
   }
 }
 
+async function resolveProfileForArena(): Promise<BlobProfile | null> {
+  if (!platformApi) {
+    return null;
+  }
+  try {
+    profile = await platformApi.getCurrentProfile();
+    setProfileGameName(profile?.displayName);
+    renderProfileTrigger();
+  } catch (error) {
+    console.warn("[BLOB] profile identity could not be refreshed before arena join", error);
+  }
+  return profile;
+}
+
 const TOUCH_HAND_STORAGE_KEY = "blob:touch-joystick-hand";
 
 function getPreferredTouchHand(): TouchJoystickHand {
@@ -598,11 +651,72 @@ function savePreferredTouchHand(hand: TouchJoystickHand): void {
   }
 }
 
-function renderTouchHandButton(button: HTMLButtonElement, hand: TouchJoystickHand): void {
+function renderTouchHandButton(button: HTMLButtonElement, dock: HTMLElement, hand: TouchJoystickHand): void {
   const movesToLeft = hand === "right";
   button.setAttribute("aria-pressed", String(!movesToLeft));
   button.setAttribute("aria-label", movesToLeft ? "Move joystick to the left hand" : "Move joystick to the right hand");
   button.lastElementChild!.textContent = movesToLeft ? "MOVE JOYSTICK LEFT" : "MOVE JOYSTICK RIGHT";
+  dock.classList.toggle("is-left-hand", hand === "left");
+}
+
+function bindExternalTouchJoystick(
+  control: HTMLElement,
+  knob: HTMLElement,
+  getController: () => typeof freeGameController,
+): { reset(): void } {
+  let pointerId: number | undefined;
+
+  const reset = (): void => {
+    pointerId = undefined;
+    knob.style.transform = "translate(0, 0)";
+    getController()?.clearTouchIntent();
+  };
+
+  const update = (event: PointerEvent): void => {
+    const rectangle = control.getBoundingClientRect();
+    const originX = rectangle.left + rectangle.width / 2;
+    const originY = rectangle.top + rectangle.height / 2;
+    const rawX = event.clientX - originX;
+    const rawY = event.clientY - originY;
+    const distance = Math.hypot(rawX, rawY);
+    const maximum = Math.max(1, Math.min(rectangle.width, rectangle.height) * 0.33);
+    const scale = distance > maximum ? maximum / distance : 1;
+    knob.style.transform = "translate(" + Math.round(rawX * scale) + "px, " + Math.round(rawY * scale) + "px)";
+    getController()?.setTouchIntent(distance > 4 ? { x: rawX / distance, y: rawY / distance } : { x: 0, y: 0 });
+  };
+
+  control.addEventListener("pointerdown", (event) => {
+    if (event.pointerType === "mouse" || pointerId !== undefined) {
+      return;
+    }
+    pointerId = event.pointerId;
+    control.setPointerCapture(event.pointerId);
+    update(event);
+    event.preventDefault();
+  });
+  control.addEventListener("pointermove", (event) => {
+    if (event.pointerId === pointerId) {
+      update(event);
+      event.preventDefault();
+    }
+  });
+  control.addEventListener("pointerup", (event) => {
+    if (event.pointerId === pointerId) {
+      reset();
+    }
+  });
+  control.addEventListener("pointercancel", (event) => {
+    if (event.pointerId === pointerId) {
+      reset();
+    }
+  });
+  control.addEventListener("lostpointercapture", () => reset());
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      reset();
+    }
+  });
+  return { reset };
 }
 
 async function leaveFreeArena(): Promise<void> {
