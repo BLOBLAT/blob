@@ -13,13 +13,13 @@ lifecycle, and results.
 
 The production topology is deliberately split:
 
-\`\`\`text
+```
 blob.lat -> Cloudflare -> Vercel (apps/web)
                          -> HTTPS/WSS -> Railway (apps/game-server)
                                             -> Colyseus blob_arena
 
 Vercel /v1/* rewrite -> Railway-private platform API (services/platform-api)
-\`\`\`
+```
 
 Do not move the persistent Colyseus server to Vercel. Do not add a wallet,
 payment, token, transfer, keypair, or database dependency to the game client,
@@ -83,11 +83,11 @@ game core, or game server.
 
 Use Node \`>=22.12.0 <23\` and npm \`>=10\`.
 
-\`\`\`powershell
+```
 cd C:\Users\user\Desktop\BLOBsite
 npm ci
 npm run dev
-\`\`\`
+```
 
 \`npm run dev\` starts Vite at \`http://127.0.0.1:5173\` and the game server at
 \`http://127.0.0.1:2567\`. Open two private/separate browser sessions, unlock the
@@ -98,21 +98,21 @@ leaderboard.
 The platform API is separate and requires its documented local PostgreSQL and
 environment setup:
 
-\`\`\`powershell
+```
 npm run dev:platform
-\`\`\`
+```
 
 Never create or commit \`.env\` files. Use the checked-in \`.env.example\` files
 and \`docs/development.md\` for variable names.
 
 ## Required checks before a commit
 
-\`\`\`powershell
+```
 npm run check
 npm audit --omit=dev
 git diff --check
 git status --short
-\`\`\`
+```
 
 For a web-only change, also perform a browser check: chat accepts \`wasd WASD\`,
 clicking the arena prevents arrow-key page scroll, the Free Mode connection is
@@ -122,9 +122,9 @@ current Railway configuration.
 
 Commit a focused change, then push only when the user asks:
 
-\`\`\`powershell
+```
 git push origin main
-\`\`\`
+```
 
 Confirm Vercel marks the new deployment \`Ready\`, \`blob.lat\` returns HTTP 200,
 and the persistent game service health endpoint remains HTTP 200. Do not say a
@@ -176,11 +176,11 @@ verified. Do not change DNS or TLS mode blindly.
 
 Suggested opening prompt for a fresh Codex session:
 
-\`\`\`text
+```
 You are continuing the BLOB project in C:\Users\user\Desktop\BLOBsite.
 Read AGENTS.md and docs/codex-handover.md in full before acting. Preserve the
 server-authoritative Colyseus architecture and the working Vercel/Railway split.
 Inspect git status and current production health first. Do not disclose or
 commit credentials, do not activate Paid Mode, and do not replace working
 systems. Implement, test, commit, and push only the user-authorized scope.
-\`\`\`
+```
