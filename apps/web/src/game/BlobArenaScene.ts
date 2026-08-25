@@ -133,7 +133,14 @@ export class BlobArenaScene extends Phaser.Scene {
   private lastLocalMass = 0;
   private collectPulseUntil = 0;
   private deathPulseUntil = 0;
-  private mouseTarget: ScreenPosition | undefined;
+  /**
+   * A mouse target is stored in screen coordinates, not world coordinates.
+   * The camera follows the local BLOB, so a world point captured only once
+   * becomes stale as soon as the camera moves and makes steering appear to
+   * randomly stop. Reprojecting this point every frame keeps the target at
+   * the cursor while the server remains the only authority for movement.
+   */
+  private mouseScreenPosition: ScreenPosition | undefined;
   /** The mobile DOM joystick owns this flag; the canvas never owns touch movement. */
   private externalTouchInputActive = false;
   private worldWidth = 0;
@@ -153,7 +160,7 @@ export class BlobArenaScene extends Phaser.Scene {
    */
   setTouchIntent(x: number, y: number): void {
     this.externalTouchInputActive = true;
-    this.mouseTarget = undefined;
+    this.mouseScreenPosition = undefined;
     this.setNormalizedIntent(x, y);
     this.sendIntent();
   }
@@ -170,8 +177,6 @@ export class BlobArenaScene extends Phaser.Scene {
     this.cameras.main.setZoom(0.84);
     this.input.on("pointermove", this.onPointerMove, this);
     this.input.on("pointerdown", this.onPointerDown, this);
-    this.input.on("pointerup", this.onPointerUp, this);
-    this.input.on("pointerupoutside", this.onPointerUp, this);
     this.input.on("gameout", this.clearPointerIntent, this);
     document.addEventListener("visibilitychange", this.clearHiddenTabIntent);
     document.addEventListener("keydown", this.preventArenaArrowScroll, { passive: false });
@@ -203,8 +208,6 @@ export class BlobArenaScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.input.off("pointermove", this.onPointerMove, this);
       this.input.off("pointerdown", this.onPointerDown, this);
-      this.input.off("pointerup", this.onPointerUp, this);
-      this.input.off("pointerupoutside", this.onPointerUp, this);
       this.input.off("gameout", this.clearPointerIntent, this);
       document.removeEventListener("visibilitychange", this.clearHiddenTabIntent);
       document.removeEventListener("keydown", this.preventArenaArrowScroll);
@@ -230,11 +233,11 @@ export class BlobArenaScene extends Phaser.Scene {
           this.applyMouseIntent();
         } else if (this.isTextEntryFocused()) {
           this.intent = { x: 0, y: 0 };
-          this.mouseTarget = undefined;
+          this.mouseScreenPosition = undefined;
         }
       } else {
         this.intent = { x: 0, y: 0 };
-        this.mouseTarget = undefined;
+        this.mouseScreenPosition = undefined;
       }
       const renderedLocalPlayer = this.getRenderedPosition(localPlayer);
       this.cameras.main.centerOn(renderedLocalPlayer.x, renderedLocalPlayer.y);
@@ -303,16 +306,10 @@ export class BlobArenaScene extends Phaser.Scene {
     }
   }
 
-  private onPointerUp(pointer: Phaser.Input.Pointer): void {
-    if (!pointer.wasTouch) {
-      this.clearPointerIntent();
-    }
-  }
-
   private clearPointerIntent(): void {
     if (!this.externalTouchInputActive && !this.hasKeyboardInput()) {
       this.intent = { x: 0, y: 0 };
-      this.mouseTarget = undefined;
+      this.mouseScreenPosition = undefined;
       this.sendIntent();
     }
   }
@@ -320,7 +317,7 @@ export class BlobArenaScene extends Phaser.Scene {
   private clearHiddenTabIntent(): void {
     if (document.hidden) {
       this.externalTouchInputActive = false;
-      this.mouseTarget = undefined;
+      this.mouseScreenPosition = undefined;
       this.intent = { x: 0, y: 0 };
       this.sendIntent();
     }
@@ -332,19 +329,23 @@ export class BlobArenaScene extends Phaser.Scene {
       this.intent = { x: 0, y: 0 };
       return;
     }
-    this.mouseTarget = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+    this.mouseScreenPosition = { x: pointer.x, y: pointer.y };
     this.applyMouseIntent();
   }
 
   private applyMouseIntent(): void {
     const localPlayer = this.getLocalPlayer();
-    if (!localPlayer?.alive || !this.mouseTarget) {
+    if (!localPlayer?.alive || !this.mouseScreenPosition) {
       this.intent = { x: 0, y: 0 };
       return;
     }
+    const mouseTarget = this.cameras.main.getWorldPoint(
+      this.mouseScreenPosition.x,
+      this.mouseScreenPosition.y,
+    );
     const renderedPlayer = this.getRenderedPosition(localPlayer);
-    const deltaX = this.mouseTarget.x - renderedPlayer.x;
-    const deltaY = this.mouseTarget.y - renderedPlayer.y;
+    const deltaX = mouseTarget.x - renderedPlayer.x;
+    const deltaY = mouseTarget.y - renderedPlayer.y;
     if (Math.hypot(deltaX, deltaY) <= MOUSE_TARGET_STOP_DISTANCE) {
       this.intent = { x: 0, y: 0 };
       return;
@@ -372,7 +373,7 @@ export class BlobArenaScene extends Phaser.Scene {
     if (x === 0 && y === 0) {
       return;
     }
-    this.mouseTarget = undefined;
+    this.mouseScreenPosition = undefined;
     this.setIntentFromDelta(x, y);
   }
 
