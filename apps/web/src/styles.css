@@ -113,3 +113,12 @@ footer { display: flex; justify-content: space-between; gap: 20px; padding-block
 @media (max-width: 680px) { .arena-chat { margin-top: 12px; padding: 16px; border-radius: 14px; }.arena-chat-heading { align-items: start; flex-direction: column; gap: 6px; }.arena-chat-status { text-align: left; }.arena-chat-messages { min-height: 150px; max-height: 230px; }.arena-chat-messages li { grid-template-columns: 1fr; gap: 3px; }.arena-chat-form { grid-template-columns: 1fr; }.arena-chat-form .play-button { justify-self: start; } }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; } }
+
+.game-joystick-hand { display: none; }
+
+@media (max-width: 680px), (pointer: coarse) {
+  .game-stage { min-height: clamp(390px, 58svh, 540px); }
+  .game-joystick-hand { position: absolute; z-index: 12; bottom: 12px; left: 50%; display: inline-flex; align-items: center; gap: 6px; transform: translateX(-50%); border: 1px solid rgba(255,247,242,.32); border-radius: 999px; padding: 8px 11px; color: #fff7f2; background: rgba(20,7,22,.86); box-shadow: 0 7px 22px rgba(0,0,0,.28); cursor: pointer; font: inherit; font-size: .55rem; font-weight: 900; letter-spacing: .065em; white-space: nowrap; }
+  .game-joystick-hand:hover, .game-joystick-hand:focus-visible { border-color: #ff668e; color: #ff668e; outline: none; }
+  .game-joystick-hand > span:first-child { color: #21c7a8; font-size: .85rem; }
+}

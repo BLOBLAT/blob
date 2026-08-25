@@ -6,6 +6,7 @@ import { setProfileGameName } from "./identity.js";
 import { type BlobProfile, PlatformApiError, resolvePlatformApi } from "./platformApi.js";
 import { type AvailableWallet, connectWalletAndCreateProfile, watchAvailableSolanaWallets } from "./wallet.js";
 import { startLiveMetrics, type LiveMetricsController, type LiveMetricsSnapshot } from "./liveMetrics.js";
+import type { TouchJoystickHand } from "./game/arenaPresentation.js";
 
 const appRoot = document.querySelector<HTMLDivElement>("#app");
 
@@ -14,7 +15,12 @@ if (!appRoot) {
 }
 const app: HTMLDivElement = appRoot;
 
-let freeGameController: { leave(): Promise<void>; sendChat(text: string): void } | undefined;
+let freeGameController: {
+  leave(): Promise<void>;
+  sendChat(text: string): void;
+  setTouchHand(hand: TouchJoystickHand): void;
+  getTouchHand(): TouchJoystickHand;
+} | undefined;
 let openingFreeArena = false;
 const platformApi = resolvePlatformApi();
 let profile: BlobProfile | null = null;
@@ -415,6 +421,9 @@ async function openFreeArena(): Promise<void> {
   arenaShell.innerHTML = `
     <div class="game-stage">
       <div class="game-canvas" id="game-canvas" aria-label="Live BLOB arena"></div>
+      <button class="game-joystick-hand" id="game-joystick-hand" type="button" aria-pressed="false">
+        <span aria-hidden="true">⇄</span><span>MOVE JOYSTICK LEFT</span>
+      </button>
       <div class="game-hud" aria-label="Your current arena status">
         <div><span>MASS</span><strong id="game-mass">0</strong></div>
         <div><span>RANK</span><strong id="game-rank">—</strong></div>
@@ -489,6 +498,15 @@ async function openFreeArena(): Promise<void> {
   const chatStatus = requiredElement("#arena-chat-status");
   const chatForm = requiredElement<HTMLFormElement>("#arena-chat-form");
   const chatInput = requiredElement<HTMLInputElement>("#arena-chat-input");
+  const joystickHandButton = requiredElement<HTMLButtonElement>("#game-joystick-hand");
+  let touchHand = getPreferredTouchHand();
+  renderTouchHandButton(joystickHandButton, touchHand);
+  joystickHandButton.addEventListener("click", () => {
+    touchHand = touchHand === "right" ? "left" : "right";
+    savePreferredTouchHand(touchHand);
+    freeGameController?.setTouchHand(touchHand);
+    renderTouchHandButton(joystickHandButton, touchHand);
+  });
   const seenChatMessageIds = new Set<string>();
   requiredElement<HTMLButtonElement>("#leave-game").addEventListener("click", () => void leaveFreeArena());
   chatForm.addEventListener("submit", (event) => {
@@ -511,6 +529,7 @@ async function openFreeArena(): Promise<void> {
     const { startFreeGame } = await import("./game/playFree.js");
     freeGameController = await startFreeGame({
       canvasHost: requiredElement("#game-canvas"),
+      initialTouchHand: touchHand,
       onConnectionStatus(message) {
         connection.textContent = message;
         chatStatus.textContent = message.startsWith("Connected") ? "Connected to this arena." : "Chat connects with the arena.";
@@ -559,6 +578,31 @@ async function openFreeArena(): Promise<void> {
   } finally {
     openingFreeArena = false;
   }
+}
+
+const TOUCH_HAND_STORAGE_KEY = "blob:touch-joystick-hand";
+
+function getPreferredTouchHand(): TouchJoystickHand {
+  try {
+    return window.localStorage.getItem(TOUCH_HAND_STORAGE_KEY) === "left" ? "left" : "right";
+  } catch {
+    return "right";
+  }
+}
+
+function savePreferredTouchHand(hand: TouchJoystickHand): void {
+  try {
+    window.localStorage.setItem(TOUCH_HAND_STORAGE_KEY, hand);
+  } catch {
+    // A blocked browser storage API must not prevent touch controls from working.
+  }
+}
+
+function renderTouchHandButton(button: HTMLButtonElement, hand: TouchJoystickHand): void {
+  const movesToLeft = hand === "right";
+  button.setAttribute("aria-pressed", String(!movesToLeft));
+  button.setAttribute("aria-label", movesToLeft ? "Move joystick to the left hand" : "Move joystick to the right hand");
+  button.lastElementChild!.textContent = movesToLeft ? "MOVE JOYSTICK LEFT" : "MOVE JOYSTICK RIGHT";
 }
 
 async function leaveFreeArena(): Promise<void> {

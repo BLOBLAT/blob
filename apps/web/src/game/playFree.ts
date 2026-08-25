@@ -2,6 +2,7 @@ import { type Room } from "@colyseus/sdk";
 import { ARENA_ROOM_NAME, ServerEvent } from "@blob/protocol";
 import Phaser from "phaser";
 import { ArenaUiState, BlobArenaScene } from "./BlobArenaScene.js";
+import type { TouchJoystickHand } from "./arenaPresentation.js";
 import { createGameClient } from "./gameClient.js";
 import { getGamePlayerName } from "../identity.js";
 import { GameServerConfigurationError, resolveGameServerUrl } from "./serverUrl.js";
@@ -9,6 +10,8 @@ import { GameServerConfigurationError, resolveGameServerUrl } from "./serverUrl.
 export interface FreeGameController {
   leave(): Promise<void>;
   sendChat(text: string): void;
+  setTouchHand(hand: TouchJoystickHand): void;
+  getTouchHand(): TouchJoystickHand;
 }
 
 export interface StartFreeGameOptions {
@@ -18,6 +21,7 @@ export interface StartFreeGameOptions {
   getProfileTicket?(): Promise<string | undefined>;
   onChatMessage?(message: ArenaChatMessage): void;
   onChatRejected?(code: string): void;
+  initialTouchHand?: TouchJoystickHand;
 }
 
 export interface ArenaChatMessage {
@@ -34,6 +38,8 @@ export async function startFreeGame(options: StartFreeGameOptions): Promise<Free
   let reconnectTimer: number | undefined;
   let activeRoom: Room | undefined;
   let game: Phaser.Game | undefined;
+  let arenaScene: BlobArenaScene | undefined;
+  let touchHand: TouchJoystickHand = options.initialTouchHand ?? "right";
 
   const connect = async (isReconnect = false): Promise<void> => {
     options.onConnectionStatus(isReconnect
@@ -68,7 +74,9 @@ export async function startFreeGame(options: StartFreeGameOptions): Promise<Free
       options.onChatRejected?.(typeof event.code === "string" ? event.code : "CHAT_INVALID");
     });
     game?.destroy(true);
-    game = createPhaserGame(options.canvasHost, room, options.onUiState);
+    const createdGame = createPhaserGame(options.canvasHost, room, options.onUiState, touchHand);
+    game = createdGame.game;
+    arenaScene = createdGame.scene;
     reconnectAttempts = 0;
 
     room.onLeave(() => {
@@ -86,6 +94,7 @@ export async function startFreeGame(options: StartFreeGameOptions): Promise<Free
 
     game?.destroy(true);
     game = undefined;
+    arenaScene = undefined;
     activeRoom = undefined;
     reconnectAttempts += 1;
     if (reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
@@ -112,6 +121,7 @@ export async function startFreeGame(options: StartFreeGameOptions): Promise<Free
         window.clearTimeout(reconnectTimer);
       }
       game?.destroy(true);
+      arenaScene = undefined;
       await activeRoom?.leave();
     },
     sendChat(text: string): void {
@@ -119,6 +129,13 @@ export async function startFreeGame(options: StartFreeGameOptions): Promise<Free
         return;
       }
       activeRoom.send("chat_send", { text });
+    },
+    setTouchHand(hand: TouchJoystickHand): void {
+      touchHand = hand;
+      arenaScene?.setTouchHand(hand);
+    },
+    getTouchHand(): TouchJoystickHand {
+      return arenaScene?.getTouchHand() ?? touchHand;
     }
   };
 }
@@ -133,20 +150,29 @@ export class GameServerHealthError extends Error {
   }
 }
 
-function createPhaserGame(canvasHost: HTMLElement, room: Room, onUiState: (state: ArenaUiState) => void): Phaser.Game {
-  return new Phaser.Game({
+function createPhaserGame(
+  canvasHost: HTMLElement,
+  room: Room,
+  onUiState: (state: ArenaUiState) => void,
+  initialTouchHand: TouchJoystickHand | undefined,
+): { game: Phaser.Game; scene: BlobArenaScene } {
+  const scene = new BlobArenaScene(room, onUiState, initialTouchHand);
+  return {
+    scene,
+    game: new Phaser.Game({
     type: Phaser.AUTO,
     parent: canvasHost,
     backgroundColor: "#160717",
     width: Math.max(320, canvasHost.clientWidth),
     height: Math.max(320, canvasHost.clientHeight),
-    scene: [new BlobArenaScene(room, onUiState)],
+    scene: [scene],
     scale: {
       mode: Phaser.Scale.RESIZE,
       autoCenter: Phaser.Scale.CENTER_BOTH
     },
     audio: { noAudio: true }
-  });
+    }),
+  };
 }
 
 async function verifyGameServerHealth(gameServerUrl: string): Promise<void> {

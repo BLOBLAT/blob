@@ -1,5 +1,13 @@
 import type { Room } from "@colyseus/sdk";
 import Phaser from "phaser";
+import {
+  type TouchJoystickHand,
+  TOUCH_JOYSTICK_RADIUS,
+  canStartTouchJoystick,
+  renderInterpolationAlpha,
+  targetArenaZoom,
+  touchJoystickAnchor,
+} from "./arenaPresentation.js";
 
 export interface NetworkPlayer {
   id: string;
@@ -102,8 +110,16 @@ export interface ArenaUiState {
 }
 
 const INPUT_SEND_INTERVAL_MS = 50;
-const POINTER_INTENT_TIMEOUT_MS = 140;
-const TOUCH_JOYSTICK_RADIUS = 66;
+const RENDER_TELEPORT_DISTANCE = 260;
+const MOUSE_TARGET_STOP_DISTANCE = 8;
+
+interface RenderedPlayerPosition {
+  x: number;
+  y: number;
+  targetX: number;
+  targetY: number;
+  alive: boolean;
+}
 
 export class BlobArenaScene extends Phaser.Scene {
   private graphics!: Phaser.GameObjects.Graphics;
@@ -115,20 +131,38 @@ export class BlobArenaScene extends Phaser.Scene {
   private lastLocalMass = 0;
   private collectPulseUntil = 0;
   private deathPulseUntil = 0;
-  private pointerIntentUntil = 0;
+  private mouseTarget: ScreenPosition | undefined;
   private activeTouchId: number | null = null;
   private touchOriginX = 0;
   private touchOriginY = 0;
   private touchCurrentX = 0;
   private touchCurrentY = 0;
+  private touchHand: TouchJoystickHand = "right";
   private worldWidth = 0;
   private worldHeight = 0;
+  private readonly renderedPlayerPositions = new Map<string, RenderedPlayerPosition>();
 
   constructor(
     private readonly room: Room,
     private readonly onUiState: (state: ArenaUiState) => void,
+    initialTouchHand: TouchJoystickHand = "right",
   ) {
     super("blob-arena");
+    this.touchHand = initialTouchHand;
+  }
+
+  setTouchHand(hand: TouchJoystickHand): void {
+    if (this.touchHand === hand) {
+      return;
+    }
+    this.touchHand = hand;
+    this.activeTouchId = null;
+    this.intent = { x: 0, y: 0 };
+    this.sendIntent();
+  }
+
+  getTouchHand(): TouchJoystickHand {
+    return this.touchHand;
   }
 
   create(): void {
@@ -141,6 +175,7 @@ export class BlobArenaScene extends Phaser.Scene {
     this.input.on("pointerup", this.onPointerUp, this);
     this.input.on("pointerupoutside", this.onPointerUp, this);
     this.input.on("gameout", this.clearPointerIntent, this);
+    document.addEventListener("visibilitychange", this.clearHiddenTabIntent);
     this.keyboard = this.input.keyboard?.addKeys({
       up: [Phaser.Input.Keyboard.KeyCodes.W, Phaser.Input.Keyboard.KeyCodes.UP],
       down: [Phaser.Input.Keyboard.KeyCodes.S, Phaser.Input.Keyboard.KeyCodes.DOWN],
@@ -158,30 +193,35 @@ export class BlobArenaScene extends Phaser.Scene {
       this.input.off("pointerup", this.onPointerUp, this);
       this.input.off("pointerupoutside", this.onPointerUp, this);
       this.input.off("gameout", this.clearPointerIntent, this);
+      document.removeEventListener("visibilitychange", this.clearHiddenTabIntent);
       this.sendIntentEvent?.remove();
       this.room.send("input", { x: 0, y: 0 });
     });
   }
 
-  override update(time: number): void {
+  override update(time: number, delta: number): void {
     const state = this.room.state as unknown as NetworkArenaState | undefined;
     if (!state?.players || !state.food) {
       return;
     }
 
     this.updateWorldBounds(state);
+    this.syncRenderedPlayerPositions(state, delta);
     const localPlayer = state.players.get(this.room.sessionId);
     if (localPlayer) {
       if (localPlayer.alive && state.phase === "ACTIVE") {
-        this.applyKeyboardIntent();
-        if (!this.hasKeyboardInput() && this.activeTouchId === null && time >= this.pointerIntentUntil) {
-          this.intent = { x: 0, y: 0 };
+        if (this.hasKeyboardInput()) {
+          this.applyKeyboardIntent();
+        } else if (this.activeTouchId === null) {
+          this.applyMouseIntent();
         }
       } else {
         this.intent = { x: 0, y: 0 };
+        this.mouseTarget = undefined;
       }
-      this.cameras.main.centerOn(localPlayer.x, localPlayer.y);
-      const targetZoom = Phaser.Math.Clamp(0.96 - Math.sqrt(Math.max(0, localPlayer.mass)) * 0.011, 0.52, 0.88);
+      const renderedLocalPlayer = this.getRenderedPosition(localPlayer);
+      this.cameras.main.centerOn(renderedLocalPlayer.x, renderedLocalPlayer.y);
+      const targetZoom = targetArenaZoom(localPlayer.mass, this.isCompactViewport());
       this.cameras.main.setZoom(Phaser.Math.Linear(this.cameras.main.zoom, targetZoom, 0.08));
       if (localPlayer.alive && localPlayer.mass > this.lastLocalMass) {
         this.collectPulseUntil = time + 180;
@@ -234,15 +274,22 @@ export class BlobArenaScene extends Phaser.Scene {
 
   private onPointerDown(pointer: Phaser.Input.Pointer): void {
     if (pointer.wasTouch) {
+      const anchor = this.getTouchJoystickAnchor();
+      if (!canStartTouchJoystick(pointer, anchor)) {
+        return;
+      }
       this.activeTouchId = pointer.id;
-      this.touchOriginX = pointer.x;
-      this.touchOriginY = pointer.y;
+      this.mouseTarget = undefined;
+      this.touchOriginX = anchor.x;
+      this.touchOriginY = anchor.y;
       this.touchCurrentX = pointer.x;
       this.touchCurrentY = pointer.y;
       this.updateTouchIntent(pointer);
+      this.sendIntent();
       return;
     }
     this.updateMouseIntent(pointer);
+    this.sendIntent();
   }
 
   private onPointerMove(pointer: Phaser.Input.Pointer): void {
@@ -259,6 +306,7 @@ export class BlobArenaScene extends Phaser.Scene {
     if (this.activeTouchId === pointer.id) {
       this.activeTouchId = null;
       this.intent = { x: 0, y: 0 };
+      this.sendIntent();
       return;
     }
     if (!pointer.wasTouch) {
@@ -269,6 +317,17 @@ export class BlobArenaScene extends Phaser.Scene {
   private clearPointerIntent(): void {
     if (this.activeTouchId === null && !this.hasKeyboardInput()) {
       this.intent = { x: 0, y: 0 };
+      this.mouseTarget = undefined;
+      this.sendIntent();
+    }
+  }
+
+  private clearHiddenTabIntent(): void {
+    if (document.hidden) {
+      this.activeTouchId = null;
+      this.mouseTarget = undefined;
+      this.intent = { x: 0, y: 0 };
+      this.sendIntent();
     }
   }
 
@@ -278,10 +337,24 @@ export class BlobArenaScene extends Phaser.Scene {
       this.intent = { x: 0, y: 0 };
       return;
     }
-    const deltaX = pointer.worldX - localPlayer.x;
-    const deltaY = pointer.worldY - localPlayer.y;
+    this.mouseTarget = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+    this.applyMouseIntent();
+  }
+
+  private applyMouseIntent(): void {
+    const localPlayer = this.getLocalPlayer();
+    if (!localPlayer?.alive || !this.mouseTarget) {
+      this.intent = { x: 0, y: 0 };
+      return;
+    }
+    const renderedPlayer = this.getRenderedPosition(localPlayer);
+    const deltaX = this.mouseTarget.x - renderedPlayer.x;
+    const deltaY = this.mouseTarget.y - renderedPlayer.y;
+    if (Math.hypot(deltaX, deltaY) <= MOUSE_TARGET_STOP_DISTANCE) {
+      this.intent = { x: 0, y: 0 };
+      return;
+    }
     this.setIntentFromDelta(deltaX, deltaY);
-    this.pointerIntentUntil = this.time.now + POINTER_INTENT_TIMEOUT_MS;
   }
 
   private updateTouchIntent(pointer: Phaser.Input.Pointer): void {
@@ -306,6 +379,7 @@ export class BlobArenaScene extends Phaser.Scene {
     if (x === 0 && y === 0) {
       return;
     }
+    this.mouseTarget = undefined;
     this.setIntentFromDelta(x, y);
   }
 
@@ -326,6 +400,50 @@ export class BlobArenaScene extends Phaser.Scene {
   private getLocalPlayer(): NetworkPlayer | undefined {
     const state = this.room.state as unknown as NetworkArenaState | undefined;
     return state?.players?.get(this.room.sessionId);
+  }
+
+  private syncRenderedPlayerPositions(state: NetworkArenaState, delta: number): void {
+    const interpolationAlpha = renderInterpolationAlpha(delta);
+    const presentPlayerIds = new Set<string>();
+    state.players.forEach((player) => {
+      presentPlayerIds.add(player.id);
+      const previous = this.renderedPlayerPositions.get(player.id);
+      const distanceToTarget = previous ? Math.hypot(player.x - previous.targetX, player.y - previous.targetY) : 0;
+      const shouldSnap = !previous || !player.alive || previous.alive !== player.alive || distanceToTarget > RENDER_TELEPORT_DISTANCE;
+      if (shouldSnap) {
+        this.renderedPlayerPositions.set(player.id, {
+          x: player.x,
+          y: player.y,
+          targetX: player.x,
+          targetY: player.y,
+          alive: player.alive,
+        });
+        return;
+      }
+      previous.targetX = player.x;
+      previous.targetY = player.y;
+      previous.alive = player.alive;
+      previous.x = Phaser.Math.Linear(previous.x, previous.targetX, interpolationAlpha);
+      previous.y = Phaser.Math.Linear(previous.y, previous.targetY, interpolationAlpha);
+    });
+    for (const playerId of this.renderedPlayerPositions.keys()) {
+      if (!presentPlayerIds.has(playerId)) {
+        this.renderedPlayerPositions.delete(playerId);
+      }
+    }
+  }
+
+  private getRenderedPosition(player: NetworkPlayer): ScreenPosition {
+    const rendered = this.renderedPlayerPositions.get(player.id);
+    return rendered ? { x: rendered.x, y: rendered.y } : { x: player.x, y: player.y };
+  }
+
+  private getTouchJoystickAnchor(): ScreenPosition {
+    return touchJoystickAnchor(this.scale.width, this.scale.height, this.touchHand);
+  }
+
+  private isCompactViewport(): boolean {
+    return this.scale.width <= 680 || (window.matchMedia?.("(pointer: coarse)").matches ?? false);
   }
 
   private drawArena(state: NetworkArenaState, localPlayerId: string | undefined, time: number): void {
@@ -358,65 +476,80 @@ export class BlobArenaScene extends Phaser.Scene {
       this.graphics.fillCircle(pellet.x - 2, pellet.y - 2 + bob, 2);
     });
     state.players.forEach((player) => {
-      this.drawPlayer(player, player.id === localPlayerId, state.serverTime, time);
+      this.drawPlayer(player, player.id === localPlayerId, state.serverTime, time, this.getRenderedPosition(player));
     });
   }
 
-  private drawPlayer(player: NetworkPlayer, isLocalPlayer: boolean, serverTime: number, time: number): void {
+  private drawPlayer(
+    player: NetworkPlayer,
+    isLocalPlayer: boolean,
+    serverTime: number,
+    time: number,
+    position: ScreenPosition,
+  ): void {
+    const { x, y } = position;
     const radius = Math.max(18, Math.sqrt(Math.max(0, player.mass)) * 3.2);
     const color = colorForPlayer(player.id);
-    const wobble = player.alive ? Math.sin((time + player.x + player.y) / 145) * Math.min(2.2, radius * 0.05) : 0;
+    const wobble = player.alive ? Math.sin((time + x + y) / 145) * Math.min(2.2, radius * 0.05) : 0;
     this.graphics.fillStyle(0x000000, 0.18);
-    this.graphics.fillCircle(player.x + 4, player.y + radius * 0.25, radius * 1.02);
+    this.graphics.fillCircle(x + 4, y + radius * 0.25, radius * 1.02);
     this.graphics.fillStyle(color, player.alive ? 1 : 0.2);
-    this.graphics.fillCircle(player.x, player.y + wobble, radius);
+    this.graphics.fillCircle(x, y + wobble, radius);
     this.graphics.fillStyle(0xffffff, 0.16);
-    this.graphics.fillCircle(player.x - radius * 0.28, player.y - radius * 0.3 + wobble, radius * 0.24);
+    this.graphics.fillCircle(x - radius * 0.28, y - radius * 0.3 + wobble, radius * 0.24);
     if (isLocalPlayer) {
       this.graphics.lineStyle(3, 0xfff7f2, 0.95);
-      this.graphics.strokeCircle(player.x, player.y + wobble, radius + 5);
+      this.graphics.strokeCircle(x, y + wobble, radius + 5);
       if (time < this.collectPulseUntil) {
         this.graphics.lineStyle(3, 0xffd34f, (this.collectPulseUntil - time) / 180);
-        this.graphics.strokeCircle(player.x, player.y + wobble, radius + 12);
+        this.graphics.strokeCircle(x, y + wobble, radius + 12);
       }
       if (time < this.deathPulseUntil) {
         this.graphics.lineStyle(4, 0xff668e, (this.deathPulseUntil - time) / 320);
-        this.graphics.strokeCircle(player.x, player.y + wobble, radius + 18);
+        this.graphics.strokeCircle(x, y + wobble, radius + 18);
       }
     } else if (player.isBot) {
       this.graphics.lineStyle(2, 0x8e6bff, 0.95);
-      this.graphics.strokeCircle(player.x, player.y + wobble, radius + 3);
+      this.graphics.strokeCircle(x, y + wobble, radius + 3);
       this.graphics.fillStyle(0xfff7f2, 0.85);
-      this.graphics.fillCircle(player.x, player.y - radius * 0.62 + wobble, Math.max(3, radius * 0.1));
+      this.graphics.fillCircle(x, y - radius * 0.62 + wobble, Math.max(3, radius * 0.1));
     } else if (player.spawnProtectedUntil > serverTime) {
       this.graphics.lineStyle(2, 0xffd34f, 0.95);
-      this.graphics.strokeCircle(player.x, player.y + wobble, radius + 3);
+      this.graphics.strokeCircle(x, y + wobble, radius + 3);
     }
     if (!player.alive) {
       return;
     }
     this.graphics.fillStyle(0x260719, 1);
-    this.graphics.fillCircle(player.x - radius * 0.22, player.y - radius * 0.02 + wobble, Math.max(3, radius * 0.1));
-    this.graphics.fillCircle(player.x + radius * 0.22, player.y - radius * 0.02 + wobble, Math.max(3, radius * 0.1));
+    this.graphics.fillCircle(x - radius * 0.22, y - radius * 0.02 + wobble, Math.max(3, radius * 0.1));
+    this.graphics.fillCircle(x + radius * 0.22, y - radius * 0.02 + wobble, Math.max(3, radius * 0.1));
     this.graphics.fillStyle(0xfff7f2, 0.78);
-    this.graphics.fillCircle(player.x - radius * 0.25, player.y - radius * 0.07 + wobble, Math.max(1.2, radius * 0.033));
-    this.graphics.fillCircle(player.x + radius * 0.19, player.y - radius * 0.07 + wobble, Math.max(1.2, radius * 0.033));
+    this.graphics.fillCircle(x - radius * 0.25, y - radius * 0.07 + wobble, Math.max(1.2, radius * 0.033));
+    this.graphics.fillCircle(x + radius * 0.19, y - radius * 0.07 + wobble, Math.max(1.2, radius * 0.033));
   }
 
   private drawTouchJoystick(): void {
     this.touchGraphics.clear();
-    if (this.activeTouchId === null) {
+    if (!this.isCompactViewport()) {
       return;
     }
-    const deltaX = this.touchCurrentX - this.touchOriginX;
-    const deltaY = this.touchCurrentY - this.touchOriginY;
+    const anchor = this.getTouchJoystickAnchor();
+    const deltaX = this.activeTouchId === null ? 0 : this.touchCurrentX - this.touchOriginX;
+    const deltaY = this.activeTouchId === null ? 0 : this.touchCurrentY - this.touchOriginY;
     const distance = Math.hypot(deltaX, deltaY);
     const scale = distance > TOUCH_JOYSTICK_RADIUS ? TOUCH_JOYSTICK_RADIUS / distance : 1;
-    this.touchGraphics.lineStyle(2, 0xfff7f2, 0.3);
-    this.touchGraphics.strokeCircle(this.touchOriginX, this.touchOriginY, TOUCH_JOYSTICK_RADIUS);
-    this.touchGraphics.fillStyle(0xf42b68, 0.5);
-    this.touchGraphics.fillCircle(this.touchOriginX + deltaX * scale, this.touchOriginY + deltaY * scale, 23);
+    this.touchGraphics.fillStyle(0x160717, 0.35);
+    this.touchGraphics.fillCircle(anchor.x, anchor.y, TOUCH_JOYSTICK_RADIUS);
+    this.touchGraphics.lineStyle(2, 0xfff7f2, this.activeTouchId === null ? 0.2 : 0.46);
+    this.touchGraphics.strokeCircle(anchor.x, anchor.y, TOUCH_JOYSTICK_RADIUS);
+    this.touchGraphics.fillStyle(0xf42b68, this.activeTouchId === null ? 0.28 : 0.7);
+    this.touchGraphics.fillCircle(anchor.x + deltaX * scale, anchor.y + deltaY * scale, 23);
   }
+}
+
+interface ScreenPosition {
+  x: number;
+  y: number;
 }
 
 function toArray<T>(collection: NetworkCollection<T>): T[] {

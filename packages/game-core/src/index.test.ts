@@ -128,6 +128,21 @@ describe("authoritative round lifecycle", () => {
     expect(player(simulation, "one").x).toBe(moving);
   });
 
+  it("applies an explicit stop without waiting for the movement rate limit", () => {
+    const simulation = new ArenaSimulation({ ...testConfig, foodMass: 1, inputTimeoutMs: 1_000 });
+    simulation.addPlayer("one", "Blob One", 0);
+    simulation.addPlayer("two", "Blob Two", 0);
+    const now = startActive(simulation) + 50;
+
+    expect(simulation.setInput("one", { x: 1, y: 0 }, now)).toBe(true);
+    simulation.advance(now);
+    const moving = player(simulation, "one").x;
+
+    expect(simulation.setInput("one", { x: 0, y: 0 }, now + 1)).toBe(true);
+    simulation.advance(now + 51);
+    expect(player(simulation, "one").x).toBe(moving);
+  });
+
   it("admits a Free Mode player into an active round with a safe protected spawn", () => {
     const simulation = new ArenaSimulation({ ...testConfig, foodMass: 1 });
     simulation.addPlayer("one", "Blob One", 0);

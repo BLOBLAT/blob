@@ -81,7 +81,10 @@ export const DEFAULT_ARENA_CONFIG: ArenaConfig = {
   spawnProtectionMs: 1_500,
   safeSpawnDistance: 110,
   inputRateLimitPerSecond: 25,
-  inputTimeoutMs: 350,
+  // Explicit stop inputs are applied immediately. This longer fallback only
+  // handles a lost client/tab without making normal network jitter feel like
+  // a player released their controls.
+  inputTimeoutMs: 650,
   freeModeBotsEnabled: true,
   freeModeBotMinCount: 3,
   freeModeBotMaxCount: 5,
@@ -296,11 +299,14 @@ export class ArenaSimulation {
     if (!Number.isFinite(input.x) || !Number.isFinite(input.y) || Math.abs(input.x) > 1 || Math.abs(input.y) > 1) {
       return false;
     }
-    if (now - player.lastInputAt < 1_000 / this.config.inputRateLimitPerSecond) {
+    const length = inputLength(input);
+    // A release must never be stuck behind the movement rate limiter. The
+    // room still has a bounded message rate, and this makes every valid zero
+    // intent take effect on the next authoritative tick.
+    if (length > 0 && now - player.lastInputAt < 1_000 / this.config.inputRateLimitPerSecond) {
       return false;
     }
 
-    const length = inputLength(input);
     player.input = length > 1 ? { x: input.x / length, y: input.y / length } : cloneInput(input);
     player.lastInputAt = now;
     return true;

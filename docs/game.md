@@ -50,11 +50,11 @@ At 00:00 the server stops progression, freezes a single immutable final result, 
 
 ## Movement and camera
 
-Clients send only normalized direction intent. The server validates finite values in [-1, 1], rate-limits input, uses only the most recent valid input, clamps position to the server-owned world bounds, and treats input as zero after a short timeout. A stopped mouse, released touch, stale tab, or temporary network interruption therefore cannot produce indefinite drift.
+Clients send only normalized direction intent. The server validates finite values in [-1, 1], rate-limits movement updates, applies a valid explicit zero intent immediately, clamps position to the server-owned world bounds, and treats input as zero after a short fallback timeout. A stopped mouse, released touch, stale tab, or temporary network interruption therefore cannot produce indefinite drift without a brief packet hiccup looking like a released control.
 
-Desktop supports mouse steering with WASD/arrow fallback. Phones use a touch joystick: releasing the finger sends zero intent and the canvas disables browser touch scrolling while steering.
+Desktop supports mouse steering with WASD/arrow fallback. Phones use a fixed, thumb-reachable touch joystick: releasing the finger sends zero intent, the player may switch its lower-corner side with the in-game hand button, and the browser remembers that non-sensitive presentation preference locally. The canvas disables browser touch scrolling while steering.
 
-The authoritative world is a bounded rectangle. Its dimensions and food target are calculated deterministically from the round's player count; two players do not receive the same oversized space as a full 32-player round. The client receives those dimensions, sets matching Phaser camera bounds, and follows the local BLOB.
+The authoritative world is a bounded rectangle. Its dimensions and food target are calculated deterministically from the round's player count; two players do not receive the same oversized space as a full 32-player round. The client receives those dimensions, sets matching Phaser camera bounds, smoothly interpolates synchronized positions for rendering only, follows the local BLOB, and uses a slightly wider camera on compact touch viewports. Interpolation never changes authoritative state or sends a position to the server.
 
 ## Growth, combat, and respawn
 
