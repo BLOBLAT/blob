@@ -57,7 +57,8 @@ export class SolanaPaymentVerifier {
     const matchingSources = instructions
       .map((instruction) => getExpectedUsdcTransferSource(instruction, input, expectedAmount))
       .filter((source): source is string => source !== null);
-    if (matchingSources.length !== 1 || !isSourceTokenAccountOwnedBySender(transaction, matchingSources[0], input)) {
+    const matchingSource = matchingSources.length === 1 ? matchingSources[0] ?? null : null;
+    if (matchingSource === null || !isSourceTokenAccountOwnedBySender(transaction, matchingSource, input)) {
       throw new SolanaPaymentVerificationError("PAYMENT_TRANSFER_INVALID", "The finalized transaction does not contain the expected USDC transfer.");
     }
     return { signature: input.signature, slot, finalizedAt: new Date(finalizedAtMs) };

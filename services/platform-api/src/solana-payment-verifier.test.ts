@@ -29,7 +29,7 @@ describe("Solana USDC verification", () => {
 
   it("rejects a delegated or unproven source token account even when the claimed wallet signed", async () => {
     const delegatedAuthority = createTransaction();
-    delegatedAuthority.meta.preTokenBalances[0].owner = DESTINATION;
+    delegatedAuthority.meta.preTokenBalances = [{ accountIndex: 1, mint: USDC_MINT, owner: DESTINATION }];
     await expect(createVerifier(delegatedAuthority).verifyFinalizedUsdcTransfer(input()))
       .rejects.toMatchObject({ code: "PAYMENT_TRANSFER_INVALID" });
 
