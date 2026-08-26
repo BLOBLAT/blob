@@ -66,12 +66,9 @@ describe("BLOB arena room", () => {
     })]).toEqual(["https://blob.lat", "https://www.blob.lat"]);
   });
 
-  it("reports privacy-minimal live visitors and rejects malformed presence", async () => {
-    const before = await fetch(`${endpoint}/metrics`, {
-      headers: { Origin: "http://127.0.0.1:5173" }
-    });
-    expect(before.status).toBe(200);
-    await expect(before.json()).resolves.toEqual({ liveVisitors: 0, arenaPlayers: 0 });
+  it("reports privacy-minimal live visitors through the origin-protected endpoint", async () => {
+    const retiredMetricsEndpoint = await fetch(`${endpoint}/metrics`);
+    expect(retiredMetricsEndpoint.status).toBe(404);
 
     const invalidPresence = await fetch(`${endpoint}/presence`, {
       method: "POST",
@@ -206,7 +203,12 @@ function delay(milliseconds: number): Promise<void> {
 }
 
 async function getLiveMetrics(): Promise<{ liveVisitors: number; arenaPlayers: number }> {
-  const response = await fetch(`${endpoint}/metrics`);
+  const response = await fetch(`${endpoint}/presence`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Origin: "http://127.0.0.1:5173" },
+    body: JSON.stringify({ visitorId: "server-test-live-metrics" })
+  });
+  expect(response.status).toBe(200);
   return response.json() as Promise<{ liveVisitors: number; arenaPlayers: number }>;
 }
 

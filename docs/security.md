@@ -36,8 +36,9 @@ is possible, or that the paid USDC system is ready to launch.
   and limits Free Mode to the single canonical arena rather than creating
   unlimited simulation rooms during a join flood.
 - HTTP header, request, keep-alive, and per-socket request limits bound
-  incomplete or long-lived HTTP requests. `/health` and `/metrics` are never
-  cached.
+  incomplete or long-lived HTTP requests. `/health` and the origin-protected
+  `/presence` response are never cached; no unauthenticated metrics endpoint is
+  exposed.
 
 ### Platform API
 
@@ -64,10 +65,18 @@ is possible, or that the paid USDC system is ready to launch.
 ### Web client
 
 - Vercel response headers disable framing, MIME sniffing, unnecessary browser
-  capabilities, and overly broad referrer forwarding. A restrictive CSP is
-  intentionally not guessed because the game uses a configurable WSS endpoint
-  and Wallet Standard extension integration; add one only after testing the
-  actual production wallet and game endpoints with report-only telemetry.
+  capabilities, and overly broad referrer forwarding. Its CSP permits only
+  same-origin resources plus BLOB and Railway HTTPS/WSS endpoints required by
+  the configurable game client; it blocks object embedding and framing.
+
+### Supply chain and regression checks
+
+- GitHub Actions runs the complete Node typecheck, test, and production-build
+  suite for every pull request and `main` push. It also fails for critical
+  production dependency advisories.
+- Dependabot opens weekly update proposals for npm dependencies and GitHub
+  Actions. Review and test each proposal; do not use a blanket forced audit
+  downgrade or upgrade as an incident response.
 
 ## Incident procedure
 

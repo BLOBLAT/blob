@@ -300,11 +300,12 @@ ephemeral server values, not analytics. After a gated page is opened, the
 browser sends a random per-tab ID to `POST /presence` every 30 seconds while
 visible. The game server retains that ID only in memory for 75 seconds and
 does not store accounts, wallet addresses, raw IP addresses, user agents,
-cookies, or historical traffic. The write endpoint additionally requires the
-exact `BLOB_WEB_ORIGIN` and applies a short per-process rate limit keyed by a
+cookies, or historical traffic. The endpoint additionally requires the exact
+`BLOB_WEB_ORIGIN` and applies a short per-process rate limit keyed by a
 randomly salted one-way client-address fingerprint; that fingerprint expires
-after one minute and is never persisted. `GET /metrics` returns the current
-`{ liveVisitors, arenaPlayers }` snapshot.
+after one minute and is never persisted. Its successful `POST /presence`
+response returns the current `{ liveVisitors, arenaPlayers }` snapshot. There
+is deliberately no public `GET /metrics` endpoint.
 
 These values reset when the game-server process restarts and are deliberately
 bounded to 10,000 recent browser sessions. Do not relabel them as an all-time

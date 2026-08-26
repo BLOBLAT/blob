@@ -27,11 +27,11 @@
     "typescript": "5.7.2"
   },
   "scripts": {
-    "build": "npm run prisma:generate && tsc --noEmit -p tsconfig.json",
+    "build": "npm run typecheck",
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
     "test": "vitest run --root ../.. services/platform-api/src",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "npm run prisma:generate && tsc --noEmit -p tsconfig.json",
     "prisma:generate": "prisma generate",
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy"

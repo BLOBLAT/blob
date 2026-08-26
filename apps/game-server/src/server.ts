@@ -73,10 +73,6 @@ export function createGameServer(
     response.setHeader("Cache-Control", "no-store");
     response.status(200).json({ service: "blob-game-server", status: "ok" });
   });
-  app.get("/metrics", (_request, response) => {
-    response.setHeader("Cache-Control", "no-store");
-    response.status(200).json(liveMetrics.snapshot());
-  });
   app.post("/presence", (request, response) => {
     const origin = request.get("Origin");
     if (!origin || !allowedOrigins.has(origin)) {
