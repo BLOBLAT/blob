@@ -83,7 +83,9 @@ The game server must never receive a private key.
 
 `services/platform-api/src/solana-payment-verifier.ts` independently checks a
 finalized Solana JSON-RPC `transferChecked` instruction for the exact signer,
-mint, escrow token account, and base-unit amount. A browser-submitted
+source token-account owner, mint, escrow token account, and base-unit amount.
+The source account must be reported as owned by the signer in finalized token
+balance metadata; delegated or unproven source accounts fail closed. A browser-submitted
 signature is therefore only a claim until this verification passes and its
 unique signature is durably recorded. Before it calls RPC, the verifier
 Base58-decodes public keys to exactly 32 bytes and transaction signatures to

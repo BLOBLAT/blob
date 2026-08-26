@@ -187,6 +187,10 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   three positive payouts, and one 0.50 USDC Rebuy with 30-second/final-minute
   timing. The Solana RPC verifier also requires a six-decimal legacy SPL
   `transferChecked` instruction, matching the on-chain mint guard.
+- The Solana payment verifier also fails closed unless finalized token-balance
+  metadata proves that the exact transfer source account belongs to the
+  signed wallet. A delegated or otherwise unproven source account cannot
+  create a BLOB paid-match admission credit.
 - Added the same 0.01 USDC minimum entry amount to shared paid terms and the
   Anchor escrow. With the immutable three-player minimum and positive
   top-three payout basis points, it prevents any required prize place from

@@ -54,8 +54,10 @@ export class SolanaPaymentVerifier {
     }
     const instructions = collectParsedInstructions(transaction);
     const expectedAmount = input.expectedAmountBaseUnits.toString();
-    const matches = instructions.filter((instruction) => isExpectedUsdcTransfer(instruction, input, expectedAmount));
-    if (matches.length !== 1) {
+    const matchingSources = instructions
+      .map((instruction) => getExpectedUsdcTransferSource(instruction, input, expectedAmount))
+      .filter((source): source is string => source !== null);
+    if (matchingSources.length !== 1 || !isSourceTokenAccountOwnedBySender(transaction, matchingSources[0], input)) {
       throw new SolanaPaymentVerificationError("PAYMENT_TRANSFER_INVALID", "The finalized transaction does not contain the expected USDC transfer.");
     }
     return { signature: input.signature, slot, finalizedAt: new Date(finalizedAtMs) };
@@ -97,7 +99,11 @@ export class SolanaPaymentVerificationError extends Error {
 interface RpcTransaction {
   slot?: number;
   blockTime?: number | null;
-  meta?: { err?: unknown; innerInstructions?: Array<{ instructions?: unknown[] }> };
+  meta?: {
+    err?: unknown;
+    innerInstructions?: Array<{ instructions?: unknown[] }>;
+    preTokenBalances?: Array<{ accountIndex?: unknown; mint?: unknown; owner?: unknown }>;
+  };
   transaction?: { message?: { accountKeys?: unknown[]; instructions?: unknown[] } };
 }
 
@@ -115,26 +121,53 @@ function hasSigner(accountKeys: unknown[] | undefined, walletAddress: string): b
   }));
 }
 
-function isExpectedUsdcTransfer(
+function getExpectedUsdcTransferSource(
   instruction: unknown,
   input: VerifySolanaUsdcTransferInput,
   expectedAmount: string
-): boolean {
+): string | null {
   const record = instruction as {
     programId?: unknown;
     parsed?: { type?: unknown; info?: Record<string, unknown> };
   };
   if (record.parsed?.type !== "transferChecked") {
-    return false;
+    return null;
   }
   const info = record.parsed.info;
   const tokenAmount = info?.tokenAmount as { amount?: unknown; decimals?: unknown } | undefined;
-  return record.programId === "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+  const source = info?.source;
+  const isExpectedTransfer = record.programId === "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
     && info?.authority === input.senderWalletAddress
     && info.destination === input.expectedDestinationTokenAccount
     && info.mint === input.expectedMint
     && tokenAmount?.decimals === 6
     && tokenAmount?.amount === expectedAmount;
+  return isExpectedTransfer && typeof source === "string" ? source : null;
+}
+
+function isSourceTokenAccountOwnedBySender(
+  transaction: RpcTransaction,
+  sourceTokenAccount: string,
+  input: VerifySolanaUsdcTransferInput
+): boolean {
+  const accountKeys = transaction.transaction?.message?.accountKeys;
+  return Boolean(transaction.meta?.preTokenBalances?.some((balance) => {
+    const accountIndex = balance.accountIndex;
+    return balance.owner === input.senderWalletAddress
+      && balance.mint === input.expectedMint
+      && typeof accountIndex === "number"
+      && Number.isSafeInteger(accountIndex)
+      && accountIndex >= 0
+      && accountKeyAddress(accountKeys?.[accountIndex]) === sourceTokenAccount;
+  }));
+}
+
+function accountKeyAddress(account: unknown): string | undefined {
+  if (typeof account === "string") {
+    return account;
+  }
+  const record = account as { pubkey?: unknown };
+  return typeof record.pubkey === "string" ? record.pubkey : undefined;
 }
 
 const MAX_SPL_TOKEN_AMOUNT = 18_446_744_073_709_551_615n;

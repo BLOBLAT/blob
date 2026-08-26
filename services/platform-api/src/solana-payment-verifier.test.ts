@@ -4,6 +4,7 @@ import { SolanaPaymentVerificationError, SolanaPaymentVerifier } from "./solana-
 const PAYER = "4Nd1m3sW3vJ3zN9WZ1xQ2u5d7i9K6p4YvTq8eR1sA2bC";
 const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 const DESTINATION = "9xQeWvG816bUx9EPfEZgC3Jk6zR9aM2Qq8F4JZ2xAazC";
+const SOURCE_TOKEN_ACCOUNT = "8YFR1sA2bC4Nd1m3sW3vJ3zN9WZ1xQ2u5d7i9K6p4YvTq";
 const SIGNATURE = "3vQB7B6MrGQZaxCuFg4oh".padEnd(88, "1");
 
 describe("Solana USDC verification", () => {
@@ -24,6 +25,18 @@ describe("Solana USDC verification", () => {
     await expect(wrongDecimals.verifyFinalizedUsdcTransfer(input())).rejects.toMatchObject({ code: "PAYMENT_TRANSFER_INVALID" });
     const wrongProgram = createVerifier(createTransaction("1000000", 6, "TokenzQdYndQqF8HhXjYTa2tTe9mipM9K6o6nqR3GmW"));
     await expect(wrongProgram.verifyFinalizedUsdcTransfer(input())).rejects.toMatchObject({ code: "PAYMENT_TRANSFER_INVALID" });
+  });
+
+  it("rejects a delegated or unproven source token account even when the claimed wallet signed", async () => {
+    const delegatedAuthority = createTransaction();
+    delegatedAuthority.meta.preTokenBalances[0].owner = DESTINATION;
+    await expect(createVerifier(delegatedAuthority).verifyFinalizedUsdcTransfer(input()))
+      .rejects.toMatchObject({ code: "PAYMENT_TRANSFER_INVALID" });
+
+    const sourceOwnershipUnavailable = createTransaction();
+    sourceOwnershipUnavailable.meta.preTokenBalances = [];
+    await expect(createVerifier(sourceOwnershipUnavailable).verifyFinalizedUsdcTransfer(input()))
+      .rejects.toMatchObject({ code: "PAYMENT_TRANSFER_INVALID" });
   });
 
   it("rejects a transaction that failed or has not reached finalized transaction data", async () => {
@@ -115,16 +128,20 @@ function createTransaction(
   return {
     slot: 321,
     blockTime: 1_782_318_800,
-    meta: { err: null },
+    meta: {
+      err: null,
+      preTokenBalances: [{ accountIndex: 1, mint: USDC_MINT, owner: PAYER }]
+    },
     transaction: {
       message: {
-        accountKeys: [{ pubkey: PAYER, signer: true }],
+        accountKeys: [{ pubkey: PAYER, signer: true }, { pubkey: SOURCE_TOKEN_ACCOUNT, signer: false }],
         instructions: [{
           programId,
           parsed: {
             type: "transferChecked",
             info: {
               authority: PAYER,
+              source: SOURCE_TOKEN_ACCOUNT,
               destination: DESTINATION,
               mint: USDC_MINT,
               tokenAmount: { amount, decimals }
