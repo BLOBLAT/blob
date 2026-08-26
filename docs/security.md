@@ -54,6 +54,12 @@ is possible, or that the paid USDC system is ready to launch.
 - Sessions are opaque, secure HTTP-only cookies; only a token hash is stored.
   A wallet signs a short-lived message, never a login transaction. No wallet
   key, private key, or seed phrase belongs in the browser or repository.
+- Vercel holds only variables required to build or proxy the web application.
+  A game-server or Platform API signing key is never a web deployment value.
+  If a service key is ever discovered in Vercel, a browser-visible build
+  variable, logs, or another unauthorised scope, removing that value is not
+  sufficient: rotate the affected key or key pair in its two private services
+  before trusting the boundary again.
 
 ### Web client
 
@@ -87,7 +93,10 @@ is possible, or that the paid USDC system is ready to launch.
 6. If any signing key, wallet session, Railway/Vercel/Cloudflare credential,
    or DNS account may be compromised: pause paid launch, revoke and rotate the
    affected credential, invalidate sessions as applicable, and preserve logs.
-   Do not rotate by committing replacement values to `.env` or Git.
+   For an asymmetric service boundary, rotate both the private signer and the
+   matching verifier together; deleting a leaked web variable alone leaves
+   old signatures trustworthy. Do not rotate by committing replacement values
+   to `.env` or Git.
 
 ## Launch gate
 
