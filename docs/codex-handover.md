@@ -56,9 +56,10 @@ game core, or game server.
 - Browser profile requests use same-site \`https://blob.lat/v1/*\` while the
   \`api.blob.lat\` certificate route is being recovered. The Vercel proxy origin
   is server-only. Do not expose it in a Vite variable.
-- The temporary access gate remains intentionally enabled in
+- The temporary access gate is currently disabled for the public launch in
   \`apps/web/src/accessGate.ts\`. Do not place its credential in docs, commits,
-  tickets, or chat. Its one removal switch is \`ACCESS_GATE_ENABLED\`.
+  tickets, or chat. Its single explicit control remains \`ACCESS_GATE_ENABLED\`;
+  do not change it incidentally while working on wallet or paid-mode code.
 - Free Mode contains clearly marked server-controlled \`ARENA BOT\` participants
   only to keep empty population rounds playable. They are not humans, cannot
   chat, and can never join Paid Mode.

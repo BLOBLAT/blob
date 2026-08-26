@@ -7,7 +7,7 @@
 
 Do not deploy this repository with Node 24. The root `engines` range is the source of truth.
 
-For the canonical Vercel, Railway, Cloudflare, custom-domain, and environment-variable instructions, read [the production deployment guide](deployment.md). The temporary client-side private-build gate is enabled by default; contributors can disable it only through the single switch documented in `AGENTS.md`.
+For the canonical Vercel, Railway, Cloudflare, custom-domain, and environment-variable instructions, read [the production deployment guide](deployment.md). The temporary client-side private-build gate is currently disabled for the public launch; its single control remains documented in `AGENTS.md` and must not be changed incidentally.
 
 ## Run locally
 

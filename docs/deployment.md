@@ -129,7 +129,7 @@ VITE_GAME_SERVER_URL=https://<persistent-game-server-host>
 
 Add the same variable for Preview only when preview builds are intentionally allowed to reach that public Free Mode server. A preview without this variable safely reports that the game server is not configured; it never falls back to localhost.
 
-Redeploy Vercel after changing a `VITE_` variable. Vite embeds these variables at build time. Then open the Vercel URL, pass the temporary access gate, select **Play Free**, and confirm the game panel progresses from server health check to **Connected**.
+Redeploy Vercel after changing a `VITE_` variable. Vite embeds these variables at build time. Then open the Vercel URL, select **Play Free**, and confirm the game panel progresses from server health check to **Connected**. The temporary access gate is currently disabled for the public launch; if it is deliberately re-enabled later, its sole switch remains `ACCESS_GATE_ENABLED` in `apps/web/src/accessGate.ts`.
 
 ### Enable wallet profiles without third-party cookies
 
