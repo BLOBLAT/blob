@@ -27,5 +27,5 @@ jobs:
         working-directory: programs/blob-escrow
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.85.1
+      - uses: dtolnay/rust-toolchain@1.100.0
       - run: cargo test --locked
