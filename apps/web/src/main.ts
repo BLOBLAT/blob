@@ -698,6 +698,14 @@ async function openFreeArena(): Promise<void> {
         <p class="next-round" id="next-round"></p>
       </section>
     </div>
+    <section class="mobile-joystick-dock" id="mobile-joystick-dock" aria-label="Mobile movement control">
+      <button class="game-joystick-hand" id="game-joystick-hand" type="button" aria-pressed="false">
+        <span aria-hidden="true">⇄</span><span>MOVE JOYSTICK LEFT</span>
+      </button>
+      <div class="mobile-joystick" id="mobile-joystick" role="application" aria-label="Touch and drag to steer your BLOB">
+        <span class="mobile-joystick-knob" id="mobile-joystick-knob" aria-hidden="true"></span>
+      </div>
+    </section>
     <aside class="game-panel" aria-label="Match information">
       <div class="game-panel-heading">
         <p class="eyebrow">Free Mode</p>
@@ -709,14 +717,6 @@ async function openFreeArena(): Promise<void> {
       <p class="game-timer" id="game-timer"></p>
       <h3>LIVE RANKING</h3>
       <ol class="live-leaderboard" id="live-leaderboard"></ol>
-      <section class="mobile-joystick-dock" id="mobile-joystick-dock" aria-label="Mobile movement control">
-        <button class="game-joystick-hand" id="game-joystick-hand" type="button" aria-pressed="false">
-          <span aria-hidden="true">⇄</span><span>MOVE JOYSTICK LEFT</span>
-        </button>
-        <div class="mobile-joystick" id="mobile-joystick" role="application" aria-label="Touch and drag to steer your BLOB">
-          <span class="mobile-joystick-knob" id="mobile-joystick-knob" aria-hidden="true"></span>
-        </div>
-      </section>
     </aside>
   `;
   document.querySelector<HTMLElement>("#arena-chat")?.remove();

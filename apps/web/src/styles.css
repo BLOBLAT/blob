@@ -127,19 +127,17 @@ footer { display: flex; justify-content: space-between; gap: 20px; padding-block
 
 .mobile-joystick-dock { display: none; }
 
-@media (max-width: 680px), (pointer: coarse) {
+@media (max-width: 680px) {
   /* The canvas height is deliberately stable. Dynamic viewport units make a
      Phaser RESIZE canvas jump when a phone browser expands or hides chrome. */
   .game-stage { min-height: 390px; height: 390px; }
   .game-panel { min-height: 0; }
-  .mobile-joystick-dock { display: grid; grid-template-columns: minmax(0, 1fr) 122px; align-items: center; gap: 12px; min-height: 142px; margin-top: 16px; border-top: 1px solid rgba(255,184,206,.16); padding-top: 14px; }
-  .mobile-joystick-dock.is-left-hand { grid-template-columns: 122px minmax(0, 1fr); }
-  .game-joystick-hand { grid-column: 1; justify-self: start; display: inline-flex; align-items: center; gap: 6px; border: 1px solid rgba(255,247,242,.32); border-radius: 999px; padding: 8px 10px; color: #fff7f2; background: rgba(20,7,22,.86); box-shadow: 0 7px 22px rgba(0,0,0,.28); cursor: pointer; font: inherit; font-size: .53rem; font-weight: 900; letter-spacing: .06em; line-height: 1.1; text-align: left; }
+  .mobile-joystick-dock { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 136px; margin: 0; border-top: 1px solid rgba(255,184,206,.16); border-bottom: 1px solid rgba(255,184,206,.16); padding: 12px 24px 16px; background: linear-gradient(180deg, rgba(22,7,23,.74), rgba(22,7,23,.96)); }
+  .mobile-joystick-dock.is-left-hand { flex-direction: row-reverse; }
+  .game-joystick-hand { flex: 0 1 auto; display: inline-flex; align-items: center; gap: 6px; border: 1px solid rgba(255,247,242,.32); border-radius: 999px; padding: 8px 10px; color: #fff7f2; background: rgba(20,7,22,.86); box-shadow: 0 7px 22px rgba(0,0,0,.28); cursor: pointer; font: inherit; font-size: .53rem; font-weight: 900; letter-spacing: .06em; line-height: 1.1; text-align: left; }
   .game-joystick-hand:hover, .game-joystick-hand:focus-visible { border-color: #ff668e; color: #ff668e; outline: none; }
   .game-joystick-hand > span:first-child { color: #21c7a8; font-size: .85rem; }
-  .mobile-joystick { grid-column: 2; justify-self: end; position: relative; width: 112px; height: 112px; border: 2px solid rgba(255,247,242,.28); border-radius: 50%; background: rgba(16,5,18,.56); box-shadow: inset 0 0 0 12px rgba(244,43,104,.05); touch-action: none; user-select: none; -webkit-user-select: none; }
-  .mobile-joystick-dock.is-left-hand .game-joystick-hand { grid-column: 2; justify-self: end; }
-  .mobile-joystick-dock.is-left-hand .mobile-joystick { grid-column: 1; justify-self: start; }
+  .mobile-joystick { flex: 0 0 112px; position: relative; width: 112px; height: 112px; border: 2px solid rgba(255,247,242,.28); border-radius: 50%; background: rgba(16,5,18,.56); box-shadow: inset 0 0 0 12px rgba(244,43,104,.05); touch-action: none; user-select: none; -webkit-user-select: none; }
   .mobile-joystick-knob { position: absolute; top: 50%; left: 50%; width: 38px; height: 38px; border-radius: 50%; transform: translate(0, 0); margin: -19px; background: #f42b68; box-shadow: 0 0 20px rgba(244,43,104,.45); pointer-events: none; }
 }
 

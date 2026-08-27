@@ -105,7 +105,15 @@ export interface ArenaUiState {
   };
 }
 
-const INPUT_SEND_INTERVAL_MS = 50;
+/**
+ * The server accepts at most 25 non-zero inputs per second. Keep browser
+ * updates just below that ceiling so an input is always admitted instead of
+ * being dropped by the authoritative rate limiter.
+ */
+const INPUT_SEND_INTERVAL_MS = 45;
+const INPUT_HEARTBEAT_INTERVAL_MS = 180;
+const INPUT_CHANGE_EPSILON = 0.01;
+const MOUSE_INTENT_HOLD_MS = 220;
 const RENDER_TELEPORT_DISTANCE = 260;
 const MOUSE_TARGET_STOP_DISTANCE = 8;
 
@@ -129,6 +137,8 @@ export class BlobArenaScene extends Phaser.Scene {
   private intent = { x: 0, y: 0 };
   private lastUiUpdate = 0;
   private sendIntentEvent?: Phaser.Time.TimerEvent;
+  private lastSentIntent = { x: 0, y: 0 };
+  private lastIntentSentAt = Number.NEGATIVE_INFINITY;
   private keyboard?: KeyboardControls;
   private lastLocalMass = 0;
   private collectPulseUntil = 0;
@@ -141,6 +151,7 @@ export class BlobArenaScene extends Phaser.Scene {
    * the cursor while the server remains the only authority for movement.
    */
   private mouseScreenPosition: ScreenPosition | undefined;
+  private mouseIntentExpiresAt = 0;
   /** The mobile DOM joystick owns this flag; the canvas never owns touch movement. */
   private externalTouchInputActive = false;
   private worldWidth = 0;
@@ -161,6 +172,7 @@ export class BlobArenaScene extends Phaser.Scene {
   setTouchIntent(x: number, y: number): void {
     this.externalTouchInputActive = true;
     this.mouseScreenPosition = undefined;
+    this.mouseIntentExpiresAt = 0;
     this.setNormalizedIntent(x, y);
     this.sendIntent();
   }
@@ -168,7 +180,8 @@ export class BlobArenaScene extends Phaser.Scene {
   clearTouchIntent(): void {
     this.externalTouchInputActive = false;
     this.intent = { x: 0, y: 0 };
-    this.sendIntent();
+    this.mouseIntentExpiresAt = 0;
+    this.sendIntent(true);
   }
 
   create(): void {
@@ -230,15 +243,20 @@ export class BlobArenaScene extends Phaser.Scene {
         if (this.hasKeyboardInput()) {
           this.applyKeyboardIntent();
         } else if (!this.externalTouchInputActive && !this.isTextEntryFocused()) {
-          this.applyMouseIntent();
+          if (this.hasFreshMouseIntent()) {
+            this.applyMouseIntent();
+          } else {
+            this.stopMouseSteering();
+          }
         } else if (this.isTextEntryFocused()) {
-          this.intent = { x: 0, y: 0 };
-          this.mouseScreenPosition = undefined;
+          this.stopMouseSteering();
         }
       } else {
-        this.intent = { x: 0, y: 0 };
-        this.mouseScreenPosition = undefined;
+        this.stopMouseSteering();
       }
+      // Flush changed intent from the render loop as well as pointer events,
+      // while sendIntent keeps traffic under the server's rate limit.
+      this.sendIntent();
       const renderedLocalPlayer = this.getRenderedPosition(localPlayer);
       this.cameras.main.centerOn(renderedLocalPlayer.x, renderedLocalPlayer.y);
       const targetZoom = targetArenaZoom(localPlayer.mass, this.isCompactViewport());
@@ -303,23 +321,22 @@ export class BlobArenaScene extends Phaser.Scene {
   private onPointerMove(pointer: Phaser.Input.Pointer): void {
     if (!pointer.wasTouch) {
       this.updateMouseIntent(pointer);
+      // Do not wait for the periodic heartbeat before the first directional
+      // update. This is the critical path for responsive mouse steering.
+      this.sendIntent();
     }
   }
 
   private clearPointerIntent(): void {
     if (!this.externalTouchInputActive && !this.hasKeyboardInput()) {
-      this.intent = { x: 0, y: 0 };
-      this.mouseScreenPosition = undefined;
-      this.sendIntent();
+      this.stopMouseSteering();
     }
   }
 
   private clearHiddenTabIntent(): void {
     if (document.hidden) {
       this.externalTouchInputActive = false;
-      this.mouseScreenPosition = undefined;
-      this.intent = { x: 0, y: 0 };
-      this.sendIntent();
+      this.stopMouseSteering();
     }
   }
 
@@ -330,7 +347,25 @@ export class BlobArenaScene extends Phaser.Scene {
       return;
     }
     this.mouseScreenPosition = { x: pointer.x, y: pointer.y };
+    this.mouseIntentExpiresAt = performance.now() + MOUSE_INTENT_HOLD_MS;
     this.applyMouseIntent();
+  }
+
+  private hasFreshMouseIntent(now = performance.now()): boolean {
+    return this.mouseScreenPosition !== undefined && now < this.mouseIntentExpiresAt;
+  }
+
+  private stopMouseSteering(): void {
+    const wasMoving = Math.abs(this.intent.x) > INPUT_CHANGE_EPSILON
+      || Math.abs(this.intent.y) > INPUT_CHANGE_EPSILON
+      || Math.abs(this.lastSentIntent.x) > INPUT_CHANGE_EPSILON
+      || Math.abs(this.lastSentIntent.y) > INPUT_CHANGE_EPSILON;
+    this.intent = { x: 0, y: 0 };
+    this.mouseScreenPosition = undefined;
+    this.mouseIntentExpiresAt = 0;
+    if (wasMoving) {
+      this.sendIntent(true);
+    }
   }
 
   private applyMouseIntent(): void {
@@ -416,11 +451,36 @@ export class BlobArenaScene extends Phaser.Scene {
     }
   };
 
-  private sendIntent(): void {
+  /**
+   * Sends intent without allowing a high-frequency browser event stream to
+   * become an input-abuse event on the server. A forced call is only used for
+   * an explicit release, which game-core intentionally accepts immediately.
+   */
+  private sendIntent(force = false): void {
     const state = this.room.state as unknown as NetworkArenaState | undefined;
     const localPlayer = state?.players?.get(this.room.sessionId);
     const activeIntent = state?.phase === "ACTIVE" && localPlayer?.alive ? this.intent : { x: 0, y: 0 };
+    const now = performance.now();
+    const changed = Math.abs(activeIntent.x - this.lastSentIntent.x) > INPUT_CHANGE_EPSILON
+      || Math.abs(activeIntent.y - this.lastSentIntent.y) > INPUT_CHANGE_EPSILON;
+    const elapsed = now - this.lastIntentSentAt;
+    const isExplicitStop = Math.abs(activeIntent.x) <= INPUT_CHANGE_EPSILON
+      && Math.abs(activeIntent.y) <= INPUT_CHANGE_EPSILON
+      && (Math.abs(this.lastSentIntent.x) > INPUT_CHANGE_EPSILON
+        || Math.abs(this.lastSentIntent.y) > INPUT_CHANGE_EPSILON);
+
+    if (!force && !isExplicitStop && elapsed < INPUT_SEND_INTERVAL_MS) {
+      return;
+    }
+    const hasContinuousControl = this.externalTouchInputActive
+      || this.hasKeyboardInput()
+      || this.hasFreshMouseIntent(now);
+    if (!force && !changed && (!hasContinuousControl || elapsed < INPUT_HEARTBEAT_INTERVAL_MS)) {
+      return;
+    }
     this.room.send("input", activeIntent);
+    this.lastSentIntent = { ...activeIntent };
+    this.lastIntentSentAt = now;
   }
 
   private getLocalPlayer(): NetworkPlayer | undefined {
@@ -449,8 +509,14 @@ export class BlobArenaScene extends Phaser.Scene {
       previous.targetX = player.x;
       previous.targetY = player.y;
       previous.alive = player.alive;
-      previous.x = Phaser.Math.Linear(previous.x, previous.targetX, interpolationAlpha);
-      previous.y = Phaser.Math.Linear(previous.y, previous.targetY, interpolationAlpha);
+      // The local player uses a shorter presentation buffer than opponents.
+      // It remains entirely server-driven, but removes the extra visual lag
+      // between an accepted intent and the local BLOB moving on screen.
+      const playerInterpolationAlpha = player.id === this.room.sessionId
+        ? Math.min(1, interpolationAlpha * 1.45)
+        : interpolationAlpha;
+      previous.x = Phaser.Math.Linear(previous.x, previous.targetX, playerInterpolationAlpha);
+      previous.y = Phaser.Math.Linear(previous.y, previous.targetY, playerInterpolationAlpha);
     });
     for (const playerId of this.renderedPlayerPositions.keys()) {
       if (!presentPlayerIds.has(playerId)) {
