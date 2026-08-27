@@ -143,6 +143,7 @@ export class BlobArenaScene extends Phaser.Scene {
   private lastLocalMass = 0;
   private collectPulseUntil = 0;
   private deathPulseUntil = 0;
+  private spawnPulseUntil = 0;
   /**
    * A mouse target is stored in screen coordinates, not world coordinates.
    * The camera follows the local BLOB, so a world point captured only once
@@ -157,6 +158,7 @@ export class BlobArenaScene extends Phaser.Scene {
   private worldWidth = 0;
   private worldHeight = 0;
   private readonly renderedPlayerPositions = new Map<string, RenderedPlayerPosition>();
+  private readonly playerNameLabels = new Map<string, Phaser.GameObjects.Text>();
 
   constructor(
     private readonly room: Room,
@@ -225,6 +227,10 @@ export class BlobArenaScene extends Phaser.Scene {
       document.removeEventListener("visibilitychange", this.clearHiddenTabIntent);
       document.removeEventListener("keydown", this.preventArenaArrowScroll);
       this.sendIntentEvent?.remove();
+      for (const label of this.playerNameLabels.values()) {
+        label.destroy();
+      }
+      this.playerNameLabels.clear();
       this.room.send("input", { x: 0, y: 0 });
     });
   }
@@ -496,6 +502,9 @@ export class BlobArenaScene extends Phaser.Scene {
       const previous = this.renderedPlayerPositions.get(player.id);
       const distanceToTarget = previous ? Math.hypot(player.x - previous.targetX, player.y - previous.targetY) : 0;
       const shouldSnap = !previous || !player.alive || previous.alive !== player.alive || distanceToTarget > RENDER_TELEPORT_DISTANCE;
+      if (player.id === this.room.sessionId && (!previous || !previous.alive) && player.alive) {
+        this.spawnPulseUntil = this.time.now + 460;
+      }
       if (shouldSnap) {
         this.renderedPlayerPositions.set(player.id, {
           x: player.x,
@@ -521,6 +530,8 @@ export class BlobArenaScene extends Phaser.Scene {
     for (const playerId of this.renderedPlayerPositions.keys()) {
       if (!presentPlayerIds.has(playerId)) {
         this.renderedPlayerPositions.delete(playerId);
+        this.playerNameLabels.get(playerId)?.destroy();
+        this.playerNameLabels.delete(playerId);
       }
     }
   }
@@ -596,6 +607,10 @@ export class BlobArenaScene extends Phaser.Scene {
         this.graphics.lineStyle(4, 0xff668e, (this.deathPulseUntil - time) / 320);
         this.graphics.strokeCircle(x, y + wobble, radius + 18);
       }
+      if (time < this.spawnPulseUntil) {
+        this.graphics.lineStyle(3, 0x21c7a8, (this.spawnPulseUntil - time) / 460);
+        this.graphics.strokeCircle(x, y + wobble, radius + 10 + (this.spawnPulseUntil - time) / 36);
+      }
     } else if (player.isBot) {
       this.graphics.lineStyle(2, 0x8e6bff, 0.95);
       this.graphics.strokeCircle(x, y + wobble, radius + 3);
@@ -606,6 +621,7 @@ export class BlobArenaScene extends Phaser.Scene {
       this.graphics.strokeCircle(x, y + wobble, radius + 3);
     }
     if (!player.alive) {
+      this.playerNameLabels.get(player.id)?.setVisible(false);
       return;
     }
     this.graphics.fillStyle(0x260719, 1);
@@ -614,6 +630,25 @@ export class BlobArenaScene extends Phaser.Scene {
     this.graphics.fillStyle(0xfff7f2, 0.78);
     this.graphics.fillCircle(x - radius * 0.25, y - radius * 0.07 + wobble, Math.max(1.2, radius * 0.033));
     this.graphics.fillCircle(x + radius * 0.19, y - radius * 0.07 + wobble, Math.max(1.2, radius * 0.033));
+    this.updatePlayerNameLabel(player, isLocalPlayer, x, y + wobble - radius - 10);
+  }
+
+  private updatePlayerNameLabel(player: NetworkPlayer, isLocalPlayer: boolean, x: number, y: number): void {
+    let label = this.playerNameLabels.get(player.id);
+    if (!label) {
+      label = this.add.text(0, 0, "", {
+        color: "#fff7f2",
+        fontFamily: "Arial, sans-serif",
+        fontSize: "12px",
+        fontStyle: "bold",
+        stroke: "#160717",
+        strokeThickness: 4,
+      }).setOrigin(0.5, 1).setDepth(4);
+      this.playerNameLabels.set(player.id, label);
+    }
+    label.setText(player.isBot ? "BOT · " + player.name : player.name);
+    label.setColor(isLocalPlayer ? "#ffd34f" : "#fff7f2");
+    label.setPosition(x, y).setVisible(player.alive);
   }
 
 }

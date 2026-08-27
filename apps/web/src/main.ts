@@ -461,7 +461,7 @@ function renderProfileTrigger(): void {
   renderUsdcProfileState();
 }
 
-function renderProfileDialog(message?: string): void {
+function renderProfileDialog(message?: string, offerArenaRejoin = false): void {
   const container = requiredElement("#profile-dialog-content");
   container.replaceChildren();
   const eyebrow = document.createElement("p");
@@ -479,6 +479,14 @@ function renderProfileDialog(message?: string): void {
 
   if (profile) {
     renderAuthenticatedProfile(container);
+    if (offerArenaRejoin && freeGameController) {
+      const rejoin = document.createElement("button");
+      rejoin.type = "button";
+      rejoin.className = "profile-rejoin";
+      rejoin.textContent = "Apply name to this arena";
+      rejoin.addEventListener("click", () => void rejoinFreeArenaForProfile());
+      container.append(rejoin);
+    }
   } else {
     renderWalletSelection(container);
   }
@@ -599,11 +607,20 @@ async function renameProfile(event: SubmitEvent, input: HTMLInputElement, submit
     setProfileGameName(profile.displayName);
     renderProfileTrigger();
     renderProfileDialog(freeGameController
-      ? "Display name saved. Leave and re-enter Free Mode to apply it to this arena."
-      : "Display name saved. It will be used when you join an arena.");
+      ? "Display name saved. Rejoin once to apply the server-signed name across the arena, ranking, and chat."
+      : "Display name saved. It will be used when you join an arena.", Boolean(freeGameController));
   } catch (error) {
     renderProfileDialog(describeProfileError(error));
   }
+}
+
+async function rejoinFreeArenaForProfile(): Promise<void> {
+  if (!freeGameController) {
+    return;
+  }
+  closeProfileDialog();
+  await leaveFreeArena();
+  await openFreeArena();
 }
 
 async function logoutProfile(button: HTMLButtonElement): Promise<void> {
@@ -695,6 +712,7 @@ async function openFreeArena(): Promise<void> {
         <h3>FINAL RESULTS</h3>
         <ol id="round-podium"></ol>
         <p class="personal-result" id="personal-result"></p>
+        <button class="share-result" id="share-round-result" type="button" hidden>Share result</button>
         <p class="next-round" id="next-round"></p>
       </section>
     </div>
@@ -754,6 +772,7 @@ async function openFreeArena(): Promise<void> {
   const podium = requiredElement<HTMLOListElement>("#round-podium");
   const personalResult = requiredElement("#personal-result");
   const nextRound = requiredElement("#next-round");
+  const shareRoundResult = requiredElement<HTMLButtonElement>("#share-round-result");
   const chatMessages = requiredElement<HTMLOListElement>("#arena-chat-messages");
   const chatStatus = requiredElement("#arena-chat-status");
   const chatForm = requiredElement<HTMLFormElement>("#arena-chat-form");
@@ -773,6 +792,7 @@ async function openFreeArena(): Promise<void> {
     renderTouchHandButton(joystickHandButton, joystickDock, touchHand);
   });
   const seenChatMessageIds = new Set<string>();
+  shareRoundResult.addEventListener("click", () => void shareRoundResultText(shareRoundResult));
   requiredElement<HTMLButtonElement>("#leave-game").addEventListener("click", () => void leaveFreeArena());
   chatForm.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -834,7 +854,7 @@ async function openFreeArena(): Promise<void> {
           death.hidden = state.phase !== "ACTIVE" || state.localPlayer?.alive !== false;
         }
         renderLeaderboard(leaderboard, state.leaderboard, state.localPlayer?.id);
-        renderRoundResults(results, podium, personalResult, nextRound, state.result, state.localPlayer?.id, state.phase);
+        renderRoundResults(results, podium, personalResult, shareRoundResult, nextRound, state.result, state.localPlayer?.id, state.phase);
       }
     });
   } catch (error) {
@@ -965,7 +985,7 @@ function renderLeaderboard(container: HTMLElement, players: Array<{ playerId: st
     item.classList.toggle("is-local-player", player.playerId === localPlayerId);
     const name = document.createElement("span");
     name.textContent = player.rank + ". " + (player.playerId === localPlayerId
-      ? "YOU"
+      ? "YOU · " + player.name
       : player.isBot ? "BOT · " + player.name : player.name);
     const score = document.createElement("strong");
     score.textContent = Math.floor(player.mass) + " mass · " + player.kills + " K";
@@ -979,18 +999,24 @@ function renderLeaderboard(container: HTMLElement, players: Array<{ playerId: st
   }
 }
 
-function renderArenaChatMessage(container: HTMLOListElement, message: { name: string; text: string }): void {
+function renderArenaChatMessage(container: HTMLOListElement, message: { name: string; text: string; sentAt: number }): void {
+  const wasAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 36;
   const item = document.createElement("li");
   const name = document.createElement("strong");
   name.textContent = message.name;
   const text = document.createElement("span");
   text.textContent = message.text;
-  item.append(name, text);
+  const time = document.createElement("time");
+  time.dateTime = new Date(message.sentAt).toISOString();
+  time.textContent = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(message.sentAt);
+  item.append(name, text, time);
   container.append(item);
   while (container.childElementCount > 80) {
     container.firstElementChild?.remove();
   }
-  container.scrollTop = container.scrollHeight;
+  if (wasAtBottom) {
+    container.scrollTop = container.scrollHeight;
+  }
 }
 
 function describeChatRejection(code: string): string {
@@ -1019,6 +1045,7 @@ function renderRoundResults(
   container: HTMLElement,
   podium: HTMLOListElement,
   personalResult: HTMLElement,
+  shareButton: HTMLButtonElement,
   nextRound: HTMLElement,
   result: {
     matchId: string;
@@ -1039,6 +1066,8 @@ function renderRoundResults(
 ): void {
   const visible = Boolean(result) && (phase === "FINISHED" || phase === "RESULTS");
   container.hidden = !visible;
+  shareButton.hidden = true;
+  shareButton.removeAttribute("data-share-text");
   if (!visible || !result) {
     return;
   }
@@ -1049,7 +1078,7 @@ function renderRoundResults(
     place.textContent = placeLabel(entry.rank);
     const name = document.createElement("span");
     name.textContent = entry.playerId === localPlayerId
-      ? "YOU"
+      ? "YOU · " + entry.name
       : entry.isBot ? "BOT · " + entry.name : entry.name;
     const mass = document.createElement("small");
     mass.textContent = Math.floor(entry.finalMass) + " mass";
@@ -1060,7 +1089,35 @@ function renderRoundResults(
   personalResult.textContent = mine
     ? "YOUR RESULT: #" + mine.rank + " · " + Math.floor(mine.finalMass) + " MASS · " + mine.foodCollected + " FOOD · " + mine.eliminations + " ELIMS"
     : "Round result locked by the authoritative server.";
+  if (mine) {
+    shareButton.hidden = false;
+    shareButton.textContent = "Share result";
+    shareButton.dataset.shareText = "I finished #" + mine.rank + " in the BLOB Free Mode arena — "
+      + Math.floor(mine.finalMass) + " mass, " + mine.foodCollected + " food, " + mine.eliminations + " elims.\n\nEAT. GROW. SURVIVE.\nhttps://blob.lat";
+  }
   nextRound.textContent = phase === "RESULTS" ? "NEXT MATCHMAKING STARTS SOON" : "LOCKING FINAL RESULT…";
+}
+
+async function shareRoundResultText(button: HTMLButtonElement): Promise<void> {
+  const text = button.dataset.shareText;
+  if (!text) {
+    return;
+  }
+  const originalLabel = button.textContent;
+  try {
+    if (navigator.share) {
+      await navigator.share({ title: "BLOB Free Mode result", text });
+      button.textContent = "Shared";
+    } else {
+      await navigator.clipboard.writeText(text);
+      button.textContent = "Copied";
+    }
+  } catch {
+    button.textContent = "Share unavailable";
+  }
+  window.setTimeout(() => {
+    button.textContent = originalLabel;
+  }, 2_000);
 }
 
 function placeLabel(rank: number): string {
