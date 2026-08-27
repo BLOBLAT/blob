@@ -62,6 +62,7 @@ export class PrismaPaidMatchTermsRepository {
           reviveCutoffMs: terms.reviveConfiguration.reviveCutoffMs,
           reviveSpawnProtectionMs: terms.reviveConfiguration.spawnProtectionMs,
           platformFeeBps: Number(terms.configuration.platformFeeBps),
+          participationRebateBps: Number(terms.configuration.participationRebateBps),
           payoutBps: terms.configuration.prizeDistribution.map((payout) => Number(payout.basisPoints)),
           minimumPlayers: terms.configuration.minimumPlayers,
           maximumPlayers: terms.configuration.maximumPlayers,
@@ -105,6 +106,7 @@ const MATCH_TERMS_SELECT = {
   reviveCutoffMs: true,
   reviveSpawnProtectionMs: true,
   platformFeeBps: true,
+  participationRebateBps: true,
   payoutBps: true,
   minimumPlayers: true,
   maximumPlayers: true,
@@ -129,6 +131,7 @@ function assertStoredTermsMatch(
     reviveCutoffMs: number;
     reviveSpawnProtectionMs: number;
     platformFeeBps: number;
+    participationRebateBps: number;
     payoutBps: number[];
     minimumPlayers: number;
     maximumPlayers: number;
@@ -152,6 +155,7 @@ function assertStoredTermsMatch(
     && stored.reviveCutoffMs === revive.reviveCutoffMs
     && stored.reviveSpawnProtectionMs === revive.spawnProtectionMs
     && stored.platformFeeBps === Number(configuration.platformFeeBps)
+    && stored.participationRebateBps === Number(configuration.participationRebateBps)
     && equalNumberArrays(stored.payoutBps, configuration.prizeDistribution.map((payout) => Number(payout.basisPoints)))
     && stored.minimumPlayers === configuration.minimumPlayers
     && stored.maximumPlayers === configuration.maximumPlayers

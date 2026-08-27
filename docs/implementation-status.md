@@ -12,12 +12,15 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
 ## Locked product decisions
 
 - Settlement asset: native USDC on Solana only.
-- Platform fee: 5% of the final confirmed pool.
-- Prize pool: 95% of the final confirmed pool.
-- Default payout split: 60% / 30% / 10%, calculated in atomic units.
+- Platform fee: 10% of the final confirmed pool.
+- Every verified final rank 4+ receives a 10% partial rebate of the original
+  entry; revive contributions are excluded from the rebate.
+- After fee and rebate reserve, the default top-three split is 55% / 30% /
+  15%, calculated in atomic units.
+- Paid Arena minimum: six confirmed participants.
 - Rebuy cost: 0.50 USDC.
 - Rebuy limit: one per player per match.
-- Rebuy is unavailable in the final 60 seconds and expires 30 seconds after
+- Rebuy is unavailable in the final three minutes and expires 30 seconds after
   an authoritative death.
 - Free Mode remains wallet-free and unchanged in competitive authority.
 
@@ -111,11 +114,11 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   source. It has platform-mint/authority configuration, immutable
   match/round/rules/result hashes, exact entry/revive contribution accounting,
   controller-gated start/cancel, one-revive Rebuy enforcement, an immutable
-  ten-minute round with a 30-second death window and final-minute cutoff,
-  exact refunds, and on-chain 5% fee plus immutable configuration-validated
+  ten-minute round with a 30-second death window and final-three-minute cutoff,
+  exact refunds, on-chain 10% fee plus a rank-4-and-lower rebate reserve, and immutable configuration-validated
   payout logic. Host-side Rust tests are kept current below; target artifacts
   are kept in the OS temporary directory and ignored by Git.
-- Corrected `MatchEscrow` account allocation to include all 348 serialized
+- Corrected `MatchEscrow` account allocation to include all 358 serialized
   payload bytes plus Anchor's eight-byte discriminator. A source-level
   regression test serializes a populated escrow and compares its exact length
   with the allocation constant, preventing an under-allocation during
@@ -161,7 +164,7 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   Railway-private origin before it signs the exact raw consume request, so an
   optional trailing slash cannot alter the requested path.
 - The escrow Rebuy instruction now also rejects a death attestation from before
-  that escrow's live round started. The 30-second death window and final-minute
+  that escrow's live round started. The 30-second death window and final-three-minute
   cutoff remain independent on-chain guards. GitHub Actions completed the
   isolated locked Rust regression suite successfully for `d4c30db`.
 - Railway deployment watch patterns are scoped per service. A Platform API
@@ -188,8 +191,9 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   capacity, removed between rounds, and forbidden in Paid Mode.
 - Aligned the off-chain paid terms validator with the escrow program before
   entry acceptance: canonical disabled Skill-match Rebuy fields are all zero;
-  the active ruleset fixes the 10-minute round, 5% fee, max 32 players, exactly
-  three positive payouts, and one 0.50 USDC Rebuy with 30-second/final-minute
+  the active ruleset fixes the 10-minute round, 10% fee, six-to-32 players,
+  rank-4-and-lower 10% entry rebate, exactly three positive payouts, and one
+  0.50 USDC Rebuy with 30-second/final-three-minute
   timing. The Solana RPC verifier also requires a six-decimal legacy SPL
   `transferChecked` instruction, matching the on-chain mint guard.
 - The Solana payment verifier also fails closed unless finalized token-balance
@@ -197,7 +201,7 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   signed wallet. A delegated or otherwise unproven source account cannot
   create a BLOB paid-match admission credit.
 - Added the same 0.01 USDC minimum entry amount to shared paid terms and the
-  Anchor escrow. With the immutable three-player minimum and positive
+  Anchor escrow. With the immutable six-player minimum and positive
   top-three payout basis points, it prevents any required prize place from
   rounding down to zero atomic USDC before a match can be funded.
 - The shared simulation now requires a distinct server-assigned immutable

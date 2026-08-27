@@ -56,6 +56,11 @@ enum ChainTransactionKind {
   REFUND
 }
 
+enum PayoutKind {
+  PRIZE
+  PARTICIPATION_REBATE
+}
+
 /// Only server-accepted messages are retained. The browser never queries this
 /// audit table directly; name and text are immutable snapshots for review.
 enum ArenaChatMessageStatus {
@@ -137,6 +142,7 @@ model Match {
   reviveCutoffMs        Int               @default(0)
   reviveSpawnProtectionMs Int              @default(0)
   platformFeeBps        Int
+  participationRebateBps Int
   payoutBps             Int[]
   minimumPlayers        Int
   maximumPlayers        Int
@@ -297,15 +303,18 @@ model Payout {
   result              MatchResult  @relation(fields: [resultId], references: [id], onDelete: Restrict)
   entryId             String
   entry               MatchEntry   @relation(fields: [entryId], references: [id], onDelete: Restrict)
-  place               Int
+  kind                PayoutKind
+  place               Int?
   amountBaseUnits     BigInt
   transactionId       String?
   transaction         ChainTransaction? @relation("PayoutTransaction", fields: [transactionId], references: [id], onDelete: SetNull)
   idempotencyKey      String       @unique
   createdAt           DateTime     @default(now())
 
+  // PostgreSQL permits multiple NULL values here, so prize places remain
+  // unique while every non-podium entry can retain its own rebate record.
   @@unique([matchId, place])
-  // One enrolled entry can occupy only one final prize place.
+  // A player receives exactly one result-derived payout: prize or rebate.
   @@unique([matchId, entryId])
   @@index([entryId])
 }

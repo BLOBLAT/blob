@@ -14,11 +14,14 @@ const ESCROW = "9xQeWvG816bUx9EPfEZgC3Jk6zR9aM2Qq8F4JZ2xAazC";
 const WALLETS = [
   "4Nd1m3sW3vJ3zN9WZ1xQ2u5d7i9K6p4YvTq8eR1sA2bC",
   "7YttLkH3UQJfB73uExyGfEKvwR6LjhQmN6x2PRZKMrP2",
-  "B6xXoQkbXZp27DiNUZCr36N54xe69Bp5uzWUsWeLMYqV"
+  "B6xXoQkbXZp27DiNUZCr36N54xe69Bp5uzWUsWeLMYqV",
+  "So11111111111111111111111111111111111111112",
+  "Stake11111111111111111111111111111111111111",
+  "Vote111111111111111111111111111111111111111"
 ];
 
 describe("paid-match finalization", () => {
-  it("uses a 5% fee and includes confirmed Rebuy Arena revives in the final pool", () => {
+  it("uses a 10% fee, a 10% non-podium participation rebate, and includes confirmed Rebuy Arena revives", () => {
     const terms = createPaidMatchTerms({ usdcMint: USDC_MINT, escrowAddress: ESCROW, ruleset: PaidRuleset.REBUY, now: NOW });
     const result = createPaidResult(terms.matchId, terms.roundId);
     const finalized = finalizePaidMatch({
@@ -29,10 +32,19 @@ describe("paid-match finalization", () => {
       settlementId: "settlement-test"
     });
 
-    expect(finalized.pool.grossPoolBaseUnits).toBe(3_500_000n);
-    expect(finalized.prizes.platformFeeBaseUnits).toBe(175_000n);
-    expect(finalized.prizes.prizePoolBaseUnits).toBe(3_325_000n);
-    expect(finalized.prizes.payouts.map((payout) => payout.amountBaseUnits)).toEqual([1_995_000n, 997_500n, 332_500n]);
+    expect(finalized.pool.grossPoolBaseUnits).toBe(6_500_000n);
+    expect(finalized.prizes.platformFeeBaseUnits).toBe(650_000n);
+    expect(finalized.prizes.participationRebatePoolBaseUnits).toBe(300_000n);
+    expect(finalized.prizes.prizePoolBaseUnits).toBe(5_550_000n);
+    expect(finalized.prizes.payouts.map((payout) => payout.amountBaseUnits)).toEqual([3_052_500n, 1_665_000n, 832_500n]);
+    expect(finalized.settlementRequest.payoutPlan).toEqual([
+      { playerId: "player-1", finalRank: 1, kind: "PRIZE", place: 1, amountBaseUnits: 3_052_500n },
+      { playerId: "player-2", finalRank: 2, kind: "PRIZE", place: 2, amountBaseUnits: 1_665_000n },
+      { playerId: "player-3", finalRank: 3, kind: "PRIZE", place: 3, amountBaseUnits: 832_500n },
+      { playerId: "player-4", finalRank: 4, kind: "PARTICIPATION_REBATE", place: null, amountBaseUnits: 100_000n },
+      { playerId: "player-5", finalRank: 5, kind: "PARTICIPATION_REBATE", place: null, amountBaseUnits: 100_000n },
+      { playerId: "player-6", finalRank: 6, kind: "PARTICIPATION_REBATE", place: null, amountBaseUnits: 100_000n },
+    ]);
     expect(finalized.settlementRequest.idempotencyKey).toContain(terms.matchId);
     expect(finalized.immutableResultHash).toHaveLength(64);
   });
@@ -246,7 +258,10 @@ function createPaidResult(matchId: string, roundId: string): AuthoritativeMatchR
     players: [
       { playerId: "player-1", finalRank: 1, finalMass: 450, foodCollected: 20, eliminations: 2, deaths: 1, survivalTimeMs: 600_000 },
       { playerId: "player-2", finalRank: 2, finalMass: 300, foodCollected: 12, eliminations: 1, deaths: 0, survivalTimeMs: 600_000 },
-      { playerId: "player-3", finalRank: 3, finalMass: 180, foodCollected: 8, eliminations: 0, deaths: 1, survivalTimeMs: 500_000 }
+      { playerId: "player-3", finalRank: 3, finalMass: 180, foodCollected: 8, eliminations: 0, deaths: 1, survivalTimeMs: 500_000 },
+      { playerId: "player-4", finalRank: 4, finalMass: 120, foodCollected: 5, eliminations: 0, deaths: 1, survivalTimeMs: 400_000 },
+      { playerId: "player-5", finalRank: 5, finalMass: 110, foodCollected: 4, eliminations: 0, deaths: 2, survivalTimeMs: 380_000 },
+      { playerId: "player-6", finalRank: 6, finalMass: 100, foodCollected: 3, eliminations: 0, deaths: 2, survivalTimeMs: 360_000 }
     ]
   };
 }

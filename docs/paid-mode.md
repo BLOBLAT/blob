@@ -17,23 +17,28 @@ rules before it requests a transaction.
 - Asset: native USDC on Solana, six decimal base units.
 - Entry amount: at least 0.01 USDC; this avoids a required top-three payout
   rounding down to zero atomic USDC.
+- A paid arena needs at least six confirmed participants.
 - Standard **Skill** match: no paid revive.
 - **Rebuy Arena**: a separately disclosed ruleset, one 0.50 USDC revive per
   player; it is available for 30 seconds after an authoritative death and
-  closes for the final 60 seconds of the round.
+  closes when three minutes or less remain in the round.
 - The final gross pool is confirmed entries plus confirmed revives.
-- Platform fee is exactly 5% of that final pool.
-- The remaining 95% is paid by a configuration-driven 60/30/10 default split.
+- Platform fee is exactly 10% of that final pool.
+- Each verified rank 4 and lower can claim a 10% partial rebate of the
+  original entry; revives do not increase that rebate.
+- After reserving those rebates, the top-three prize pool uses a
+  configuration-driven 55/30/15 default split.
 - All arithmetic uses `bigint` atomic USDC units and basis points; no float is
   used for money.
 - Before any terms can be persisted, the platform domain rejects values that
   the escrow program would reject: exactly three positive payout places
-  (1/2/3) totaling 10,000 basis points, the fixed 5% fee, at most 32 players,
+  (1/2/3) totaling 10,000 basis points, the fixed 10% fee and 10% participation
+  rebate, six to 32 players,
   the current ten-minute round, and a funding deadline no later than that
   term's immutable funding window (which itself is capped at 15 minutes).
 - A Standard Skill policy is represented by canonical zero Rebuy fields. A
   Rebuy Arena policy is exactly one 0.50 USDC revive, a 30-second death window,
-  and a final-60-second cutoff. This prevents a late on-chain configuration
+  and a final-three-minute cutoff. This prevents a late on-chain configuration
   failure after an entry has been accepted.
 
 `services/platform-api/src/paid-match.ts` verifies the immutable rules,
@@ -75,9 +80,12 @@ The implemented instructions are deliberately narrow:
   and final-60-second cutoff.
 - `settle_match` requires the independent result authority after the round
   ends, accepts only three distinct enrolled winners, records a non-empty
-  immutable final-result hash, and derives fee/payouts from the recorded pool
-  and the fixed 5% fee plus immutable match-specific payout rules (60/30/10
-  is the current default).
+  immutable final-result hash, and derives the 10% fee, rank-4-and-lower 10%
+  entry-rebate reserve, and top-three payouts from immutable match rules
+  (55/30/15 is the current default).
+- `claim_participation_rebate` is a post-settlement pull claim for an enrolled
+  non-podium player. It cannot pay a podium entry or exceed the reserve fixed
+  from participant count and original entries.
 - `cancel_match` and `claim_refund` support controller-initiated, per-player
   exact contribution refunds only while the match is still funding. An active
   match cannot be cancelled into a blanket refund: after start it must settle

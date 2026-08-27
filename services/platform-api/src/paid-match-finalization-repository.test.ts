@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PaidRuleset, type AuthoritativeMatchResult } from "@blob/shared";
+import { PaidRuleset, SettlementPayoutKind, type AuthoritativeMatchResult } from "@blob/shared";
 import { createPaidMatchTerms, type PaidMatchTerms, type VerifiedParticipant } from "./paid-match.js";
 import {
   PaidMatchPersistenceError,
@@ -13,7 +13,10 @@ const ESCROW = "9xQeWvG816bUx9EPfEZgC3Jk6zR9aM2Qq8F4JZ2xAazC";
 const WALLETS = [
   "4Nd1m3sW3vJ3zN9WZ1xQ2u5d7i9K6p4YvTq8eR1sA2bC",
   "7YttLkH3UQJfB73uExyGfEKvwR6LjhQmN6x2PRZKMrP2",
-  "B6xXoQkbXZp27DiNUZCr36N54xe69Bp5uzWUsWeLMYqV"
+  "B6xXoQkbXZp27DiNUZCr36N54xe69Bp5uzWUsWeLMYqV",
+  "So11111111111111111111111111111111111111112",
+  "Stake11111111111111111111111111111111111111",
+  "Vote111111111111111111111111111111111111111"
 ];
 
 describe("durable paid-match finalization", () => {
@@ -40,10 +43,13 @@ describe("durable paid-match finalization", () => {
       resultHash: first.immutableResultHash,
       settlementId: first.settlementId,
     });
-    expect(state.payouts.map((payout) => [payout.place, payout.entryId])).toEqual([
-      [1, "entry-1"],
-      [2, "entry-2"],
-      [3, "entry-3"],
+    expect(state.payouts.map((payout) => [payout.kind, payout.place, payout.entryId])).toEqual([
+      [SettlementPayoutKind.PRIZE, 1, "entry-1"],
+      [SettlementPayoutKind.PRIZE, 2, "entry-2"],
+      [SettlementPayoutKind.PRIZE, 3, "entry-3"],
+      [SettlementPayoutKind.PARTICIPATION_REBATE, null, "entry-4"],
+      [SettlementPayoutKind.PARTICIPATION_REBATE, null, "entry-5"],
+      [SettlementPayoutKind.PARTICIPATION_REBATE, null, "entry-6"],
     ]);
     expect(state.match.status).toBe("FINALIZING");
     expect(state.auditEvents).toHaveLength(1);
@@ -156,7 +162,7 @@ describe("durable paid-match finalization", () => {
     const repository = new PrismaPaidMatchFinalizationRepository(createPrisma(state));
     const input = createInput(terms);
     await repository.persist(input);
-    state.payouts[2] = { ...state.payouts[0]! };
+    state.payouts[3] = { ...state.payouts[0]! };
 
     await expect(repository.persist(input))
       .rejects.toMatchObject({ code: "PAYOUT_RECORD_CONFLICT" } satisfies Partial<PaidMatchPersistenceError>);
@@ -195,6 +201,9 @@ function createResult(matchId: string, roundId: string): AuthoritativeMatchResul
       { playerId: "player-1", finalRank: 1, finalMass: 500, foodCollected: 30, eliminations: 2, deaths: 0, survivalTimeMs: 600_000 },
       { playerId: "player-2", finalRank: 2, finalMass: 300, foodCollected: 20, eliminations: 1, deaths: 1, survivalTimeMs: 590_000 },
       { playerId: "player-3", finalRank: 3, finalMass: 180, foodCollected: 10, eliminations: 0, deaths: 2, survivalTimeMs: 570_000 },
+      { playerId: "player-4", finalRank: 4, finalMass: 100, foodCollected: 5, eliminations: 0, deaths: 2, survivalTimeMs: 540_000 },
+      { playerId: "player-5", finalRank: 5, finalMass: 90, foodCollected: 4, eliminations: 0, deaths: 2, survivalTimeMs: 520_000 },
+      { playerId: "player-6", finalRank: 6, finalMass: 80, foodCollected: 3, eliminations: 0, deaths: 2, survivalTimeMs: 500_000 },
     ]
   };
 }
@@ -204,7 +213,7 @@ interface TestState {
   entries: Array<{ id: string; playerId: string; status: string; amountBaseUnits: bigint; wallet: { address: string } }>;
   result?: { id: string; matchId: string; roundId: string; rulesHash: string; resultHash: string; resultPayload: unknown };
   attempt?: { resultId: string; resultHash: string; settlementId: string; idempotencyKey: string };
-  payouts: Array<{ resultId: string; entryId: string; place: number; amountBaseUnits: bigint; idempotencyKey: string }>;
+  payouts: Array<{ resultId: string; entryId: string; kind: string; place: number | null; amountBaseUnits: bigint; idempotencyKey: string }>;
   auditEvents: unknown[];
   serializationFailures: number;
   transactionCalls: number;
@@ -231,6 +240,7 @@ function createState(terms: PaidMatchTerms): TestState {
       reviveCutoffMs: revive.reviveCutoffMs,
       reviveSpawnProtectionMs: revive.spawnProtectionMs,
       platformFeeBps: Number(configuration.platformFeeBps),
+      participationRebateBps: Number(configuration.participationRebateBps),
       payoutBps: configuration.prizeDistribution.map((payout) => Number(payout.basisPoints)),
       minimumPlayers: configuration.minimumPlayers,
       maximumPlayers: configuration.maximumPlayers,
@@ -283,7 +293,7 @@ function createPrisma(state: TestState): PrismaClient {
       }
     },
     payout: {
-      createMany: async ({ data }: { data: Array<{ resultId: string; entryId: string; place: number; amountBaseUnits: bigint; idempotencyKey: string }> }) => {
+      createMany: async ({ data }: { data: Array<{ resultId: string; entryId: string; kind: string; place: number | null; amountBaseUnits: bigint; idempotencyKey: string }> }) => {
         state.payouts.push(...data);
         return { count: data.length };
       },

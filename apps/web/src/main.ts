@@ -265,7 +265,7 @@ async function openUsdcMode(): Promise<void> {
         </div>
         <span class="usdc-mode-locked">ENTRIES DISABLED</span>
       </div>
-      <p class="usdc-mode-copy">USDC Mode will use the same server-authoritative arena as Free Mode. This preview has no entry form, pool, transfer, or payout request.</p>
+      <p class="usdc-mode-copy">USDC Mode will use the same server-authoritative arena as Free Mode. These are the intended disclosed rules; this private preview has no entry form, pool, transfer, or payout request.</p>
       <div class="usdc-mode-grid">
         <section class="usdc-wallet-card" aria-labelledby="usdc-wallet-title">
           <p class="token-label" id="usdc-wallet-title">Wallet profile</p>
@@ -277,15 +277,26 @@ async function openUsdcMode(): Promise<void> {
           <p class="token-label" id="usdc-rules-title">Locked competitive rules</p>
           <dl>
             <div><dt>Asset</dt><dd>Native USDC · Solana</dd></div>
+            <div><dt>Players</dt><dd>Minimum 6 confirmed</dd></div>
             <div><dt>Round</dt><dd>10 minutes · authoritative</dd></div>
-            <div><dt>Pool</dt><dd>5% platform fee · 95% prizes</dd></div>
-            <div><dt>Winners</dt><dd>Top 3 · ruleset-defined split</dd></div>
+            <div><dt>Fee</dt><dd>10% of all contributions</dd></div>
+            <div><dt>Podium</dt><dd>Top 3 · 55% / 30% / 15%</dd></div>
+            <div><dt>Rebate</dt><dd>Ranks 4+ · 10% of entry</dd></div>
+            <div><dt>Revive</dt><dd>0.50 USDC · unavailable at 03:00</dd></div>
           </dl>
         </section>
       </div>
       <div class="usdc-mode-footer">
         <div class="usdc-mode-disclosure">
-          <label class="usdc-risk-ack"><input id="usdc-risk-ack" type="checkbox" /> <span>I understand crypto assets can lose all value, participation is voluntary, and I must review the <a href="/terms.html" target="_blank" rel="noreferrer">BLOB Terms &amp; Risk Disclosure</a>.</span></label>
+          <aside class="usdc-safety-card" aria-labelledby="usdc-safety-title">
+            <p class="token-label" id="usdc-safety-title">Wallet safety checklist</p>
+            <ul>
+              <li>Use a separate wallet and keep only the amount you are prepared to lose.</li>
+              <li>Verify <strong>blob.lat</strong>, the wallet request, network, recipient and amount before signing.</li>
+              <li>Never share a seed phrase or private key. BLOB login signs a message; it is never a USDC transfer.</li>
+            </ul>
+          </aside>
+          <label class="usdc-risk-ack"><input id="usdc-risk-ack" type="checkbox" /> <span>I understand that crypto assets can lose all value, participation is voluntary, I should use a separate wallet, and I must review the <a href="/terms.html" target="_blank" rel="noreferrer">BLOB Terms &amp; Risk Disclosure</a>.</span></label>
           <p id="usdc-risk-ack-status"><strong>NOT OPEN FOR PAYMENT.</strong> This preview acknowledgement is not an entry acceptance. Any future paid action must request its own dated acceptance.</p>
         </div>
         <button class="leave-game" id="return-to-free-mode" type="button">Return to Free Mode</button>

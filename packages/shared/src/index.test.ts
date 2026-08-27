@@ -17,7 +17,9 @@ import {
 } from "./index.js";
 
 function totalDistributed(result: ReturnType<typeof calculatePrizeDistribution>): bigint {
-  return result.platformFeeBaseUnits + result.payouts.reduce((total, payout) => total + payout.amountBaseUnits, 0n);
+  return result.platformFeeBaseUnits
+    + result.participationRebatePoolBaseUnits
+    + result.payouts.reduce((total, payout) => total + payout.amountBaseUnits, 0n);
 }
 
 describe("integer prize calculation", () => {
@@ -38,7 +40,7 @@ describe("integer prize calculation", () => {
     expect(result.payouts).toHaveLength(3);
   });
 
-  it("calculates the specified 10-player, 10 USDC example without floats", () => {
+  it("calculates the 10-player, 10 USDC fee, rebate, and podium example without floats", () => {
     const result = calculatePrizeDistribution({
       ...DEFAULT_PAID_MATCH_CONFIGURATION,
       playerCount: 10,
@@ -46,9 +48,11 @@ describe("integer prize calculation", () => {
     });
 
     expect(result.grossPoolBaseUnits).toBe(100_000_000n);
-    expect(result.platformFeeBaseUnits).toBe(5_000_000n);
-    expect(result.prizePoolBaseUnits).toBe(95_000_000n);
-    expect(result.payouts.map((payout) => payout.amountBaseUnits)).toEqual([57_000_000n, 28_500_000n, 9_500_000n]);
+    expect(result.platformFeeBaseUnits).toBe(10_000_000n);
+    expect(result.participationRebatePerPlayerBaseUnits).toBe(1_000_000n);
+    expect(result.participationRebatePoolBaseUnits).toBe(7_000_000n);
+    expect(result.prizePoolBaseUnits).toBe(83_000_000n);
+    expect(result.payouts.map((payout) => payout.amountBaseUnits)).toEqual([45_650_000n, 24_900_000n, 12_450_000n]);
   });
 
   it("assigns rounding remainder to first place deterministically", () => {
@@ -80,6 +84,8 @@ describe("integer prize calculation", () => {
     });
     const result = calculatePrizeDistributionFromGrossPool({
       ...DEFAULT_PAID_MATCH_CONFIGURATION,
+      entryAmountBaseUnits: 1_000_000n,
+      playerCount: 10,
       grossPoolBaseUnits: pool.grossPoolBaseUnits
     });
 
@@ -88,26 +94,28 @@ describe("integer prize calculation", () => {
       revivePoolBaseUnits: 1_500_000n,
       grossPoolBaseUnits: 11_500_000n
     });
-    expect(result.platformFeeBaseUnits).toBe(575_000n);
-    expect(result.prizePoolBaseUnits).toBe(10_925_000n);
-    expect(result.payouts.map((payout) => payout.amountBaseUnits)).toEqual([6_555_000n, 3_277_500n, 1_092_500n]);
+    expect(result.platformFeeBaseUnits).toBe(1_150_000n);
+    expect(result.participationRebatePerPlayerBaseUnits).toBe(100_000n);
+    expect(result.participationRebatePoolBaseUnits).toBe(700_000n);
+    expect(result.prizePoolBaseUnits).toBe(9_650_000n);
+    expect(result.payouts.map((payout) => payout.amountBaseUnits)).toEqual([5_307_500n, 2_895_000n, 1_447_500n]);
     expect(totalDistributed(result)).toBe(11_500_000n);
   });
 });
 
 describe("paid revive policy", () => {
-  it("allows one timely revive and closes it at the authoritative final minute", () => {
+  it("allows one timely revive and closes it at the authoritative final three minutes", () => {
     expect(getPaidReviveEligibility(DEFAULT_REBUY_REVIVE_CONFIGURATION, {
       isPlayerDead: true,
       revivesUsed: 0,
-      remainingMs: 60_001,
+      remainingMs: 180_001,
       millisecondsSinceDeath: 30_000
     })).toBe(PaidReviveBlockReason.ALLOWED);
 
     expect(getPaidReviveEligibility(DEFAULT_REBUY_REVIVE_CONFIGURATION, {
       isPlayerDead: true,
       revivesUsed: 0,
-      remainingMs: 60_000,
+      remainingMs: 180_000,
       millisecondsSinceDeath: 1
     })).toBe(PaidReviveBlockReason.ROUND_CUTOFF_REACHED);
   });
@@ -116,21 +124,21 @@ describe("paid revive policy", () => {
     expect(getPaidReviveEligibility(DEFAULT_REBUY_REVIVE_CONFIGURATION, {
       isPlayerDead: false,
       revivesUsed: 0,
-      remainingMs: 90_000,
+      remainingMs: 180_001,
       millisecondsSinceDeath: 1
     })).toBe(PaidReviveBlockReason.PLAYER_IS_ALIVE);
 
     expect(getPaidReviveEligibility(DEFAULT_REBUY_REVIVE_CONFIGURATION, {
       isPlayerDead: true,
       revivesUsed: 0,
-      remainingMs: 90_000,
+      remainingMs: 180_001,
       millisecondsSinceDeath: 30_001
     })).toBe(PaidReviveBlockReason.REVIVE_WINDOW_EXPIRED);
 
     expect(getPaidReviveEligibility(DEFAULT_REBUY_REVIVE_CONFIGURATION, {
       isPlayerDead: true,
       revivesUsed: 1,
-      remainingMs: 90_000,
+      remainingMs: 180_001,
       millisecondsSinceDeath: 1
     })).toBe(PaidReviveBlockReason.REVIVE_LIMIT_REACHED);
   });
@@ -154,6 +162,10 @@ describe("paid revive policy", () => {
       ...DEFAULT_PAID_MATCH_CONFIGURATION,
       ruleset: PaidRuleset.SKILL,
       maximumPlayers: 33
+    })).toThrow("player limits");
+    expect(() => assertPaidMatchConfiguration({
+      ...DEFAULT_PAID_MATCH_CONFIGURATION,
+      minimumPlayers: 5
     })).toThrow("player limits");
     expect(() => assertPaidMatchConfiguration({
       ...DEFAULT_PAID_MATCH_CONFIGURATION,

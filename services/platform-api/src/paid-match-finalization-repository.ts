@@ -84,6 +84,7 @@ export class PrismaPaidMatchFinalizationRepository {
           reviveCutoffMs: true,
           reviveSpawnProtectionMs: true,
           platformFeeBps: true,
+          participationRebateBps: true,
           payoutBps: true,
           minimumPlayers: true,
           maximumPlayers: true,
@@ -132,19 +133,19 @@ export class PrismaPaidMatchFinalizationRepository {
         }
       });
       await transaction.payout.createMany({
-        data: finalized.prizes.payouts.map((payout) => {
-          const rankedPlayer = input.result.players.find((player) => player.finalRank === payout.place);
-          const entry = rankedPlayer ? entriesByPlayer.get(rankedPlayer.playerId) : undefined;
-          if (!rankedPlayer || !entry) {
-            throw new PaidMatchPersistenceError("PAYOUT_BINDING_INVALID", "A prize winner is not a verified paid entry.");
+        data: finalized.settlementRequest.payoutPlan.map((payout) => {
+          const entry = entriesByPlayer.get(payout.playerId);
+          if (!entry) {
+            throw new PaidMatchPersistenceError("PAYOUT_BINDING_INVALID", "A result payout recipient is not a verified paid entry.");
           }
           return {
             matchId: input.terms.matchId,
             resultId: resultRecord.id,
             entryId: entry.id,
+            kind: payout.kind,
             place: payout.place,
             amountBaseUnits: payout.amountBaseUnits,
-            idempotencyKey: "payout:" + input.terms.matchId + ":" + finalized.immutableResultHash + ":" + payout.place,
+            idempotencyKey: "payout:" + input.terms.matchId + ":" + finalized.immutableResultHash + ":" + payout.kind + ":" + payout.finalRank,
           };
         })
       });
@@ -197,30 +198,32 @@ export class PrismaPaidMatchFinalizationRepository {
       throw new PaidMatchPersistenceError("SETTLEMENT_RECORD_CONFLICT", "The durable settlement record does not match the immutable result.");
     }
     const entriesByPlayer = await loadVerifiedEntries(transaction, terms, input.verifiedParticipants);
-    const expectedPayouts = finalized.prizes.payouts.map((payout) => {
-      const rankedPlayer = input.result.players.find((player) => player.finalRank === payout.place);
-      const entry = rankedPlayer ? entriesByPlayer.get(rankedPlayer.playerId) : undefined;
-      if (!rankedPlayer || !entry) {
-        throw new PaidMatchPersistenceError("PAYOUT_BINDING_INVALID", "A prize winner is not a verified paid entry.");
+    const expectedPayouts = finalized.settlementRequest.payoutPlan.map((payout) => {
+      const entry = entriesByPlayer.get(payout.playerId);
+      if (!entry) {
+        throw new PaidMatchPersistenceError("PAYOUT_BINDING_INVALID", "A result payout recipient is not a verified paid entry.");
       }
       return {
         entryId: entry.id,
+        kind: payout.kind,
         place: payout.place,
         amountBaseUnits: payout.amountBaseUnits,
-        idempotencyKey: "payout:" + terms.matchId + ":" + finalized.immutableResultHash + ":" + payout.place,
+        idempotencyKey: "payout:" + terms.matchId + ":" + finalized.immutableResultHash + ":" + payout.kind + ":" + payout.finalRank,
       };
     });
     const storedPayouts = await transaction.payout.findMany({
       where: { resultId: existingResult.id },
-      select: { entryId: true, place: true, amountBaseUnits: true, idempotencyKey: true }
+      select: { entryId: true, kind: true, place: true, amountBaseUnits: true, idempotencyKey: true }
     });
-    const storedPayoutsByPlace = new Map(storedPayouts.map((payout) => [payout.place, payout]));
+    const storedPayoutsByEntry = new Map(storedPayouts.map((payout) => [payout.entryId, payout]));
     if (storedPayouts.length !== expectedPayouts.length
-      || storedPayoutsByPlace.size !== storedPayouts.length
+      || storedPayoutsByEntry.size !== storedPayouts.length
       || expectedPayouts.some((expectedPayout) => {
-        const storedPayout = storedPayoutsByPlace.get(expectedPayout.place);
+        const storedPayout = storedPayoutsByEntry.get(expectedPayout.entryId);
         return !storedPayout
           || expectedPayout.entryId !== storedPayout.entryId
+          || expectedPayout.kind !== storedPayout.kind
+          || expectedPayout.place !== storedPayout.place
           || expectedPayout.amountBaseUnits !== storedPayout.amountBaseUnits
           || expectedPayout.idempotencyKey !== storedPayout.idempotencyKey;
       })) {
@@ -251,6 +254,7 @@ function assertStoredTermsMatch(
     reviveCutoffMs: number;
     reviveSpawnProtectionMs: number;
     platformFeeBps: number;
+    participationRebateBps: number;
     payoutBps: number[];
     minimumPlayers: number;
     maximumPlayers: number;
@@ -276,6 +280,7 @@ function assertStoredTermsMatch(
     && match.reviveCutoffMs === revive.reviveCutoffMs
     && match.reviveSpawnProtectionMs === revive.spawnProtectionMs
     && match.platformFeeBps === Number(configuration.platformFeeBps)
+    && match.participationRebateBps === Number(configuration.participationRebateBps)
     && equalNumberArrays(match.payoutBps, expectedPayoutBps)
     && match.minimumPlayers === configuration.minimumPlayers
     && match.maximumPlayers === configuration.maximumPlayers
@@ -374,9 +379,14 @@ function toStoredResultPayload(finalized: FinalizedPaidMatch): Prisma.InputJsonV
       revivePoolBaseUnits: finalized.pool.revivePoolBaseUnits.toString(),
       grossPoolBaseUnits: finalized.pool.grossPoolBaseUnits.toString(),
       platformFeeBaseUnits: finalized.prizes.platformFeeBaseUnits.toString(),
+      participationRebatePerPlayerBaseUnits: finalized.prizes.participationRebatePerPlayerBaseUnits.toString(),
+      participationRebatePoolBaseUnits: finalized.prizes.participationRebatePoolBaseUnits.toString(),
       prizePoolBaseUnits: finalized.prizes.prizePoolBaseUnits.toString(),
     },
-    payouts: finalized.prizes.payouts.map((payout) => ({
+    payouts: finalized.settlementRequest.payoutPlan.map((payout) => ({
+      playerId: payout.playerId,
+      finalRank: payout.finalRank,
+      kind: payout.kind,
       place: payout.place,
       amountBaseUnits: payout.amountBaseUnits.toString(),
     })),

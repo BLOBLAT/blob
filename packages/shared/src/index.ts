@@ -4,12 +4,20 @@ export const USDC_BASE_UNITS = 1_000_000n;
 /**
  * A paid round needs to be large enough for every configured top-three
  * placement to receive at least one atomic USDC unit after integer rounding.
- * With the immutable minimum of three players and positive basis-point
+ * With the immutable six-player minimum and positive basis-point
  * payouts, 0.01 USDC is sufficient and avoids unusable dust matches.
  */
 export const PAID_MATCH_MIN_ENTRY_AMOUNT_BASE_UNITS = 10_000n;
-export const PAID_MATCH_PLATFORM_FEE_BPS = 500n;
+/**
+ * These values are the single future Paid Arena ruleset. They are domain
+ * constants only while paid play is disabled; a match must commit every value
+ * into its immutable rules hash before it can ever accept an entry.
+ */
+export const PAID_MATCH_PLATFORM_FEE_BPS = 1_000n;
+export const PAID_MATCH_PARTICIPATION_REBATE_BPS = 1_000n;
 export const PAID_MATCH_WINNER_COUNT = 3;
+/** Paid Arena only starts with a meaningful competitive field. */
+export const PAID_MATCH_MIN_PLAYERS = 6;
 export const PAID_MATCH_MAX_PLAYERS = 32;
 export const PAID_MATCH_ROUND_DURATION_MS = 10 * 60 * 1_000;
 /**
@@ -19,7 +27,7 @@ export const PAID_MATCH_ROUND_DURATION_MS = 10 * 60 * 1_000;
 export const PAID_MATCH_MAX_FUNDING_TIMEOUT_MS = 15 * 60 * 1_000;
 export const REBUY_AMOUNT_BASE_UNITS = 500_000n;
 export const REBUY_WINDOW_MS = 30_000;
-export const REBUY_CUTOFF_MS = 60_000;
+export const REBUY_CUTOFF_MS = 180_000;
 export const REBUY_SPAWN_PROTECTION_MS = 1_500;
 
 /**
@@ -66,6 +74,12 @@ export interface PaidMatchConfiguration {
   settlementAsset: SettlementAsset;
   entryAmountBaseUnits: bigint;
   platformFeeBps: bigint;
+  /**
+   * Returned to every verified participant outside the top three. This is a
+   * partial participation rebate of the original entry only, never of a
+   * revive contribution and never a claim that a player cannot lose money.
+   */
+  participationRebateBps: bigint;
   prizeDistribution: readonly PrizeDistribution[];
   minimumPlayers: number;
   maximumPlayers: number;
@@ -79,12 +93,13 @@ export const DEFAULT_PAID_MATCH_CONFIGURATION: PaidMatchConfiguration = {
   settlementAsset: SettlementAsset.NATIVE_SOLANA_USDC,
   entryAmountBaseUnits: USDC_BASE_UNITS,
   platformFeeBps: PAID_MATCH_PLATFORM_FEE_BPS,
+  participationRebateBps: PAID_MATCH_PARTICIPATION_REBATE_BPS,
   prizeDistribution: [
-    { place: 1, basisPoints: 6_000n },
+    { place: 1, basisPoints: 5_500n },
     { place: 2, basisPoints: 3_000n },
-    { place: 3, basisPoints: 1_000n }
+    { place: 3, basisPoints: 1_500n }
   ],
-  minimumPlayers: 3,
+  minimumPlayers: PAID_MATCH_MIN_PLAYERS,
   maximumPlayers: 10,
   roundDurationMs: PAID_MATCH_ROUND_DURATION_MS,
   fundingTimeoutMs: 300_000,
@@ -119,9 +134,27 @@ export interface PrizePayout {
   amountBaseUnits: bigint;
 }
 
+export const SettlementPayoutKind = {
+  PRIZE: "PRIZE",
+  PARTICIPATION_REBATE: "PARTICIPATION_REBATE"
+} as const;
+
+export type SettlementPayoutKind = (typeof SettlementPayoutKind)[keyof typeof SettlementPayoutKind];
+
+/** A server-bound recipient plan. Wallet addresses stay outside game results. */
+export interface SettlementPayout {
+  playerId: string;
+  finalRank: number;
+  kind: SettlementPayoutKind;
+  place: number | null;
+  amountBaseUnits: bigint;
+}
+
 export interface PrizeCalculation {
   grossPoolBaseUnits: bigint;
   platformFeeBaseUnits: bigint;
+  participationRebatePerPlayerBaseUnits: bigint;
+  participationRebatePoolBaseUnits: bigint;
   prizePoolBaseUnits: bigint;
   payouts: PrizePayout[];
   roundingRemainderBaseUnits: bigint;
@@ -211,27 +244,37 @@ export function calculatePaidMatchPool(input: PaidPoolInput): PaidPoolCalculatio
  * Division remainders are deterministically assigned to first place so no
  * base units become unaccounted for.
  */
-export function calculatePrizeDistribution(input: Pick<PaidMatchConfiguration, "entryAmountBaseUnits" | "platformFeeBps" | "prizeDistribution"> & { playerCount: number }): PrizeCalculation {
+export function calculatePrizeDistribution(input: Pick<PaidMatchConfiguration, "entryAmountBaseUnits" | "platformFeeBps" | "participationRebateBps" | "prizeDistribution"> & { playerCount: number }): PrizeCalculation {
   assertPrizeInput(input);
   return calculatePrizeDistributionFromGrossPool({
     grossPoolBaseUnits: input.entryAmountBaseUnits * BigInt(input.playerCount),
+    entryAmountBaseUnits: input.entryAmountBaseUnits,
+    playerCount: input.playerCount,
     platformFeeBps: input.platformFeeBps,
+    participationRebateBps: input.participationRebateBps,
     prizeDistribution: input.prizeDistribution
   });
 }
 
-export function calculatePrizeDistributionFromGrossPool(input: Pick<PaidMatchConfiguration, "platformFeeBps" | "prizeDistribution"> & { grossPoolBaseUnits: bigint }): PrizeCalculation {
+export function calculatePrizeDistributionFromGrossPool(input: Pick<PaidMatchConfiguration, "entryAmountBaseUnits" | "platformFeeBps" | "participationRebateBps" | "prizeDistribution"> & { grossPoolBaseUnits: bigint; playerCount: number }): PrizeCalculation {
   if (input.grossPoolBaseUnits <= 0n) {
     throw new RangeError("grossPoolBaseUnits must be positive.");
   }
   assertPrizeInput({
-    entryAmountBaseUnits: input.grossPoolBaseUnits,
-    playerCount: 1,
+    entryAmountBaseUnits: input.entryAmountBaseUnits,
+    playerCount: input.playerCount,
     platformFeeBps: input.platformFeeBps,
+    participationRebateBps: input.participationRebateBps,
     prizeDistribution: input.prizeDistribution
   });
   const platformFeeBaseUnits = (input.grossPoolBaseUnits * input.platformFeeBps) / BASIS_POINTS;
-  const prizePoolBaseUnits = input.grossPoolBaseUnits - platformFeeBaseUnits;
+  const participationRebatePerPlayerBaseUnits = (input.entryAmountBaseUnits * input.participationRebateBps) / BASIS_POINTS;
+  const nonWinnerCount = Math.max(0, input.playerCount - PAID_MATCH_WINNER_COUNT);
+  const participationRebatePoolBaseUnits = participationRebatePerPlayerBaseUnits * BigInt(nonWinnerCount);
+  const prizePoolBaseUnits = input.grossPoolBaseUnits - platformFeeBaseUnits - participationRebatePoolBaseUnits;
+  if (prizePoolBaseUnits <= 0n) {
+    throw new RangeError("Paid match prize pool must remain positive after the platform fee and participation rebates.");
+  }
   const payouts = input.prizeDistribution
     .slice()
     .sort((left, right) => left.place - right.place)
@@ -250,6 +293,8 @@ export function calculatePrizeDistributionFromGrossPool(input: Pick<PaidMatchCon
   return {
     grossPoolBaseUnits: input.grossPoolBaseUnits,
     platformFeeBaseUnits,
+    participationRebatePerPlayerBaseUnits,
+    participationRebatePoolBaseUnits,
     prizePoolBaseUnits,
     payouts,
     roundingRemainderBaseUnits
@@ -259,7 +304,8 @@ export function calculatePrizeDistributionFromGrossPool(input: Pick<PaidMatchCon
 /**
  * Validates paid terms before they are persisted or an entry is accepted.
  * These constraints intentionally mirror the checked-in native-USDC escrow:
- * three prizes, a fixed 5% fee, at most 32 entrants, and a ten-minute round.
+ * three prizes, a fixed 10% fee, a 10% non-winner participation rebate, at
+ * most 32 entrants, and a ten-minute round.
  */
 export function assertPaidMatchConfiguration(configuration: PaidMatchConfiguration): void {
   if (configuration.ruleset !== PaidRuleset.SKILL && configuration.ruleset !== PaidRuleset.REBUY) {
@@ -273,7 +319,7 @@ export function assertPaidMatchConfiguration(configuration: PaidMatchConfigurati
   }
   if (!Number.isSafeInteger(configuration.minimumPlayers)
     || !Number.isSafeInteger(configuration.maximumPlayers)
-    || configuration.minimumPlayers < PAID_MATCH_WINNER_COUNT
+    || configuration.minimumPlayers < PAID_MATCH_MIN_PLAYERS
     || configuration.maximumPlayers < configuration.minimumPlayers
     || configuration.maximumPlayers > PAID_MATCH_MAX_PLAYERS) {
     throw new RangeError("Paid match player limits are invalid.");
@@ -290,13 +336,14 @@ export function assertPaidMatchConfiguration(configuration: PaidMatchConfigurati
     entryAmountBaseUnits: configuration.entryAmountBaseUnits,
     playerCount: configuration.minimumPlayers,
     platformFeeBps: configuration.platformFeeBps,
+    participationRebateBps: configuration.participationRebateBps,
     prizeDistribution: configuration.prizeDistribution
   });
 }
 
 /**
  * Disabled Skill-match revive values are canonical zeros. Rebuy Arena has one
- * fixed 0.50 USDC revive and the disclosed 30-second/final-minute timing.
+ * fixed 0.50 USDC revive and the disclosed 30-second/three-minute cutoff.
  */
 export function assertPaidReviveConfiguration(configuration: PaidReviveConfiguration): void {
   const numericFields = [
@@ -437,7 +484,7 @@ export interface AuthoritativeMatchResult {
 export interface SettlementRequest {
   settlementId: string;
   result: AuthoritativeMatchResult;
-  payoutPlan: readonly PrizePayout[];
+  payoutPlan: readonly SettlementPayout[];
   idempotencyKey: string;
 }
 
@@ -482,7 +529,7 @@ const PAID_MATCH_TRANSITIONS: Readonly<Record<PaidMatchState, readonly PaidMatch
   [PaidMatchState.REFUNDED]: []
 };
 
-function assertPrizeInput(input: Pick<PaidMatchConfiguration, "entryAmountBaseUnits" | "platformFeeBps" | "prizeDistribution"> & { playerCount: number }): void {
+function assertPrizeInput(input: Pick<PaidMatchConfiguration, "entryAmountBaseUnits" | "platformFeeBps" | "participationRebateBps" | "prizeDistribution"> & { playerCount: number }): void {
   if (!Number.isSafeInteger(input.playerCount) || input.playerCount < 1) {
     throw new RangeError("playerCount must be a positive safe integer.");
   }
@@ -490,7 +537,10 @@ function assertPrizeInput(input: Pick<PaidMatchConfiguration, "entryAmountBaseUn
     throw new RangeError("entryAmountBaseUnits must be positive.");
   }
   if (input.platformFeeBps !== PAID_MATCH_PLATFORM_FEE_BPS) {
-    throw new RangeError("platformFeeBps must be the fixed 5% platform fee.");
+    throw new RangeError("platformFeeBps must be the fixed 10% platform fee.");
+  }
+  if (input.participationRebateBps !== PAID_MATCH_PARTICIPATION_REBATE_BPS) {
+    throw new RangeError("participationRebateBps must be the fixed 10% non-winner participation rebate.");
   }
   assertThreePlacePrizeDistribution(input.prizeDistribution);
 }

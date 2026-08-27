@@ -46,12 +46,13 @@ PostgreSQL audit record before broadcast and automatically expire after 90
 days. Chat is not a public archive or a source of competitive authority.
 
 The same isolated service contains an unexposed paid-match domain: bigint
-native-USDC pool accounting, 5% fee calculation, standard Skill vs disclosed
+native-USDC pool accounting, 10% fee plus a disclosed rank-4-and-lower
+participation-rebate calculation, standard Skill vs disclosed
 Rebuy Arena rules, and finalized-chain-transfer verification. The separate
 [`programs/blob-escrow`](programs/blob-escrow) Anchor source fixes native-USDC,
 match terms, result hash recording, entry/refund handling, authority-attested
-revives, and deterministic 5% settlement with an immutable per-match top-three
-payout split on-chain. It has host-side
+revives, and deterministic 10% fee/rebate-aware settlement with an immutable
+per-match top-three payout split on-chain. It has host-side
 tests only: no program ID, keypair, devnet deployment, blockchain transaction,
 USDC custody, or paid match is enabled. See [paid-mode.md](docs/paid-mode.md)
 for the required security and deployment gates.

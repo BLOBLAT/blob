@@ -5,6 +5,7 @@ import {
   DEFAULT_REBUY_REVIVE_CONFIGURATION,
   PaidReviveBlockReason,
   PaidRuleset,
+  SettlementPayoutKind,
   SettlementAsset,
   assertPaidMatchConfiguration,
   assertPaidReviveConfiguration,
@@ -16,6 +17,7 @@ import {
   type PaidPoolCalculation,
   type PaidReviveConfiguration,
   type PrizeCalculation,
+  type SettlementPayout,
   type SettlementRequest
 } from "@blob/shared";
 
@@ -113,7 +115,7 @@ export function createPaidMatchTerms(input: CreatePaidMatchTermsInput): PaidMatc
     settlementAsset: SettlementAsset.NATIVE_SOLANA_USDC,
     usdcMint: input.usdcMint,
     escrowAddress: input.escrowAddress,
-    rulesVersion: "paid-rules-v1",
+    rulesVersion: "paid-rules-v2",
     rulesHash,
     createdAt: now,
     fundingDeadline,
@@ -180,9 +182,13 @@ export function finalizePaidMatch(input: {
   });
   const prizes = calculatePrizeDistributionFromGrossPool({
     grossPoolBaseUnits: pool.grossPoolBaseUnits,
+    entryAmountBaseUnits: input.terms.configuration.entryAmountBaseUnits,
+    playerCount: input.verifiedParticipants.length,
     platformFeeBps: input.terms.configuration.platformFeeBps,
+    participationRebateBps: input.terms.configuration.participationRebateBps,
     prizeDistribution: input.terms.configuration.prizeDistribution
   });
+  const payoutPlan = buildSettlementPayoutPlan(input.result, prizes);
   const immutableResultHash = hashResult(input.result, input.verifiedParticipants, input.confirmedRevives, input.terms.rulesHash);
   // A retry must identify the same immutable result without relying on a
   // caller to remember a generated UUID. The resulting identifier is bounded
@@ -196,7 +202,7 @@ export function finalizePaidMatch(input: {
     settlementRequest: {
       settlementId,
       result: input.result,
-      payoutPlan: prizes.payouts,
+      payoutPlan,
       idempotencyKey: "settle:" + input.terms.matchId + ":" + immutableResultHash
     }
   };
@@ -333,6 +339,7 @@ function hashTerms(input: {
     fundingDeadline: input.fundingDeadline.toISOString(),
     entryAmountBaseUnits: input.configuration.entryAmountBaseUnits.toString(),
     platformFeeBps: input.configuration.platformFeeBps.toString(),
+    participationRebateBps: input.configuration.participationRebateBps.toString(),
     prizeDistribution: input.configuration.prizeDistribution.map((payout) => [payout.place, payout.basisPoints.toString()]),
     minimumPlayers: input.configuration.minimumPlayers,
     maximumPlayers: input.configuration.maximumPlayers,
@@ -347,6 +354,40 @@ function hashTerms(input: {
       spawnProtectionMs: input.reviveConfiguration.spawnProtectionMs
     }
   }));
+}
+
+/**
+ * Converts the immutable rank list into an explicit recipient plan. The first
+ * three ranks receive the configured prizes; all lower ranks receive only the
+ * disclosed participation rebate. This contains no wallet address and does
+ * not initiate a transfer.
+ */
+function buildSettlementPayoutPlan(
+  result: AuthoritativeMatchResult,
+  prizes: PrizeCalculation,
+): SettlementPayout[] {
+  const prizeByPlace = new Map(prizes.payouts.map((payout) => [payout.place, payout.amountBaseUnits]));
+  return [...result.players]
+    .sort((left, right) => left.finalRank - right.finalRank)
+    .map((player) => {
+      const prizeAmount = prizeByPlace.get(player.finalRank);
+      if (prizeAmount !== undefined) {
+        return {
+          playerId: player.playerId,
+          finalRank: player.finalRank,
+          kind: SettlementPayoutKind.PRIZE,
+          place: player.finalRank,
+          amountBaseUnits: prizeAmount,
+        };
+      }
+      return {
+        playerId: player.playerId,
+        finalRank: player.finalRank,
+        kind: SettlementPayoutKind.PARTICIPATION_REBATE,
+        place: null,
+        amountBaseUnits: prizes.participationRebatePerPlayerBaseUnits,
+      };
+    });
 }
 
 function hashResult(
