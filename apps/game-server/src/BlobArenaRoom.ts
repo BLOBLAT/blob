@@ -16,6 +16,11 @@ import { ArenaChat } from "./arenaChat.js";
 import { createArenaChatPersistence, resolveChatRetentionDays, type ArenaChatPersistence } from "./chatAudit.js";
 import { InputAbuseGuard } from "./inputAbuseGuard.js";
 import { ProfileTicketVerifier, type ResolvedPlayerIdentity } from "./profileIdentity.js";
+import {
+  createReferralQualificationEventId,
+  createReferralQualificationPersistence,
+  type ReferralQualificationPersistence,
+} from "./referralQualification.js";
 
 export interface BlobArenaRoomOptions {
   arenaConfig?: Partial<ArenaConfig>;
@@ -23,6 +28,7 @@ export interface BlobArenaRoomOptions {
   profileTicketPublicKey?: string;
   chatPersistence?: ArenaChatPersistence;
   chatRetentionDays?: number;
+  referralQualificationPersistence?: ReferralQualificationPersistence;
 }
 
 interface AuthenticatedPlayerJoinOptions extends ValidatedPlayerJoinOptions {
@@ -44,6 +50,7 @@ export class BlobArenaRoom extends Room<{ state: BlobArenaState }> {
   private liveMetrics: LiveMetrics | undefined;
   private profileTicketVerifier!: ProfileTicketVerifier;
   private chatPersistence!: ArenaChatPersistence;
+  private referralQualificationPersistence!: ReferralQualificationPersistence;
   private chatRetentionDays = 90;
   private readonly arenaChat = new ArenaChat();
   private readonly profileUserIds = new Map<string, string>();
@@ -53,6 +60,7 @@ export class BlobArenaRoom extends Room<{ state: BlobArenaState }> {
     this.liveMetrics = options.liveMetrics;
     this.profileTicketVerifier = ProfileTicketVerifier.fromBase58(options.profileTicketPublicKey ?? process.env.BLOB_PROFILE_TICKET_PUBLIC_KEY);
     this.chatPersistence = options.chatPersistence ?? createArenaChatPersistence();
+    this.referralQualificationPersistence = options.referralQualificationPersistence ?? createReferralQualificationPersistence();
     this.chatRetentionDays = options.chatRetentionDays ?? resolveChatRetentionDays();
     this.setState(new BlobArenaState());
     this.simulation = new ArenaSimulation(options.arenaConfig);
@@ -282,8 +290,38 @@ export class BlobArenaRoom extends Room<{ state: BlobArenaState }> {
 
     for (const event of this.simulation.drainEvents()) {
       this.broadcast(event.type, event);
+      if (event.type === ServerEvent.MATCH_FINALIZED) {
+        void this.persistReferralQualifications(snapshot);
+      }
       if (event.type !== ServerEvent.FOOD_EATEN) {
         this.log(event.type.toLowerCase(), event);
+      }
+    }
+  }
+
+  private async persistReferralQualifications(snapshot: ReturnType<ArenaSimulation["snapshot"]>): Promise<void> {
+    if (!this.referralQualificationPersistence.enabled || snapshot.mode !== "FREE" || !snapshot.result) {
+      return;
+    }
+    const records = snapshot.result.rankings
+      .filter((ranking) => !ranking.isBot)
+      .flatMap((ranking) => {
+        const profileUserId = this.profileUserIds.get(ranking.playerId);
+        if (!profileUserId) {
+          return [];
+        }
+        return [{
+          eventId: createReferralQualificationEventId(snapshot.result!.matchId, snapshot.result!.roundId, profileUserId),
+          profileUserId,
+          matchId: snapshot.result!.matchId,
+          roundId: snapshot.result!.roundId,
+          completedAt: snapshot.result!.finalizedAt,
+        }];
+      });
+    for (const record of records) {
+      const persisted = await this.referralQualificationPersistence.persist(record);
+      if (persisted) {
+        this.log("referral_qualification_sent", { matchId: record.matchId, roundId: record.roundId });
       }
     }
   }

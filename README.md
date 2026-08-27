@@ -21,7 +21,7 @@ The browser sends normalized intent only. The server owns phase, timer, match an
 
 The public site and the authoritative server are intentionally separate: Vercel deploys `apps/web`, while `apps/game-server` runs on a persistent Node.js/WebSocket host. The root [`railway.toml`](railway.toml) makes this workspace's Railpack build, start command, and `/health` check explicit. See [the production deployment guide](docs/deployment.md) before enabling Free Mode in production.
 
-The public build is temporarily protected by a client-side private-build gate. It is a visibility measure only, not authentication; its single removal switch is documented for contributors in `AGENTS.md`.
+The temporary client-side private-build gate is currently disabled for the public site. It remains a visibility-only mechanism, not authentication; its single switch is documented for contributors in `AGENTS.md`.
 
 The footer also shows two intentionally small, real-time metrics from the
 authoritative game server: active browser presence and BLOBs currently in the
@@ -44,6 +44,13 @@ duplicate-message limits, and keeps only the last 80 live messages in room
 memory. In production, accepted messages are written to a private, signed
 PostgreSQL audit record before broadcast and automatically expire after 90
 days. Chat is not a public archive or a source of competitive authority.
+
+Wallet-backed profiles also receive an optional opaque referral link. A
+referral is bound only once after the invited profile signs in; both parties
+receive server-issued **BLOB Points** only after the invitee completes an
+authoritative Free round. Points are an in-app, non-transferable record with
+no current redemption, gameplay benefit, token conversion, or promised value.
+Referral links never include wallet addresses. See [the referral guide](docs/referrals.md).
 
 The same isolated service contains an unexposed paid-match domain: bigint
 native-USDC pool accounting, 10% fee plus a disclosed rank-4-and-lower

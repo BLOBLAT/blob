@@ -19,7 +19,7 @@ When wallet profiles are enabled, add this independent path. It must not share a
 
 ```text
 https://blob.lat -> Vercel / apps/web
-https://api.blob.lat -> Railway / services/platform-api -> Railway PostgreSQL
+https://api.blob.lat -> Railway / services/platform-api -> PostgreSQL (Neon supported)
 https://blob.lat -> WSS -> Railway / apps/game-server
 ```
 
@@ -172,11 +172,12 @@ never fall back to a production localhost address.
 
 ## 3. Deploy the wallet/profile Platform API
 
-For a new environment, create exactly two additional Railway resources in the existing BLOB project:
-
-1. one managed **PostgreSQL** service;
-2. one persistent service named `platform-api`, sourced from `BLOBLAT/blob` on
-   `main`.
+For a new environment, create one persistent Railway service named
+`platform-api`, sourced from `BLOBLAT/blob` on `main`, and provision one
+PostgreSQL-compatible database. **Neon is supported and recommended for the
+referral/profile store.** A Railway PostgreSQL service remains compatible if
+one is already in use; do not migrate production data merely by changing an
+environment variable.
 
 Keep the Platform API service Root Directory empty so it can access the shared
 npm workspaces. The repository-root `railway.toml` deliberately routes build
@@ -192,7 +193,9 @@ Use `/health`, one replica, and restart policy `ON_FAILURE`. Railway supplies
 `PORT`; the API binds to `0.0.0.0`. Configure these private service variables:
 
 ```sh
-DATABASE_URL=${{Postgres.DATABASE_URL}}
+# Neon pooled PostgreSQL URL with its required TLS option, for example
+# postgres://.../<database>?sslmode=require
+DATABASE_URL=<server-only-postgresql-url>
 NODE_ENV=production
 RAILPACK_NODE_VERSION=22.12.0
 PLATFORM_PUBLIC_ORIGIN=https://blob.lat
@@ -200,6 +203,10 @@ PLATFORM_WEB_ORIGIN=https://blob.lat
 PLATFORM_GAME_TICKET_PRIVATE_KEY_BASE64=<random-32-byte-Ed25519-secret-in-base64>
 BLOB_ARENA_CHAT_AUDIT_PUBLIC_KEY_BASE58=<separate-random-Ed25519-public-key>
 BLOB_CHAT_RETENTION_DAYS=90
+# Referral: public half of a fourth independent Ed25519 pair.
+BLOB_REFERRAL_QUALIFICATION_PUBLIC_KEY_BASE58=<separate-base58-public-key>
+# BLOB_REFERRAL_REFERRER_POINTS=100
+# BLOB_REFERRAL_REFEREE_POINTS=25
 # Future Paid Room only; does not enable Paid Mode.
 # BLOB_PAID_ADMISSION_CONSUMER_PUBLIC_KEY_BASE58=<third-independent-Ed25519-public-key>
 ```
@@ -243,6 +250,21 @@ port before redeploying `blob`. Do not set either value in Vercel or a `VITE_`
 variable.
 If the audit service/database is unavailable, Free Mode continues normally but
 the chat send is rejected rather than publishing an unrecorded message.
+
+Referral qualification uses a different signed private Railway path. Generate
+one more independent 32-byte Ed25519 pair outside source control. Set only the
+public base58 half above on `platform-api`, then set only this matching private
+half on `blob`:
+
+```sh
+PLATFORM_REFERRAL_ORIGIN=http://platform-api.railway.internal:8080
+BLOB_REFERRAL_QUALIFICATION_PRIVATE_KEY_BASE64=<matching-random-32-byte-private-key>
+```
+
+The game server sends a compact result fact only after it finalizes a Free
+round. If either referral variable is omitted, game play remains available but
+points fail closed. Do not set either variable in Vercel or Vite. For
+attribution and Neon migration procedure, see [referrals.md](referrals.md).
 
 Generate the Railway public API domain, deploy, and test:
 

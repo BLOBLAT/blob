@@ -69,6 +69,24 @@ enum ArenaChatMessageStatus {
   REMOVED
 }
 
+/// Referral points are application credits only. They are never a token,
+/// currency, balance of custody assets, or a promise of future value.
+enum ReferralPointReason {
+  REFERRER_QUALIFIED_PLAYER
+  REFEREE_QUALIFIED_PLAYER
+  ADMIN_ADJUSTMENT
+}
+
+enum ReferralAttributionStatus {
+  PENDING
+  QUALIFIED
+  BLOCKED
+}
+
+enum ReferralQualificationKind {
+  FREE_ROUND_COMPLETED
+}
+
 model User {
   id                  String       @id @default(uuid())
   displayName         String
@@ -83,6 +101,11 @@ model User {
   reviveRequests      ReviveRequest[]
   auditEvents         AuditEvent[]
   arenaChatMessages   ArenaChatMessageAudit[]
+  referralCode        ReferralCode?
+  referralsMade       ReferralAttribution[] @relation("ReferralAttributionReferrer")
+  referralReceived    ReferralAttribution?  @relation("ReferralAttributionReferee")
+  referralQualifications ReferralQualification[]
+  referralPoints      ReferralPointsLedger[]
 
   @@unique([displayNameKey])
 }
@@ -353,4 +376,85 @@ model ArenaChatMessageAudit {
   @@index([matchId, roundId, sentAt])
   @@index([profileUserId, sentAt])
   @@index([expiresAt])
+}
+
+/// An opaque public code. The wallet address is intentionally never placed in
+/// a referral URL; the signed BLOB profile owns this code instead.
+model ReferralCode {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  createdAt DateTime @default(now())
+  revokedAt DateTime?
+
+  attributions ReferralAttribution[]
+
+  @@index([revokedAt])
+}
+
+/// A referee can be attributed once. The database uniqueness constraint—not
+/// browser state—enforces the first-valid-referrer rule under concurrent links.
+model ReferralAttribution {
+  id              String                     @id @default(uuid())
+  referralCodeId  String
+  referralCode    ReferralCode               @relation(fields: [referralCodeId], references: [id], onDelete: Restrict)
+  referrerUserId  String
+  referrer        User                       @relation("ReferralAttributionReferrer", fields: [referrerUserId], references: [id], onDelete: Restrict)
+  refereeUserId   String                     @unique
+  referee         User                       @relation("ReferralAttributionReferee", fields: [refereeUserId], references: [id], onDelete: Restrict)
+  status          ReferralAttributionStatus  @default(PENDING)
+  capturedAt      DateTime                   @default(now())
+  qualifiedAt     DateTime?
+  blockedAt       DateTime?
+
+  qualifications  ReferralQualification[]
+  pointEntries    ReferralPointsLedger[]
+
+  @@index([referrerUserId, status])
+  @@index([referralCodeId, status])
+}
+
+/// A signed game-server fact that makes a referral reward eligible. It is
+/// separate from the ledger so rule changes cannot rewrite completed history.
+model ReferralQualification {
+  id                    String                    @id @default(uuid())
+  attributionId         String
+  attribution           ReferralAttribution       @relation(fields: [attributionId], references: [id], onDelete: Restrict)
+  refereeUserId         String
+  referee               User                      @relation(fields: [refereeUserId], references: [id], onDelete: Restrict)
+  kind                  ReferralQualificationKind
+  matchId               String
+  roundId               String
+  qualifiedAt           DateTime
+  sourceEventId         String                    @unique
+  createdAt             DateTime                  @default(now())
+
+  pointEntries          ReferralPointsLedger[]
+
+  /// First completed Free round is enough for the initial program.
+  @@unique([refereeUserId, kind])
+  @@unique([refereeUserId, matchId, roundId, kind])
+  @@index([attributionId, qualifiedAt])
+}
+
+/// Append-only integer point ledger. Balances are derived server-side; no
+/// client request can write, edit, or redeem entries.
+model ReferralPointsLedger {
+  id                    String              @id @default(uuid())
+  userId                String
+  user                  User                @relation(fields: [userId], references: [id], onDelete: Restrict)
+  delta                 BigInt
+  reason                ReferralPointReason
+  referralAttributionId String?
+  referralAttribution   ReferralAttribution? @relation(fields: [referralAttributionId], references: [id], onDelete: Restrict)
+  qualificationId       String?
+  qualification         ReferralQualification? @relation(fields: [qualificationId], references: [id], onDelete: Restrict)
+  idempotencyKey        String              @unique
+  metadata              Json?
+  createdAt             DateTime            @default(now())
+
+  @@index([userId, createdAt])
+  @@index([referralAttributionId])
+  @@index([qualificationId])
 }

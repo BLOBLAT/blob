@@ -91,6 +91,24 @@ PostgreSQL, then broadcasts the message; audit records expire after 90 days by
 default. It records a name snapshot but never a wallet address, cookie, or IP.
 Chat cannot determine a match result or change gameplay state.
 
+## Referral Points
+
+Wallet-backed profiles receive one opaque referral code. A referral link is
+`https://blob.lat/?ref=<CODE>` and deliberately contains no wallet address.
+When a newly authenticated profile opens a valid link, Platform API records the
+first valid referrer only; self-referrals and subsequent attribution attempts
+are rejected server-side.
+
+Points are not awarded for opening a link, connecting a wallet, or browser
+activity. At the authoritative finalization of a real Free Mode round, the
+game server sends a signed completion fact for each eligible connected profile
+to Platform API. The API has a replay-safe, append-only integer ledger and,
+for the initial program, grants points once after the referee's first
+qualified Free round: **100** to the referrer and **25** to the referee by
+default. These server-only values are configurable. Points are not a token,
+cash balance, custody asset, or promise of future value; they currently have
+no redemption or gameplay effect.
+
 ## Ranking and result
 
 The winner is the participant with the greatest final mass. Ties are resolved server-side in this order:

@@ -65,6 +65,20 @@ anonymous arena identifier for 90 days by default, then platform-api purges it.
 It has no DMs, wallet addresses, cookies, IPs, raw HTML, bot-generated
 messages, public history endpoint, or fabricated messages.
 
+The referral program is likewise deliberately outside the Colyseus protocol.
+After wallet-backed profile sign-in, Platform API creates one opaque public
+referral code for the internal user. A visitor can carry that code in
+`?ref=CODE`; the browser may submit it once only after authentication, while
+PostgreSQL enforces first-valid-referrer attribution and blocks self-referral.
+No wallet address appears in the URL. At finalization of a real Free round,
+the authoritative game server sends a compact, Ed25519-signed completion fact
+to Platform API over Railway private networking. The API validates the
+signature and short clock skew, then runs a serializable transaction to record
+the qualification and immutable integer point-ledger entries for the referee
+and referrer. A browser cannot submit a completion, point total, or reward.
+The program does not issue a token, a custody balance, or a redemption claim.
+See [the referral operating guide](referrals.md).
+
 ## Target boundaries
 
 | Boundary | Responsibility | Must not own |
@@ -75,7 +89,7 @@ messages, public history endpoint, or fabricated messages.
 | Protocol and validation (`packages/protocol`, `packages/validation`) | Shared contracts and runtime validation of untrusted payloads | Simulation authority or business logic |
 | Paid admission client (`packages/paid-admission-client`) | Future backend-only Ed25519 ticket verification plus signed one-time consume request from an isolated Paid Room to Platform API | Browser use, wallet custody, Free Mode integration, or result authority |
 | Matchmaking (`services/matchmaking`, planned) | Queues, skill/ruleset selection, capacity allocation, and server assignment | Simulation and prize calculation |
-| Platform API (`services/platform-api`) | Wallet proof, profiles, durable match/payment/audit records, term hashing, and chain verification | Real-time simulation authority, game keys, or browser-trusted payments |
+| Platform API (`services/platform-api`) | Wallet proof, profiles, opaque referral attribution, immutable point ledger, durable match/payment/audit records, term hashing, and chain verification | Real-time simulation authority, game keys, or browser-trusted payments |
 | Escrow program (`programs/blob-escrow`) | Immutable native-USDC match terms, deposited token custody, authority-gated revives, refunds, and deterministic payout execution | Gameplay simulation, browser trust, private keys, or automatic result selection |
 | Database | Accounts, durable match summaries, audit records, and server-produced statistics | Real-time simulation authority |
 | Payment layer | Entry authorization, stablecoin-provider integration, payouts, and audit trail | Gameplay rules and match-result generation |

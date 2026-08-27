@@ -34,8 +34,14 @@ export interface PlatformApiConfig {
   paidAdmissionConsumerPublicKey: Uint8Array | undefined;
   /** Public half of the game-server-only arena-chat audit signing key. */
   arenaChatAuditPublicKey: Uint8Array | undefined;
+  /** Public half of the game-server-only referral-qualification signer. */
+  referralQualificationPublicKey: Uint8Array | undefined;
   /** Accepted chat retention window. Cleanup is owned by platform-api. */
   arenaChatRetentionDays: number;
+  /** Integer BLOB Points for a direct referrer after a qualified Free round. */
+  referralReferrerPoints: bigint;
+  /** Integer BLOB Points for the invited player after that same qualification. */
+  referralRefereePoints: bigint;
 }
 
 const LOCAL_WEB_ORIGINS = ["http://127.0.0.1:5173", "http://localhost:5173"];
@@ -98,6 +104,10 @@ export function loadPlatformApiConfig(environment: NodeJS.ProcessEnv = process.e
   if (environment.BLOB_ARENA_CHAT_AUDIT_PUBLIC_KEY_BASE58 && !arenaChatAuditPublicKey) {
     throw new Error("BLOB_ARENA_CHAT_AUDIT_PUBLIC_KEY_BASE58 must be a base58 Ed25519 public key.");
   }
+  const referralQualificationPublicKey = decodeArenaChatAuditPublicKey(environment.BLOB_REFERRAL_QUALIFICATION_PUBLIC_KEY_BASE58);
+  if (environment.BLOB_REFERRAL_QUALIFICATION_PUBLIC_KEY_BASE58 && !referralQualificationPublicKey) {
+    throw new Error("BLOB_REFERRAL_QUALIFICATION_PUBLIC_KEY_BASE58 must be a base58 Ed25519 public key.");
+  }
 
   return {
     databaseUrl,
@@ -121,7 +131,10 @@ export function loadPlatformApiConfig(environment: NodeJS.ProcessEnv = process.e
     paidAdmissionTicketPrivateKey,
     paidAdmissionConsumerPublicKey,
     arenaChatAuditPublicKey,
+    referralQualificationPublicKey,
     arenaChatRetentionDays: parsePositiveInteger(environment.BLOB_CHAT_RETENTION_DAYS, 90, "BLOB_CHAT_RETENTION_DAYS"),
+    referralReferrerPoints: parseNonNegativeBigInt(environment.BLOB_REFERRAL_REFERRER_POINTS, 100n, "BLOB_REFERRAL_REFERRER_POINTS"),
+    referralRefereePoints: parseNonNegativeBigInt(environment.BLOB_REFERRAL_REFEREE_POINTS, 25n, "BLOB_REFERRAL_REFEREE_POINTS"),
   };
 }
 
@@ -173,6 +186,16 @@ function parsePositiveInteger(value: string | undefined, fallback: number, name:
 
 function parseInteger(value: string): number {
   return /^\d+$/.test(value) ? Number(value) : Number.NaN;
+}
+
+function parseNonNegativeBigInt(value: string | undefined, fallback: bigint, name: string): bigint {
+  if (value === undefined) {
+    return fallback;
+  }
+  if (!/^\d{1,18}$/.test(value)) {
+    throw new Error(name + " must be a non-negative integer.");
+  }
+  return BigInt(value);
 }
 import { timingSafeEqual } from "node:crypto";
 import { decodeArenaChatAuditPublicKey } from "./arena-chat-audit.js";

@@ -16,6 +16,20 @@ export interface GameIdentityTicket {
   expiresAt: string;
 }
 
+export interface ReferralDashboard {
+  code: string;
+  inviteUrl: string;
+  totalPoints: string;
+  invitedCount: number;
+  qualifiedCount: number;
+  referralBound: boolean;
+  recentEntries: Array<{
+    delta: string;
+    reason: "REFERRER_QUALIFIED_PLAYER" | "REFEREE_QUALIFIED_PLAYER" | "ADMIN_ADJUSTMENT";
+    createdAt: string;
+  }>;
+}
+
 export class PlatformApiError extends Error {
   constructor(
     readonly code: string,
@@ -72,6 +86,19 @@ export class PlatformApi {
 
   async getGameIdentityTicket(): Promise<GameIdentityTicket> {
     return this.request<GameIdentityTicket>("/v1/me/game-ticket", { method: "GET" });
+  }
+
+  async getReferralDashboard(): Promise<ReferralDashboard> {
+    const response = await this.request<{ referral: ReferralDashboard }>("/v1/me/referral", { method: "GET" });
+    return response.referral;
+  }
+
+  async captureReferralAttribution(code: string): Promise<"CAPTURED" | "ALREADY_ATTRIBUTED"> {
+    const response = await this.request<{ status: "CAPTURED" | "ALREADY_ATTRIBUTED" }>("/v1/me/referral/attribution", {
+      method: "POST",
+      body: { code },
+    });
+    return response.status;
   }
 
   async logout(): Promise<void> {

@@ -10,6 +10,8 @@ import { GameTicketDisplayNameError, issueGameTicket } from "./game-ticket.js";
 import { verifyArenaChatAuditRequest, type ArenaChatAuditRepository } from "./arena-chat-audit.js";
 import { verifyPaidAdmissionConsumeRequest } from "./paid-admission-consumer.js";
 import type { PrismaPaidAdmissionRepository } from "./paid-admission-repository.js";
+import { ReferralError, ReferralService, type ReferralDashboard, type ReferralRepository } from "./referrals.js";
+import { verifyReferralQualificationRequest } from "./referral-qualification.js";
 
 class OriginNotAllowedError extends Error {}
 
@@ -27,11 +29,16 @@ const profileRequestSchema = z.object({
   displayName: z.string().min(1).max(64)
 }).strict();
 
+const referralAttributionRequestSchema = z.object({
+  code: z.string().min(1).max(32)
+}).strict();
+
 export interface PlatformAppOptions {
   config: PlatformApiConfig;
   repository: PlatformAuthRepository;
   arenaChatRepository?: ArenaChatAuditRepository;
   paidAdmissionRepository?: Pick<PrismaPaidAdmissionRepository, "consume">;
+  referralRepository?: ReferralRepository;
   /** The production entrypoint supplies a durable-store readiness probe. */
   healthCheck: () => Promise<void>;
 }
@@ -72,6 +79,12 @@ export function createPlatformApp(options: PlatformAppOptions): express.Express 
     sessionTtlMs: options.config.sessionTtlMs,
     renameCooldownMs: options.config.renameCooldownMs
   });
+  const referrals = options.referralRepository
+    ? new ReferralService(options.referralRepository, {
+      referrer: options.config.referralReferrerPoints,
+      referee: options.config.referralRefereePoints,
+    })
+    : undefined;
 
   app.disable("x-powered-by");
   app.use((request, response, next) => {
@@ -162,6 +175,41 @@ export function createPlatformApp(options: PlatformAppOptions): express.Express 
     }));
     response.status(204).end();
   }));
+  // A Free Mode browser never calls this route. The persistent game service
+  // signs the compact completion fact after its authoritative round result is
+  // fixed, allowing referral points without trusting a client score or wallet.
+  app.post("/internal/referrals/qualifications", express.raw({ type: "application/json", limit: "2kb" }), asyncRoute(async (request, response) => {
+    const rawBody = Buffer.isBuffer(request.body) ? request.body : undefined;
+    if (!rawBody || !referrals) {
+      response.status(503).json({ error: "REFERRAL_QUALIFICATION_UNAVAILABLE" });
+      return;
+    }
+    const verified = await verifyReferralQualificationRequest({
+      rawBody,
+      signatureHeader: request.get("X-BLOB-Referral-Qualification-Signature") ?? undefined,
+      publicKey: options.config.referralQualificationPublicKey,
+    });
+    if (!verified.success) {
+      response.status(verified.error === "REFERRAL_QUALIFICATION_UNAVAILABLE" ? 503 : verified.error === "REFERRAL_QUALIFICATION_UNAUTHORIZED" ? 401 : 400)
+        .json({ error: verified.error });
+      return;
+    }
+    const outcome = await referrals.qualify({
+      profileUserId: verified.record.profileUserId,
+      matchId: verified.record.matchId,
+      roundId: verified.record.roundId,
+      sourceEventId: verified.record.eventId,
+      completedAt: new Date(verified.record.completedAt),
+    });
+    console.info(JSON.stringify({
+      service: "blob-platform-api",
+      event: "referral_qualification_processed",
+      matchId: verified.record.matchId,
+      roundId: verified.record.roundId,
+      outcome,
+    }));
+    response.status(201).json({ status: outcome });
+  }));
   app.use(express.json({ limit: "16kb", strict: true, type: "application/json" }));
   app.use(cookieParser());
 
@@ -209,6 +257,27 @@ export function createPlatformApp(options: PlatformAppOptions): express.Express 
   app.get("/v1/me", asyncRoute(async (request, response) => {
     const user = await requireUser(auth, options.config, request);
     response.status(200).json({ user: toPublicUser(user) });
+  }));
+
+  app.get("/v1/me/referral", asyncRoute(async (request, response) => {
+    const user = await requireUser(auth, options.config, request);
+    if (!referrals) {
+      response.status(503).json({ error: "REFERRALS_UNAVAILABLE", message: "The referral program is temporarily unavailable." });
+      return;
+    }
+    const dashboard = await referrals.getDashboard(user.userId);
+    response.status(200).json({ referral: toPublicReferralDashboard(dashboard, options.config.publicOrigin) });
+  }));
+
+  app.post("/v1/me/referral/attribution", asyncRoute(async (request, response) => {
+    const user = await requireUser(auth, options.config, request);
+    if (!referrals) {
+      response.status(503).json({ error: "REFERRALS_UNAVAILABLE", message: "The referral program is temporarily unavailable." });
+      return;
+    }
+    const body = referralAttributionRequestSchema.parse(request.body);
+    const outcome = await referrals.captureAttribution({ refereeUserId: user.userId, code: body.code });
+    response.status(200).json({ status: outcome });
   }));
 
   app.get("/v1/me/game-ticket", asyncRoute(async (request, response) => {
@@ -262,6 +331,10 @@ export function createPlatformApp(options: PlatformAppOptions): express.Express 
     }
     if (error instanceof GameTicketDisplayNameError) {
       response.status(409).json({ error: "PROFILE_NAME_CHANGE_REQUIRED", message: error.message });
+      return;
+    }
+    if (error instanceof ReferralError) {
+      response.status(error.code === "REFERRAL_SELF_NOT_ALLOWED" ? 409 : 400).json({ error: error.code, message: error.message });
       return;
     }
     if (error instanceof SyntaxError && "body" in error) {
@@ -367,5 +440,21 @@ function toPublicUser(user: { userId: string; displayName: string; walletAddress
     displayName: user.displayName,
     walletAddress: user.walletAddress,
     renamedAt: user.renamedAt?.toISOString() ?? null
+  };
+}
+
+function toPublicReferralDashboard(dashboard: ReferralDashboard, publicOrigin: string) {
+  return {
+    code: dashboard.code,
+    inviteUrl: publicOrigin + "/?ref=" + dashboard.code,
+    totalPoints: dashboard.totalPoints.toString(),
+    invitedCount: dashboard.invitedCount,
+    qualifiedCount: dashboard.qualifiedCount,
+    referralBound: dashboard.referralBound,
+    recentEntries: dashboard.recentEntries.map((entry) => ({
+      delta: entry.delta.toString(),
+      reason: entry.reason,
+      createdAt: entry.createdAt.toISOString(),
+    })),
   };
 }

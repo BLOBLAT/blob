@@ -165,3 +165,18 @@ footer { display: flex; justify-content: space-between; gap: 20px; padding-block
   .share-result, .profile-rejoin { min-height: 40px; }
   .arena-chat-messages li { grid-template-columns: 1fr; gap: 3px; }
 }
+
+.referral-card { display: grid; gap: 10px; margin-top: 20px; padding: 15px; border: 1px solid rgba(255,211,79,.3); border-radius: 14px; background: rgba(255,211,79,.045); }
+.referral-card > code { overflow: hidden; color: #ffd34f; font-size: .72rem; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
+.referral-card > small { color: #bba8b7; font-size: .68rem; line-height: 1.45; }
+.referral-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.referral-stats div { min-width: 0; padding-top: 8px; border-top: 1px solid rgba(255,247,242,.11); }
+.referral-stats dt { color: #bba8b7; font-size: .57rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.referral-stats dd { margin: 4px 0 0; color: #fff7f2; font-size: .92rem; font-weight: 900; }
+.referral-copy { width: fit-content; border: 1px solid rgba(255,211,79,.68); border-radius: 999px; padding: 8px 12px; color: #1b0719; background: #ffd34f; cursor: pointer; font: inherit; font-size: .64rem; font-weight: 900; letter-spacing: .07em; text-transform: uppercase; }
+.referral-copy:hover, .referral-copy:focus-visible { background: #fff7f2; outline: none; }
+
+@media (max-width: 680px) {
+  .referral-stats { gap: 6px; }
+  .referral-copy { min-height: 40px; }
+}

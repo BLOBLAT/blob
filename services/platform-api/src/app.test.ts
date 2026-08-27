@@ -27,7 +27,10 @@ const config: PlatformApiConfig = {
   paidAdmissionTicketPrivateKey: undefined,
   paidAdmissionConsumerPublicKey: undefined,
   arenaChatAuditPublicKey: undefined,
-  arenaChatRetentionDays: 90
+  referralQualificationPublicKey: undefined,
+  arenaChatRetentionDays: 90,
+  referralReferrerPoints: 100n,
+  referralRefereePoints: 25n
 };
 
 const servers: ReturnType<typeof createServer>[] = [];

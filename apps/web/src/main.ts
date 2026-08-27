@@ -3,7 +3,7 @@ import "./arenaBots.css";
 import { validateChatMessage } from "@blob/validation";
 import { ACCESS_GATE_ENABLED, hasPrivateBuildAccess, unlockPrivateBuild } from "./accessGate.js";
 import { setProfileGameName } from "./identity.js";
-import { type BlobProfile, PlatformApiError, resolvePlatformApi } from "./platformApi.js";
+import { type BlobProfile, type ReferralDashboard, PlatformApiError, resolvePlatformApi } from "./platformApi.js";
 import { hasUsdcModePreviewAccess, unlockUsdcModePreview } from "./usdcMode.js";
 import { type AvailableWallet, connectWalletAndCreateProfile, isMobileBrowser, openInPhantomMobileBrowser, watchAvailableSolanaWallets } from "./wallet.js";
 import { startLiveMetrics, type LiveMetricsController, type LiveMetricsSnapshot } from "./liveMetrics.js";
@@ -17,6 +17,7 @@ if (!appRoot) {
 const app: HTMLDivElement = appRoot;
 const BLOB_TOKEN_ADDRESS = "6htcaSYtVdDaGtRGn2jPnxc1q2hsAyYCECxteodipump";
 const BLOB_TOKEN_PUMP_URL = `https://pump.fun/coin/${BLOB_TOKEN_ADDRESS}`;
+const REFERRAL_CANDIDATE_STORAGE_KEY = "blob.referral-candidate";
 const FREE_ARENA_LANDING = `
   <div class="arena-grid" aria-hidden="true"></div>
   <div class="arena-food food-one" aria-hidden="true"></div>
@@ -42,6 +43,8 @@ let freeGameController: {
 let openingFreeArena = false;
 const platformApi = resolvePlatformApi();
 let profile: BlobProfile | null = null;
+let referralDashboard: ReferralDashboard | undefined;
+let referralNotice: string | undefined;
 let availableWallets: AvailableWallet[] = [];
 let liveMetricsController: LiveMetricsController | undefined;
 
@@ -53,6 +56,7 @@ function initializeApplication(): void {
     return;
   }
   renderSite();
+  captureReferralCandidateFromLocation();
   void initializeProfileExperience();
 }
 
@@ -87,6 +91,7 @@ function renderAccessGate(): void {
     event.preventDefault();
     if (unlockPrivateBuild(input.value)) {
       renderSite();
+      captureReferralCandidateFromLocation();
       void initializeProfileExperience();
       return;
     }
@@ -435,6 +440,9 @@ async function initializeProfileExperience(): Promise<void> {
   try {
     profile = await platformApi.getCurrentProfile();
     setProfileGameName(profile?.displayName);
+    if (profile) {
+      await refreshReferralExperience();
+    }
   } catch (error) {
     console.warn("[BLOB] profile session could not be restored", error);
   }
@@ -575,7 +583,9 @@ function renderAuthenticatedProfile(container: HTMLElement): void {
   signOut.type = "button";
   signOut.textContent = "Sign out of BLOB";
   signOut.addEventListener("click", () => void logoutProfile(signOut));
-  container.append(wallet, copy, form, signOut);
+  container.append(wallet, copy, form);
+  renderReferralProgram(container);
+  container.append(signOut);
 }
 
 async function connectSelectedWallet(wallet: AvailableWallet, button: HTMLButtonElement): Promise<void> {
@@ -588,8 +598,9 @@ async function connectSelectedWallet(wallet: AvailableWallet, button: HTMLButton
   try {
     profile = await connectWalletAndCreateProfile(platformApi, wallet);
     setProfileGameName(profile.displayName);
+    await refreshReferralExperience();
     renderProfileTrigger();
-    renderProfileDialog("Wallet verified. Your BLOB profile is ready.");
+    renderProfileDialog(referralNotice ?? "Wallet verified. Your BLOB profile is ready.");
   } catch (error) {
     console.warn("[BLOB] wallet sign-in failed", error);
     renderProfileDialog(describeProfileError(error));
@@ -631,12 +642,120 @@ async function logoutProfile(button: HTMLButtonElement): Promise<void> {
   try {
     await platformApi.logout();
     profile = null;
+    referralDashboard = undefined;
+    referralNotice = undefined;
     setProfileGameName(undefined);
     renderProfileTrigger();
     renderProfileDialog("You are signed out of BLOB. Your wallet itself remains connected in its extension.");
   } catch (error) {
     renderProfileDialog(describeProfileError(error));
   }
+}
+
+function captureReferralCandidateFromLocation(): void {
+  const url = new URL(window.location.href);
+  const rawCode = url.searchParams.get("ref");
+  if (!rawCode) {
+    return;
+  }
+  const code = rawCode.trim().toUpperCase();
+  if (/^[A-Z0-9_-]{1,32}$/.test(code)) {
+    window.sessionStorage.setItem(REFERRAL_CANDIDATE_STORAGE_KEY, code);
+  }
+  url.searchParams.delete("ref");
+  window.history.replaceState(window.history.state, "", url);
+}
+
+async function refreshReferralExperience(): Promise<void> {
+  if (!platformApi || !profile) {
+    referralDashboard = undefined;
+    return;
+  }
+  const candidate = window.sessionStorage.getItem(REFERRAL_CANDIDATE_STORAGE_KEY);
+  if (candidate) {
+    try {
+      const outcome = await platformApi.captureReferralAttribution(candidate);
+      window.sessionStorage.removeItem(REFERRAL_CANDIDATE_STORAGE_KEY);
+      referralNotice = outcome === "CAPTURED"
+        ? "Referral saved. Points unlock only after a real server-confirmed Free Mode round."
+        : "Your referral is already linked and cannot be changed.";
+    } catch (error) {
+      if (error instanceof PlatformApiError && (error.code === "REFERRAL_CODE_INVALID" || error.code === "REFERRAL_SELF_NOT_ALLOWED")) {
+        window.sessionStorage.removeItem(REFERRAL_CANDIDATE_STORAGE_KEY);
+        referralNotice = error.code === "REFERRAL_SELF_NOT_ALLOWED"
+          ? "You cannot use your own referral link."
+          : "That referral link is not valid.";
+      } else {
+        console.warn("[BLOB] referral attribution could not be completed", error);
+      }
+    }
+  }
+  try {
+    referralDashboard = await platformApi.getReferralDashboard();
+  } catch (error) {
+    console.warn("[BLOB] referral dashboard could not be loaded", error);
+  }
+}
+
+function renderReferralProgram(container: HTMLElement): void {
+  const card = document.createElement("section");
+  card.className = "referral-card";
+  const label = document.createElement("p");
+  label.className = "token-label";
+  label.textContent = "BLOB referral program";
+  const copy = document.createElement("p");
+  copy.className = "profile-copy";
+  if (!referralDashboard) {
+    copy.textContent = "Preparing your private referral link…";
+    card.append(label, copy);
+    container.append(card);
+    return;
+  }
+  const dashboard = referralDashboard;
+  copy.textContent = "Invite a new player. Points are recorded only after their first server-confirmed Free Mode round.";
+  const link = document.createElement("code");
+  link.textContent = dashboard.inviteUrl;
+  const stats = document.createElement("dl");
+  stats.className = "referral-stats";
+  const referralStats: ReadonlyArray<readonly [string, string]> = [
+    ["BLOB Points", dashboard.totalPoints],
+    ["Invited", String(dashboard.invitedCount)],
+    ["Active", String(dashboard.qualifiedCount)],
+  ];
+  for (const [term, value] of referralStats) {
+    const row = document.createElement("div");
+    const title = document.createElement("dt");
+    title.textContent = term;
+    const detail = document.createElement("dd");
+    detail.textContent = value;
+    row.append(title, detail);
+    stats.append(row);
+  }
+  const copyButton = document.createElement("button");
+  copyButton.type = "button";
+  copyButton.className = "referral-copy";
+  copyButton.textContent = "Copy invite link";
+  copyButton.addEventListener("click", () => void copyReferralLink(copyButton, dashboard.inviteUrl));
+  const note = document.createElement("small");
+  note.textContent = "Points are not a token, cash balance, or promise of future value.";
+  card.append(label, copy, link, stats, copyButton, note);
+  container.append(card);
+}
+
+async function copyReferralLink(button: HTMLButtonElement, inviteUrl: string | undefined): Promise<void> {
+  if (!inviteUrl) {
+    return;
+  }
+  const previous = button.textContent;
+  try {
+    await navigator.clipboard.writeText(inviteUrl);
+    button.textContent = "Invite link copied";
+  } catch {
+    button.textContent = "Copy unavailable";
+  }
+  window.setTimeout(() => {
+    button.textContent = previous;
+  }, 2_000);
 }
 
 function describeProfileError(error: unknown): string {

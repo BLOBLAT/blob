@@ -38,7 +38,8 @@ npm run dev:web
 ```
 
 `services/platform-api` is intentionally not included in `npm run dev`: it
-requires a real PostgreSQL `DATABASE_URL`. Once a local database is provisioned
+requires a real PostgreSQL-compatible `DATABASE_URL`. Neon is supported for
+local/hosted development, as is a local PostgreSQL instance. Once a database is provisioned
 and its schema applied, start it separately with `npm run dev:platform`. Set
 `VITE_PLATFORM_API_URL=http://127.0.0.1:3000` in `apps/web/.env.local` to use
 wallet profiles locally. Free Mode does not require the API and remains fully
@@ -168,6 +169,10 @@ PLATFORM_WEB_ORIGIN=https://blob.lat,https://www.blob.lat
 PLATFORM_GAME_TICKET_PRIVATE_KEY_BASE64=<separate-random-32-byte-private-key>
 BLOB_ARENA_CHAT_AUDIT_PUBLIC_KEY_BASE58=<separate-base58-public-key>
 BLOB_CHAT_RETENTION_DAYS=90
+# Referral qualification: public half of a separate signer owned by blob.
+BLOB_REFERRAL_QUALIFICATION_PUBLIC_KEY_BASE58=<separate-base58-public-key>
+# BLOB_REFERRAL_REFERRER_POINTS=100
+# BLOB_REFERRAL_REFEREE_POINTS=25
 ```
 
 Production uses a host-only `__Host-blob_session` cookie by default and rejects
@@ -197,6 +202,9 @@ with the private Railway endpoint:
 BLOB_ARENA_CHAT_AUDIT_PRIVATE_KEY_BASE64=<matching-random-32-byte-private-key>
 BLOB_CHAT_RETENTION_DAYS=90
 PLATFORM_CHAT_AUDIT_ORIGIN=http://platform-api.railway.internal:8080
+# Referral qualification uses another independent Ed25519 key pair.
+BLOB_REFERRAL_QUALIFICATION_PRIVATE_KEY_BASE64=<matching-random-32-byte-private-key>
+PLATFORM_REFERRAL_ORIGIN=http://platform-api.railway.internal:8080
 ```
 
 Accepted messages are signed and persisted before room broadcast. They contain
@@ -204,7 +212,10 @@ no wallet/cookie/IP and Platform API deletes them after the configured retention
 period. `8080` is the current production Platform API listener port on Railway;
 if that service's `PORT` changes, update this single game-server variable to
 match. If this bridge is unavailable, only chat fails closed; arena gameplay
-does not depend on it.
+does not depend on it. The referral qualifier has the same private-network
+shape, but Free Mode continues if it is unavailable and awards no points until
+the signed handoff succeeds. See [the referral guide](referrals.md) for Neon,
+key, and operational details.
 
 Apply the committed baseline before starting the service:
 

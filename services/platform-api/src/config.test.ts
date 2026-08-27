@@ -94,4 +94,18 @@ describe("platform API production configuration", () => {
       BLOB_PAID_ADMISSION_CONSUMER_PUBLIC_KEY_BASE58: "not-base58!"
     })).toThrow("BLOB_PAID_ADMISSION_CONSUMER_PUBLIC_KEY_BASE58 must be a base58 Ed25519 public key");
   });
+
+  it("accepts only integer server-side referral awards", () => {
+    const config = loadPlatformApiConfig({
+      DATABASE_URL,
+      BLOB_REFERRAL_REFERRER_POINTS: "100",
+      BLOB_REFERRAL_REFEREE_POINTS: "25",
+    });
+    expect(config.referralReferrerPoints).toBe(100n);
+    expect(config.referralRefereePoints).toBe(25n);
+    expect(() => loadPlatformApiConfig({
+      DATABASE_URL,
+      BLOB_REFERRAL_REFERRER_POINTS: "1.5",
+    })).toThrow("BLOB_REFERRAL_REFERRER_POINTS must be a non-negative integer");
+  });
 });
