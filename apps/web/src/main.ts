@@ -4,6 +4,7 @@ import { validateChatMessage } from "@blob/validation";
 import { ACCESS_GATE_ENABLED, hasPrivateBuildAccess, unlockPrivateBuild } from "./accessGate.js";
 import { setProfileGameName } from "./identity.js";
 import { type BlobProfile, PlatformApiError, resolvePlatformApi } from "./platformApi.js";
+import { hasUsdcModePreviewAccess, unlockUsdcModePreview } from "./usdcMode.js";
 import { type AvailableWallet, connectWalletAndCreateProfile, isMobileBrowser, openInPhantomMobileBrowser, watchAvailableSolanaWallets } from "./wallet.js";
 import { startLiveMetrics, type LiveMetricsController, type LiveMetricsSnapshot } from "./liveMetrics.js";
 import type { TouchJoystickHand } from "./game/arenaPresentation.js";
@@ -16,6 +17,19 @@ if (!appRoot) {
 const app: HTMLDivElement = appRoot;
 const BLOB_TOKEN_ADDRESS = "6htcaSYtVdDaGtRGn2jPnxc1q2hsAyYCECxteodipump";
 const BLOB_TOKEN_PUMP_URL = `https://pump.fun/coin/${BLOB_TOKEN_ADDRESS}`;
+const FREE_ARENA_LANDING = `
+  <div class="arena-grid" aria-hidden="true"></div>
+  <div class="arena-food food-one" aria-hidden="true"></div>
+  <div class="arena-food food-two" aria-hidden="true"></div>
+  <div class="arena-food food-three" aria-hidden="true"></div>
+  <div class="arena-blob" aria-hidden="true"><i></i><b></b></div>
+  <div class="arena-message">
+    <span class="status-dot"></span>
+    <p>REAL FREE MODE</p>
+    <small>Live players plus clearly marked Arena Bots. No fake stats.</small>
+    <button class="play-button arena-play" type="button" data-play-free>Play Free <span>→</span></button>
+  </div>
+`;
 
 let freeGameController: {
   leave(): Promise<void>;
@@ -96,7 +110,7 @@ function renderSite(): void {
         <a href="https://github.com/BLOBLAT/blob" target="_blank" rel="noreferrer">GitHub</a>
         </div>
         <a class="nav-buy-button" href="${BLOB_TOKEN_PUMP_URL}" target="_blank" rel="noreferrer noopener">Buy $BLOB <span aria-hidden="true">↗</span></a>
-        <button class="wallet-button" id="wallet-trigger" type="button">Connect wallet</button>
+        <button class="wallet-button" data-wallet-trigger type="button">Connect wallet</button>
       </div>
     </nav>
 
@@ -108,7 +122,8 @@ function renderSite(): void {
         <div class="hero-actions">
           <button class="play-button" type="button" data-play-free>Play Free <span>→</span></button>
           <a class="token-button token-button-hero" href="${BLOB_TOKEN_PUMP_URL}" target="_blank" rel="noreferrer noopener">Buy $BLOB <span aria-hidden="true">↗</span></a>
-          <span>Wallet not required</span>
+          <button class="wallet-button hero-wallet-button" data-wallet-trigger type="button">Connect wallet</button>
+          <span>Free Mode · wallet optional</span>
         </div>
       </div>
       <div class="hero-mark" aria-hidden="true">
@@ -125,19 +140,11 @@ function renderSite(): void {
         <p class="eyebrow">Central arena</p>
         <h2 id="arena-title">THE PIT</h2>
       </div>
-      <div class="arena-shell" id="arena-shell" role="status" aria-live="polite">
-        <div class="arena-grid" aria-hidden="true"></div>
-        <div class="arena-food food-one" aria-hidden="true"></div>
-        <div class="arena-food food-two" aria-hidden="true"></div>
-        <div class="arena-food food-three" aria-hidden="true"></div>
-        <div class="arena-blob" aria-hidden="true"><i></i><b></b></div>
-        <div class="arena-message">
-          <span class="status-dot"></span>
-          <p>REAL FREE MODE</p>
-          <small>Live players plus clearly marked Arena Bots. No fake stats.</small>
-          <button class="play-button arena-play" type="button" data-play-free>Play Free <span>→</span></button>
-        </div>
+      <div class="arena-mode-tabs" role="tablist" aria-label="Arena mode">
+        <button class="arena-mode-tab is-active" id="free-mode-tab" type="button" role="tab" aria-selected="true" aria-controls="arena-shell" data-arena-mode="free">Free Mode</button>
+        <button class="arena-mode-tab" id="usdc-mode-tab" type="button" role="tab" aria-selected="false" aria-controls="arena-shell" data-arena-mode="usdc">USDC Mode <span aria-hidden="true">🔒</span></button>
       </div>
+      <div class="arena-shell" id="arena-shell" role="status" aria-live="polite"></div>
     </section>
 
     <section class="info-grid" id="about">
@@ -186,6 +193,7 @@ function renderSite(): void {
       <p>© ${new Date().getFullYear()} BLOB</p>
       <div>
         <a href="https://github.com/BLOBLAT/blob" target="_blank" rel="noreferrer">GitHub</a>
+        <a href="/terms.html">Terms &amp; Risk</a>
         <span>Community channels soon</span>
       </div>
     </footer>
@@ -193,16 +201,179 @@ function renderSite(): void {
       <button class="dialog-close" id="profile-dialog-close" type="button" aria-label="Close profile">×</button>
       <div id="profile-dialog-content"></div>
     </dialog>
+    <dialog class="profile-dialog usdc-access-dialog" id="usdc-access-dialog" aria-labelledby="usdc-access-title">
+      <button class="dialog-close" id="usdc-access-close" type="button" aria-label="Close USDC Mode">×</button>
+      <div id="usdc-access-content"></div>
+    </dialog>
   </main>
 `;
 
-  for (const button of document.querySelectorAll<HTMLButtonElement>("[data-play-free]")) {
-    button.addEventListener("click", () => void openFreeArena());
+  renderFreeArenaLanding();
+  bindFreePlayButtons();
+  for (const button of document.querySelectorAll<HTMLButtonElement>("[data-wallet-trigger]")) {
+    button.addEventListener("click", () => openProfileDialog());
   }
-  requiredElement<HTMLButtonElement>("#wallet-trigger").addEventListener("click", () => openProfileDialog());
+  requiredElement<HTMLButtonElement>("#free-mode-tab").addEventListener("click", () => void openFreeArena());
+  requiredElement<HTMLButtonElement>("#usdc-mode-tab").addEventListener("click", () => void openUsdcMode());
   requiredElement<HTMLButtonElement>("#profile-dialog-close").addEventListener("click", () => closeProfileDialog());
+  requiredElement<HTMLButtonElement>("#usdc-access-close").addEventListener("click", () => closeUsdcAccessDialog());
   requiredElement<HTMLButtonElement>("#copy-token-contract").addEventListener("click", () => void copyTokenAddress());
   liveMetricsController = startLiveMetrics(renderLiveMetrics);
+}
+
+function bindFreePlayButtons(): void {
+  for (const button of document.querySelectorAll<HTMLButtonElement>("[data-play-free]")) {
+    if (button.dataset.freePlayBound === "true") {
+      continue;
+    }
+    button.dataset.freePlayBound = "true";
+    button.addEventListener("click", () => void openFreeArena());
+  }
+}
+
+function renderFreeArenaLanding(): void {
+  const arenaShell = requiredElement<HTMLElement>("#arena-shell");
+  arenaShell.className = "arena-shell";
+  arenaShell.setAttribute("role", "status");
+  arenaShell.setAttribute("aria-live", "polite");
+  arenaShell.innerHTML = FREE_ARENA_LANDING;
+  document.querySelector<HTMLElement>("#arena-chat")?.remove();
+  bindFreePlayButtons();
+  setArenaModeTabs("free");
+}
+
+async function openUsdcMode(): Promise<void> {
+  if (!hasUsdcModePreviewAccess()) {
+    openUsdcAccessDialog();
+    return;
+  }
+  if (freeGameController) {
+    await leaveFreeArena();
+  }
+
+  const arenaShell = requiredElement<HTMLElement>("#arena-shell");
+  arenaShell.className = "arena-shell usdc-mode-shell";
+  arenaShell.setAttribute("role", "region");
+  arenaShell.setAttribute("aria-live", "polite");
+  arenaShell.setAttribute("aria-label", "USDC Mode private preview");
+  arenaShell.innerHTML = `
+    <section class="usdc-mode-preview" aria-labelledby="usdc-mode-title">
+      <div class="usdc-mode-heading">
+        <div>
+          <p class="eyebrow">USDC MODE · PRIVATE PREVIEW</p>
+          <h3 id="usdc-mode-title">COMPETE.<br /><em>WHEN READY.</em></h3>
+        </div>
+        <span class="usdc-mode-locked">ENTRIES DISABLED</span>
+      </div>
+      <p class="usdc-mode-copy">USDC Mode will use the same server-authoritative arena as Free Mode. This preview has no entry form, pool, transfer, or payout request.</p>
+      <div class="usdc-mode-grid">
+        <section class="usdc-wallet-card" aria-labelledby="usdc-wallet-title">
+          <p class="token-label" id="usdc-wallet-title">Wallet profile</p>
+          <strong id="usdc-profile-state">Checking profile…</strong>
+          <p id="usdc-profile-copy">Connect a Solana wallet to reserve your BLOB identity. A login signature is never a USDC transfer.</p>
+          <button class="play-button" id="usdc-wallet-action" type="button">Connect wallet <span>→</span></button>
+        </section>
+        <section class="usdc-rules-card" aria-labelledby="usdc-rules-title">
+          <p class="token-label" id="usdc-rules-title">Locked competitive rules</p>
+          <dl>
+            <div><dt>Asset</dt><dd>Native USDC · Solana</dd></div>
+            <div><dt>Round</dt><dd>10 minutes · authoritative</dd></div>
+            <div><dt>Pool</dt><dd>5% platform fee · 95% prizes</dd></div>
+            <div><dt>Winners</dt><dd>Top 3 · ruleset-defined split</dd></div>
+          </dl>
+        </section>
+      </div>
+      <div class="usdc-mode-footer">
+        <div class="usdc-mode-disclosure">
+          <label class="usdc-risk-ack"><input id="usdc-risk-ack" type="checkbox" /> <span>I understand crypto assets can lose all value, participation is voluntary, and I must review the <a href="/terms.html" target="_blank" rel="noreferrer">BLOB Terms &amp; Risk Disclosure</a>.</span></label>
+          <p id="usdc-risk-ack-status"><strong>NOT OPEN FOR PAYMENT.</strong> This preview acknowledgement is not an entry acceptance. Any future paid action must request its own dated acceptance.</p>
+        </div>
+        <button class="leave-game" id="return-to-free-mode" type="button">Return to Free Mode</button>
+      </div>
+    </section>
+  `;
+  requiredElement<HTMLButtonElement>("#usdc-wallet-action").addEventListener("click", () => openProfileDialog());
+  requiredElement<HTMLButtonElement>("#return-to-free-mode").addEventListener("click", () => renderFreeArenaLanding());
+  requiredElement<HTMLInputElement>("#usdc-risk-ack").addEventListener("change", (event) => {
+    const checked = (event.currentTarget as HTMLInputElement).checked;
+    requiredElement<HTMLElement>("#usdc-risk-ack-status").textContent = checked
+      ? "Preview acknowledgement recorded only in this browser. No payment, entry, or transfer has been authorized."
+      : "NOT OPEN FOR PAYMENT. This preview acknowledgement is not an entry acceptance. Any future paid action must request its own dated acceptance.";
+  });
+  renderUsdcProfileState();
+  setArenaModeTabs("usdc");
+}
+
+function setArenaModeTabs(mode: "free" | "usdc"): void {
+  for (const button of document.querySelectorAll<HTMLButtonElement>("[data-arena-mode]")) {
+    const selected = button.dataset.arenaMode === mode;
+    button.classList.toggle("is-active", selected);
+    button.setAttribute("aria-selected", String(selected));
+  }
+}
+
+function openUsdcAccessDialog(): void {
+  const dialog = requiredElement<HTMLDialogElement>("#usdc-access-dialog");
+  const container = requiredElement<HTMLElement>("#usdc-access-content");
+  container.innerHTML = `
+    <p class="eyebrow">USDC MODE</p>
+    <h2 id="usdc-access-title">PRIVATE<br />PREVIEW.</h2>
+    <p class="profile-copy">This temporary code only limits access to an unfinished interface. It is not wallet authentication and it never authorizes a transaction.</p>
+    <form class="profile-form" id="usdc-access-form">
+      <label for="usdc-access-code">Access code</label>
+      <input id="usdc-access-code" name="usdc-access-code" type="password" inputmode="numeric" autocomplete="off" required aria-describedby="usdc-access-error" />
+      <p class="profile-notice" id="usdc-access-error" role="alert" hidden>That access code is not correct.</p>
+      <button class="play-button" type="submit">Open preview <span>→</span></button>
+    </form>
+  `;
+  const form = requiredElement<HTMLFormElement>("#usdc-access-form");
+  const input = requiredElement<HTMLInputElement>("#usdc-access-code");
+  const error = requiredElement<HTMLElement>("#usdc-access-error");
+  input.addEventListener("input", () => {
+    input.removeAttribute("aria-invalid");
+    error.hidden = true;
+  });
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (!unlockUsdcModePreview(input.value)) {
+      input.setAttribute("aria-invalid", "true");
+      error.hidden = false;
+      input.focus();
+      input.select();
+      return;
+    }
+    dialog.close();
+    void openUsdcMode();
+  });
+  if (!dialog.open) {
+    dialog.showModal();
+  }
+  input.focus();
+}
+
+function closeUsdcAccessDialog(): void {
+  requiredElement<HTMLDialogElement>("#usdc-access-dialog").close();
+}
+
+function renderUsdcProfileState(): void {
+  const state = requiredElementOrUndefined<HTMLElement>("#usdc-profile-state");
+  const copy = requiredElementOrUndefined<HTMLElement>("#usdc-profile-copy");
+  const action = requiredElementOrUndefined<HTMLButtonElement>("#usdc-wallet-action");
+  if (!state || !copy || !action) {
+    return;
+  }
+  if (profile) {
+    state.textContent = profile.displayName + " · " + shortenWalletAddress(profile.walletAddress);
+    copy.textContent = "Your BLOB profile is connected. Paid entry is still disabled, so this screen cannot request USDC.";
+    action.textContent = "Manage profile";
+    return;
+  }
+  state.textContent = platformApi ? "Wallet not connected" : "Profile service unavailable";
+  copy.textContent = platformApi
+    ? "Connect a Solana wallet to reserve your BLOB identity. A login signature is never a USDC transfer."
+    : "The wallet profile service is unavailable for this deployment. No payment capability is enabled.";
+  action.textContent = "Connect wallet";
+  action.disabled = !platformApi;
 }
 
 async function copyTokenAddress(): Promise<void> {
@@ -272,12 +443,11 @@ function closeProfileDialog(): void {
 }
 
 function renderProfileTrigger(): void {
-  const trigger = requiredElementOrUndefined<HTMLButtonElement>("#wallet-trigger");
-  if (!trigger) {
-    return;
+  for (const trigger of document.querySelectorAll<HTMLButtonElement>("[data-wallet-trigger]")) {
+    trigger.textContent = profile ? profile.displayName : "Connect wallet";
+    trigger.classList.toggle("is-connected", Boolean(profile));
   }
-  trigger.textContent = profile ? profile.displayName : "Connect wallet";
-  trigger.classList.toggle("is-connected", Boolean(profile));
+  renderUsdcProfileState();
 }
 
 function renderProfileDialog(message?: string): void {
@@ -490,6 +660,7 @@ async function openFreeArena(): Promise<void> {
   }
 
   setPlayButtonsDisabled(true);
+  setArenaModeTabs("free");
   arenaShell.classList.add("is-playing");
   arenaShell.innerHTML = `
     <div class="game-stage">
@@ -768,8 +939,12 @@ function bindExternalTouchJoystick(
 }
 
 async function leaveFreeArena(): Promise<void> {
-  await freeGameController?.leave();
-  window.location.reload();
+  const controller = freeGameController;
+  freeGameController = undefined;
+  await controller?.leave();
+  openingFreeArena = false;
+  renderFreeArenaLanding();
+  setPlayButtonsDisabled(false);
 }
 
 function renderLeaderboard(container: HTMLElement, players: Array<{ playerId: string; name: string; isBot: boolean; mass: number; kills: number; rank: number }>, localPlayerId: string | undefined): void {

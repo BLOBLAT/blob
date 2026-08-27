@@ -26,6 +26,11 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
 - `main` tracks `origin/main`; verify the current commit with `git status` and
   `git rev-parse HEAD origin/main` rather than relying on a stale handoff SHA.
 - Free Mode is live via Vercel (apps/web) and Railway (apps/game-server).
+- The Central Arena now has a Free Mode / password-gated USDC Mode switch.
+  USDC Mode is a private browser preview only: it shows the connected wallet
+  profile and immutable rules, explicitly keeps entries disabled, and cannot
+  create a transfer, pool, match or payout. Its session-only UI gate is not an
+  authorization mechanism and is not documented as one.
 - The game server is authoritative and must never contain wallet keys,
   payment signing, or client-trusted settlement logic.
 - packages/shared already has a paid-match state machine and bigint prize
@@ -195,6 +200,29 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   Anchor escrow. With the immutable three-player minimum and positive
   top-three payout basis points, it prevents any required prize place from
   rounding down to zero atomic USDC before a match can be funded.
+- The shared simulation now requires a distinct server-assigned immutable
+  `matchId` and `roundId` before it will run in `PAID` mode. It uses those
+  exact values through finalization and will not auto-start another Paid round
+  after results, preventing term/admission binding from being accidentally
+  reused. Free Mode keeps its separate server-generated lifecycle.
+- Added the internal serializable paid-match lifecycle repository. It allows
+  only configured state-machine transitions, requires a full verified roster
+  before `READY`, requires all entries to consume their one-time admission
+  before `LIVE`, fixes the server-owned `startsAt`, and audits each transition.
+  There is no public route or enabled Paid Room.
+- Added the internal serializable paid-entry reservation repository. It binds
+  an exact user-owned wallet/player seat before payment verification, enforces
+  funding capacity/deadline/idempotency, and gives the existing receipt
+  repository a durable entry to fund. It has no browser route.
+- Added the server-only `@blob/paid-match-runtime` workspace. It connects
+  consumed signed admission tickets to the shared paid simulation with fixed
+  match/round IDs, excludes bots/automatic respawn, rejects Free-like paid
+  configuration, and emits a wallet-free result. It deliberately has no
+  listener or enabled deployment path.
+- Added the transport-agnostic Paid Room adapter over that runtime. It exposes
+  only ticket-gated join, bounded intent, authoritative ticks, and one
+  successful private wallet-free result handoff for a match/round. No
+  Colyseus listener or Railway service is enabled.
 - Added and deployed an append-only Prisma migration that persists the immutable
   `roundDurationMs` and revive spawn-protection values alongside canonical
   zero Standard Skill revive fields.

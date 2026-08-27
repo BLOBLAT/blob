@@ -1,8 +1,16 @@
 # Paid Mode foundation
 
-Paid Mode is not exposed in the public BLOB interface and does not accept
-funds yet. This document describes the implemented boundary and the conditions
-required before it can be enabled.
+Paid Mode is not open for entry and does not accept funds. The public site has
+a deliberately password-gated **USDC Mode private preview** so the wallet
+profile and the intended competitive rules can be reviewed without presenting
+a transfer, pool, entry, revive, or payout action. Its browser-only gate is
+not authentication and must never be treated as a security boundary.
+
+The preview clearly states that entries are disabled. It may link to the
+Terms & Risk Disclosure and collect a browser-only preview acknowledgement,
+but that is not a paid-match acceptance record. Any future paid entry must
+collect and durably record a separate, time-stamped acceptance of the final
+rules before it requests a transaction.
 
 ## Rules fixed in code
 
@@ -104,12 +112,31 @@ opening its database transaction, it Base58-decodes the supplied wallet and
 signature to their exact Solana byte lengths; an internal caller cannot turn a
 placeholder string into a durable payment receipt.
 
+Before a transfer is verified, `PrismaPaidEntryReservationRepository` creates
+that exact `RESERVED` entry in a serializable transaction. Its internal caller
+supplies authenticated Platform API user/wallet IDs, not browser-selected
+identities; the repository proves wallet ownership, enforces the immutable
+entry amount and match capacity, rejects the funding deadline, and permits an
+idempotent retry only when every binding matches. This creates no payment route
+and does not build, sign, or submit a wallet transaction.
+
 Before that funding stage, the internal `PrismaPaidMatchTermsRepository`
 persists the server-created immutable match terms as `DRAFT`; an exact retry
 reuses that record, while a divergent rules hash or any differing immutable
 term fails closed. A future controlled orchestration service may move the
 record through the defined paid lifecycle, but no browser can create terms or
 select a mint, escrow, fee, or payout split.
+
+`PrismaPaidMatchLifecycleRepository` is the corresponding internal
+transactional transition boundary. It applies only the shared state-machine
+edges, records each transition in the audit log, and uses a compare-and-set
+write with one serializable-conflict retry so concurrent callers cannot both
+advance a match. It requires the
+complete verified roster before `READY`, then requires every funded entry to
+consume a one-time admission ticket before `LIVE`; `startsAt` is fixed from
+server time in that final transition. It rejects funding-expired starts and
+cannot create a `LIVE -> REFUNDING` path. It has no browser or public API
+route.
 
 ## Authority flow
 
@@ -125,6 +152,15 @@ The browser cannot choose a match result, rank, entry confirmation, revive
 permit, pool, fee, or payout. The game server cannot hold keys or initiate a
 chain transfer. A revive permit may be issued only after both an authoritative
 death event and a verified payment, and it must be consumed by the room once.
+
+The shared arena simulation also rejects `PAID` configuration unless the
+orchestrator supplies distinct, bounded server-created `matchId` and `roundId`
+values before the countdown. Those exact values must be the values persisted
+in immutable terms and bound into admission tickets. Once that Paid simulation
+has finalized its result, it will not start another round under the same terms.
+This prevents a future Paid Room from falling back to client-selected or
+per-countdown generated identifiers; Free Mode retains its independent
+server-generated lifecycle.
 
 The platform API signs a short-lived Ed25519 admission ticket only after the
 entry is durably verified. The issuer and verifier require bounded internal
@@ -143,6 +179,18 @@ reserved for Free Mode display-name tickets. No HMAC shared secret is used or
 accepted for paid admission, and setting this future key alone does not expose
 Paid Mode. The Platform API rejects a configuration that reuses the
 profile-ticket key.
+
+`@blob/paid-match-runtime` is a server-only building block for the future
+isolated Paid Room. It can admit a transport session only after the existing
+backend-only admission consumer has verified and atomically consumed that
+entry's ticket. It maps the session to the internal player ID, uses the shared
+simulation with the exact immutable match/round IDs, excludes bots, disables
+automatic respawn, and emits only a wallet-free authoritative result. It
+rejects Free-like limits or a non-ten-minute round. It has no listener,
+browser entrypoint, Railway service, wallet key, or enabled release path.
+`PaidArenaTransportAdapter` exposes only ticket-gated join, bounded intent,
+authoritative ticks, and a private idempotent result-sink handoff; a future
+Colyseus room may adapt that interface without receiving payment authority.
 
 `PrismaPaidAdmissionRepository` stores only a SHA-256 hash of each issued
 ticket, its server-controlled issue/expiry time, and the terminal consumed

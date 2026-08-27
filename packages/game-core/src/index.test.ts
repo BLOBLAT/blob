@@ -280,7 +280,12 @@ describe("disclosed Free Mode arena bots", () => {
   });
 
   it("keeps bots out of Paid Mode and always makes space for a real player", () => {
-    const paid = new ArenaSimulation({ ...testConfig, mode: GameMode.PAID, freeModeBotsEnabled: true });
+    const paid = new ArenaSimulation({
+      ...testConfig,
+      mode: GameMode.PAID,
+      freeModeBotsEnabled: true,
+      paidRoundIdentity: { matchId: "paid-match-1", roundId: "paid-round-1" },
+    });
     paid.addPlayer("paid-human", "Paid Human", 0);
     paid.advance(0);
     expect(paid.snapshot()).toMatchObject({
@@ -302,6 +307,46 @@ describe("disclosed Free Mode arena bots", () => {
     expect(free.snapshot()).toMatchObject({ humanPlayerCount: 1, botPlayerCount: 3 });
     free.addPlayer("second-human", "Second Human", 1);
     expect(free.snapshot()).toMatchObject({ humanPlayerCount: 2, botPlayerCount: 2 });
+  });
+
+  it("requires immutable server-assigned IDs for Paid Mode and never restarts a finalized paid round", () => {
+    expect(() => new ArenaSimulation({ ...testConfig, mode: GameMode.PAID })).toThrow(
+      "Paid Mode requires distinct server-assigned matchId and roundId values.",
+    );
+    expect(() => new ArenaSimulation({
+      ...testConfig,
+      paidRoundIdentity: { matchId: "free-match", roundId: "free-round" },
+    })).toThrow("paidRoundIdentity is only valid for Paid Mode.");
+
+    const paid = new ArenaSimulation({
+      ...testConfig,
+      mode: GameMode.PAID,
+      minPlayersToStart: 2,
+      matchDurationMs: 100,
+      paidRoundIdentity: { matchId: "paid-match-immutable", roundId: "paid-round-immutable" },
+    });
+    paid.addPlayer("one", "Blob One", 0);
+    paid.addPlayer("two", "Blob Two", 0);
+    paid.advance(0);
+    paid.advance(1);
+    const countdown = paid.snapshot();
+    expect(countdown).toMatchObject({
+      phase: ArenaPhase.COUNTDOWN,
+      matchId: "paid-match-immutable",
+      roundId: "paid-round-immutable",
+      botPlayerCount: 0,
+    });
+    paid.advance(11);
+    paid.advance(111);
+    paid.advance(116);
+    paid.advance(126);
+    expect(paid.snapshot().phase).toBe(ArenaPhase.WAITING);
+    paid.advance(127);
+    expect(paid.snapshot()).toMatchObject({
+      phase: ArenaPhase.WAITING,
+      matchId: "",
+      roundId: "",
+    });
   });
 
   it("uses a bounded reproducible 3–5 participant selection and removes bots after results", () => {

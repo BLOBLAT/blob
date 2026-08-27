@@ -1,0 +1,15 @@
+{
+  "name": "@blob/paid-match-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@blob/game-core": "file:../game-core",
+    "@blob/paid-admission-client": "file:../paid-admission-client",
+    "@blob/protocol": "file:../protocol",
+    "@blob/shared": "file:../shared"
+  },
+  "scripts": { "typecheck": "tsc --noEmit -p tsconfig.json" },
+  "devDependencies": { "typescript": "5.7.2" }
+}

@@ -52,6 +52,20 @@ export interface ArenaConfig {
   botMoveSpeedMultiplier: number;
 }
 
+/**
+ * Paid terms are created before funding and bind their hashes to these
+ * server-created identifiers. Free rounds continue to allocate IDs at their
+ * authoritative countdown; a paid simulation must receive them explicitly.
+ */
+export interface PaidRoundIdentity {
+  matchId: string;
+  roundId: string;
+}
+
+export interface ArenaSimulationOptions extends Partial<ArenaConfig> {
+  paidRoundIdentity?: PaidRoundIdentity;
+}
+
 export const DEFAULT_ARENA_CONFIG: ArenaConfig = {
   mode: GameMode.FREE,
   width: 2200,
@@ -143,6 +157,19 @@ function cloneInput(input: MovementIntent): MovementIntent {
 
 function createId(prefix: string, sequence: number, now: number): string {
   return prefix + "-" + now.toString(36) + "-" + sequence.toString(36);
+}
+
+function assertPaidRoundIdentity(identity: PaidRoundIdentity | undefined): asserts identity is PaidRoundIdentity {
+  if (!identity
+    || !isInternalRoundIdentifier(identity.matchId)
+    || !isInternalRoundIdentifier(identity.roundId)
+    || identity.matchId === identity.roundId) {
+    throw new Error("Paid Mode requires distinct server-assigned matchId and roundId values.");
+  }
+}
+
+function isInternalRoundIdentifier(value: unknown): value is string {
+  return typeof value === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(value);
 }
 
 function deterministicInteger(seed: number): number {
@@ -253,9 +280,18 @@ export class ArenaSimulation {
   private foodTarget = 0;
   private joinSequence = 0;
   private foodSequence = 0;
+  private readonly paidRoundIdentity: PaidRoundIdentity | undefined;
+  private paidRoundFinalized = false;
 
-  constructor(overrides: Partial<ArenaConfig> = {}) {
+  constructor(options: ArenaSimulationOptions = {}) {
+    const { paidRoundIdentity, ...overrides } = options;
     this.config = createArenaConfig(overrides);
+    this.paidRoundIdentity = paidRoundIdentity;
+    if (this.config.mode === GameMode.PAID) {
+      assertPaidRoundIdentity(paidRoundIdentity);
+    } else if (paidRoundIdentity) {
+      throw new Error("paidRoundIdentity is only valid for Paid Mode.");
+    }
     this.world = calculateWorldSize(this.config.minPlayersToStart, this.config);
   }
 
@@ -322,7 +358,7 @@ export class ArenaSimulation {
 
     switch (this.phase) {
       case ArenaPhase.WAITING:
-        if (this.humanPlayerCount() > 0) {
+        if (this.humanPlayerCount() > 0 && !this.paidRoundFinalized) {
           this.beginMatchmaking();
         }
         break;
@@ -504,8 +540,16 @@ export class ArenaSimulation {
 
   private beginCountdown(): void {
     this.matchNumber += 1;
-    this.matchId = createId(this.config.mode.toLowerCase() + "-match", this.matchNumber, this.now);
-    this.roundId = createId("round", this.matchNumber, this.now);
+    if (this.config.mode === GameMode.PAID) {
+      // The constructor rejects a missing identity. Keep the assertion here
+      // so a future refactor cannot silently fall back to generated paid IDs.
+      assertPaidRoundIdentity(this.paidRoundIdentity);
+      this.matchId = this.paidRoundIdentity.matchId;
+      this.roundId = this.paidRoundIdentity.roundId;
+    } else {
+      this.matchId = createId(this.config.mode.toLowerCase() + "-match", this.matchNumber, this.now);
+      this.roundId = createId("round", this.matchNumber, this.now);
+    }
     this.world = calculateWorldSize(this.eligiblePlayerCount(), this.config);
     this.foodTarget = calculateFoodTarget(this.eligiblePlayerCount(), this.config);
     this.food.clear();
@@ -813,6 +857,9 @@ export class ArenaSimulation {
       rankings: Object.freeze(ranked),
     });
     this.phase = ArenaPhase.FINISHED;
+    if (this.config.mode === GameMode.PAID) {
+      this.paidRoundFinalized = true;
+    }
     this.phaseEndsAt = this.now + this.config.finishedDurationMs;
     this.updateRanks();
     this.events.push({ type: ServerEvent.ROUND_FINISHED, matchId: this.matchId, roundId: this.roundId });
