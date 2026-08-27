@@ -143,6 +143,26 @@ describe("authoritative round lifecycle", () => {
     expect(player(simulation, "one").x).toBe(moving);
   });
 
+  it("reports authoritative input rejection reasons without trusting a malformed movement vector", () => {
+    const simulation = new ArenaSimulation({ ...testConfig, foodMass: 1 });
+    simulation.addPlayer("one", "Blob One", 0);
+    simulation.addPlayer("two", "Blob Two", 0);
+    const now = startActive(simulation) + 50;
+
+    expect(simulation.trySetInput("one", { x: 2, y: 0 }, now)).toEqual({
+      accepted: false,
+      reason: "INVALID_VECTOR",
+    });
+    expect(simulation.trySetInput("unknown", { x: 1, y: 0 }, now)).toEqual({
+      accepted: false,
+      reason: "PLAYER_NOT_FOUND",
+    });
+    expect(simulation.trySetInput("one", { x: 1, y: 0 }, Number.NaN)).toEqual({
+      accepted: false,
+      reason: "INVALID_TIMESTAMP",
+    });
+  });
+
   it("admits a Free Mode player into an active round with a safe protected spawn", () => {
     const simulation = new ArenaSimulation({ ...testConfig, foodMass: 1 });
     simulation.addPlayer("one", "Blob One", 0);

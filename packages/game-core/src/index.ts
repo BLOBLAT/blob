@@ -66,6 +66,26 @@ export interface ArenaSimulationOptions extends Partial<ArenaConfig> {
   paidRoundIdentity?: PaidRoundIdentity;
 }
 
+/**
+ * Server-side reasons for an intent the simulation did not accept. These are
+ * transport-safety signals only: the browser never gets authority to repair
+ * or override a rejected movement command.
+ */
+export const ArenaInputRejectionReason = {
+  PLAYER_NOT_FOUND: "PLAYER_NOT_FOUND",
+  ROUND_NOT_ACTIVE: "ROUND_NOT_ACTIVE",
+  PLAYER_NOT_ALIVE: "PLAYER_NOT_ALIVE",
+  INVALID_TIMESTAMP: "INVALID_TIMESTAMP",
+  INVALID_VECTOR: "INVALID_VECTOR",
+  RATE_LIMITED: "RATE_LIMITED",
+} as const;
+
+export type ArenaInputRejectionReason = (typeof ArenaInputRejectionReason)[keyof typeof ArenaInputRejectionReason];
+
+export type ArenaInputAdmission =
+  | { accepted: true }
+  | { accepted: false; reason: ArenaInputRejectionReason };
+
 export const DEFAULT_ARENA_CONFIG: ArenaConfig = {
   mode: GameMode.FREE,
   width: 2200,
@@ -328,24 +348,41 @@ export class ArenaSimulation {
   }
 
   setInput(id: string, input: MovementIntent, now: number): boolean {
+    return this.trySetInput(id, input, now).accepted;
+  }
+
+  /**
+   * Common authoritative input gate for every transport. Free Mode calls it
+   * from its Colyseus Room; future paid transport uses the same gate.
+   */
+  trySetInput(id: string, input: MovementIntent, now: number): ArenaInputAdmission {
     const player = this.players.get(id);
-    if (!player || player.isBot || this.phase !== ArenaPhase.ACTIVE || !player.alive) {
-      return false;
+    if (!player || player.isBot) {
+      return { accepted: false, reason: ArenaInputRejectionReason.PLAYER_NOT_FOUND };
+    }
+    if (this.phase !== ArenaPhase.ACTIVE) {
+      return { accepted: false, reason: ArenaInputRejectionReason.ROUND_NOT_ACTIVE };
+    }
+    if (!player.alive) {
+      return { accepted: false, reason: ArenaInputRejectionReason.PLAYER_NOT_ALIVE };
+    }
+    if (!Number.isFinite(now)) {
+      return { accepted: false, reason: ArenaInputRejectionReason.INVALID_TIMESTAMP };
     }
     if (!Number.isFinite(input.x) || !Number.isFinite(input.y) || Math.abs(input.x) > 1 || Math.abs(input.y) > 1) {
-      return false;
+      return { accepted: false, reason: ArenaInputRejectionReason.INVALID_VECTOR };
     }
     const length = inputLength(input);
     // A release must never be stuck behind the movement rate limiter. The
     // room still has a bounded message rate, and this makes every valid zero
     // intent take effect on the next authoritative tick.
     if (length > 0 && now - player.lastInputAt < 1_000 / this.config.inputRateLimitPerSecond) {
-      return false;
+      return { accepted: false, reason: ArenaInputRejectionReason.RATE_LIMITED };
     }
 
     player.input = length > 1 ? { x: input.x / length, y: input.y / length } : cloneInput(input);
     player.lastInputAt = now;
-    return true;
+    return { accepted: true };
   }
 
   advance(now: number): void {

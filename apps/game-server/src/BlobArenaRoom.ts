@@ -1,4 +1,4 @@
-import { ArenaSimulation, DEFAULT_ARENA_CONFIG, type ArenaConfig } from "@blob/game-core";
+import { ArenaSimulation, DEFAULT_ARENA_CONFIG, type ArenaConfig, type ArenaInputRejectionReason } from "@blob/game-core";
 import { ARENA_ROOM_NAME, ClientMessage, ServerEvent } from "@blob/protocol";
 import { movementIntentSchema, playerJoinOptionsSchema, type ArenaChatAuditRecord, type ValidatedPlayerJoinOptions } from "@blob/validation";
 import { MapSchema, Schema } from "@colyseus/schema";
@@ -14,6 +14,7 @@ import {
 import type { LiveMetrics } from "./liveMetrics.js";
 import { ArenaChat } from "./arenaChat.js";
 import { createArenaChatPersistence, resolveChatRetentionDays, type ArenaChatPersistence } from "./chatAudit.js";
+import { InputAbuseGuard } from "./inputAbuseGuard.js";
 import { ProfileTicketVerifier, type ResolvedPlayerIdentity } from "./profileIdentity.js";
 
 export interface BlobArenaRoomOptions {
@@ -46,6 +47,7 @@ export class BlobArenaRoom extends Room<{ state: BlobArenaState }> {
   private chatRetentionDays = 90;
   private readonly arenaChat = new ArenaChat();
   private readonly profileUserIds = new Map<string, string>();
+  private readonly inputAbuseGuard = new InputAbuseGuard();
 
   override onCreate(options: BlobArenaRoomOptions = {}): void {
     this.liveMetrics = options.liveMetrics;
@@ -61,11 +63,16 @@ export class BlobArenaRoom extends Room<{ state: BlobArenaState }> {
       this.syncState();
     }, this.simulation.config.tickMs);
     this.onMessage(ClientMessage.INPUT, (client, payload: unknown) => {
+      const now = Date.now();
       const parsed = movementIntentSchema.safeParse(payload);
       if (!parsed.success) {
+        this.handleInputViolation(client, "MALFORMED", now);
         return;
       }
-      this.simulation.setInput(client.sessionId, parsed.data, Date.now());
+      const admission = this.simulation.trySetInput(client.sessionId, parsed.data, now);
+      if (!admission.accepted) {
+        this.handleInputViolation(client, admission.reason, now);
+      }
     });
     this.onMessage(ClientMessage.CHAT_SEND, (client, payload: unknown) => {
       void this.receiveChatMessage(client, payload);
@@ -174,6 +181,24 @@ export class BlobArenaRoom extends Room<{ state: BlobArenaState }> {
       sentAt: input.sentAt,
       expiresAt: input.sentAt + this.chatRetentionDays * 24 * 60 * 60 * 1_000
     };
+  }
+
+  private handleInputViolation(client: Client, reason: "MALFORMED" | ArenaInputRejectionReason, now: number): void {
+    const identityKey = this.profileUserIds.get(client.sessionId)
+      ? "profile:" + this.profileUserIds.get(client.sessionId)
+      : "session:" + client.sessionId;
+    const decision = reason === "MALFORMED"
+      ? this.inputAbuseGuard.recordMalformed(identityKey, now)
+      : this.inputAbuseGuard.recordSimulationRejection(identityKey, reason, now);
+    if (!decision?.disconnect) {
+      return;
+    }
+    this.log("input_abuse_disconnect", {
+      playerId: client.sessionId,
+      category: decision.category,
+      count: decision.count,
+    });
+    void client.leave(4008, "INPUT_ABUSE");
   }
 
   private syncState(): void {

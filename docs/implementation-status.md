@@ -36,6 +36,11 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   authorization mechanism and is not documented as one.
 - The game server is authoritative and must never contain wallet keys,
   payment signing, or client-trusted settlement logic.
+- Free Mode and the disabled future Paid Room now share a structured
+  game-core input-admission result. The public Colyseus transport applies a
+  bounded malformed-input/sustained-flood strike policy before disconnecting
+  an abusive session; normal countdown/death/released-control rejections do
+  not count as strikes.
 - packages/shared already has a paid-match state machine and bigint prize
   calculation. This work extends that domain.
 - Railway production now contains the separate `platform-api` service and one

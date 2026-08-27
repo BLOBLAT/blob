@@ -35,6 +35,16 @@ is possible, or that the paid USDC system is ready to launch.
 - A room limits inbound client messages, shortens half-open seat reservations,
   and limits Free Mode to the single canonical arena rather than creating
   unlimited simulation rooms during a join flood.
+- Movement crosses one shared game-core admission gate for Free Mode and the
+  disabled future Paid Room. It rejects non-finite or out-of-range vectors,
+  non-finite timestamps, inactive/dead sessions, and over-rate movement;
+  stale intent becomes zero on the server. The live Room records only bounded
+  short-window strike counts for malformed payloads and sustained rate abuse,
+  then disconnects the offending session. It does not retain raw payloads,
+  wallet addresses, or IP addresses for this control.
+- Positions, velocity, mass, food, combat, deaths, round clocks, ranks and
+  final results are calculated only by the simulation. No client packet can
+  name a victim, set a score, request a respawn, or submit a match result.
 - HTTP header, request, keep-alive, and per-socket request limits bound
   incomplete or long-lived HTTP requests. `/health` and the origin-protected
   `/presence` response are never cached; no unauthenticated metrics endpoint is

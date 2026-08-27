@@ -153,6 +153,25 @@ describe("BLOB arena room", () => {
     await waitUntil(async () => (await getLiveMetrics()).arenaPlayers === 0);
   });
 
+  it("disconnects a client that repeatedly submits malformed movement while preserving the arena", async () => {
+    const firstClient = new Client(endpoint);
+    const secondClient = new Client(endpoint);
+    const firstRoom = await firstClient.joinOrCreate(ARENA_ROOM_NAME, { name: "Invalid Input" });
+    const secondRoom = await secondClient.joinOrCreate(ARENA_ROOM_NAME, { name: "Valid Observer" });
+    await waitUntil(() => firstRoom.state.phase === "ACTIVE");
+
+    let left = false;
+    firstRoom.onLeave(() => { left = true; });
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      firstRoom.send(ClientMessage.INPUT, { x: 99, y: 0 });
+    }
+
+    await waitUntil(() => left);
+    await waitUntil(() => getPlayers(secondRoom.state).length === 4);
+    expect(secondRoom.state.phase).toBe("ACTIVE");
+    await secondRoom.leave();
+  });
+
   it("relays only validated plain chat between real connected arena clients", async () => {
     const firstClient = new Client(endpoint);
     const secondClient = new Client(endpoint);

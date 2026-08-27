@@ -1,7 +1,7 @@
-import { ArenaSimulation, type ArenaConfig } from "@blob/game-core";
+import { ArenaInputRejectionReason, ArenaSimulation, type ArenaConfig, type ArenaInputAdmission } from "@blob/game-core";
 import { ArenaPhase, GameMode, type MovementIntent } from "@blob/protocol";
 import type { PaidAdmissionConsumer } from "@blob/paid-admission-client";
-import { PAID_MATCH_MAX_PLAYERS, PAID_MATCH_ROUND_DURATION_MS, PAID_MATCH_WINNER_COUNT, type AuthoritativeMatchResult } from "@blob/shared";
+import { PAID_MATCH_MAX_PLAYERS, PAID_MATCH_MIN_PLAYERS, PAID_MATCH_ROUND_DURATION_MS, type AuthoritativeMatchResult } from "@blob/shared";
 import { createHash } from "node:crypto";
 
 export interface PaidArenaRuntimeOptions {
@@ -27,7 +27,7 @@ export class PaidArenaRuntime {
     this.simulation = new ArenaSimulation({
       ...options.arenaConfig,
       mode: GameMode.PAID,
-      minPlayersToStart: options.arenaConfig?.minPlayersToStart ?? PAID_MATCH_WINNER_COUNT,
+      minPlayersToStart: options.arenaConfig?.minPlayersToStart ?? PAID_MATCH_MIN_PLAYERS,
       maxPlayers: options.arenaConfig?.maxPlayers ?? PAID_MATCH_MAX_PLAYERS,
       matchDurationMs: options.arenaConfig?.matchDurationMs ?? PAID_MATCH_ROUND_DURATION_MS,
       respawnEnabled: false,
@@ -38,7 +38,7 @@ export class PaidArenaRuntime {
       freeModeBotMaxCount: 1,
       paidRoundIdentity: { matchId: options.matchId, roundId: options.roundId },
     });
-    if (this.simulation.config.minPlayersToStart < PAID_MATCH_WINNER_COUNT
+    if (this.simulation.config.minPlayersToStart < PAID_MATCH_MIN_PLAYERS
       || this.simulation.config.maxPlayers > PAID_MATCH_MAX_PLAYERS
       || this.simulation.config.matchDurationMs !== PAID_MATCH_ROUND_DURATION_MS) {
       throw new PaidArenaRuntimeError("PAID_RUNTIME_CONFIG_INVALID", "Paid arena configuration does not match immutable paid rules.");
@@ -68,8 +68,17 @@ export class PaidArenaRuntime {
   }
 
   setInput(sessionId: string, input: MovementIntent, now: number): boolean {
+    return this.trySetInput(sessionId, input, now).accepted;
+  }
+
+  /** Future paid transports use the same game-core admission result as Free
+   * Mode, so invalid vectors and input floods never get a paid-only bypass. */
+  trySetInput(sessionId: string, input: MovementIntent, now: number): ArenaInputAdmission {
     const playerId = this.sessionPlayers.get(sessionId);
-    return Boolean(playerId && this.simulation.setInput(playerId, input, now));
+    if (!playerId) {
+      return { accepted: false, reason: ArenaInputRejectionReason.PLAYER_NOT_FOUND };
+    }
+    return this.simulation.trySetInput(playerId, input, now);
   }
 
   advance(now: number): void { this.simulation.advance(now); }
@@ -116,7 +125,7 @@ export class PaidArenaTransportAdapter {
   }
 
   input(sessionId: string, intent: MovementIntent, now: number): boolean {
-    return this.runtime.setInput(sessionId, intent, now);
+    return this.runtime.trySetInput(sessionId, intent, now).accepted;
   }
 
   async tick(now: number) {
