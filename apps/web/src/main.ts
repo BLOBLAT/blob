@@ -780,7 +780,7 @@ function renderReferralEmailEnrollment(card: HTMLElement, state: "NOT_STARTED" |
   copy.className = "profile-copy";
   copy.textContent = state === "PENDING"
     ? "Enter the six-digit code sent to your email. Your referral link and points unlock only after verification."
-    : "Verify an email to activate the BLOB referral program. We use it only for this verification; the database keeps a keyed fingerprint, not the address itself.";
+    : "Verify an email to activate the BLOB referral program. BLOB keeps the address encrypted for verification and duplicate prevention; it is never shown in the game, chat, or public site.";
   card.append(copy);
 
   if (state === "PENDING") {
