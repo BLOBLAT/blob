@@ -1,6 +1,7 @@
 import type { Room } from "@colyseus/sdk";
 import Phaser from "phaser";
 import {
+  directionTowardPoint,
   renderInterpolationAlpha,
   targetArenaZoom,
 } from "./arenaPresentation.js";
@@ -113,7 +114,10 @@ export interface ArenaUiState {
 const INPUT_SEND_INTERVAL_MS = 45;
 const INPUT_HEARTBEAT_INTERVAL_MS = 180;
 const INPUT_CHANGE_EPSILON = 0.01;
-const MOUSE_INTENT_HOLD_MS = 220;
+// Pointer events arrive many times per second on desktop. A short grace period
+// tolerates a single delayed event without making a released cursor feel like
+// it has inertia.
+const MOUSE_INTENT_HOLD_MS = 90;
 const RENDER_TELEPORT_DISTANCE = 260;
 const MOUSE_TARGET_STOP_DISTANCE = 8;
 
@@ -384,14 +388,7 @@ export class BlobArenaScene extends Phaser.Scene {
       this.mouseScreenPosition.x,
       this.mouseScreenPosition.y,
     );
-    const renderedPlayer = this.getRenderedPosition(localPlayer);
-    const deltaX = mouseTarget.x - renderedPlayer.x;
-    const deltaY = mouseTarget.y - renderedPlayer.y;
-    if (Math.hypot(deltaX, deltaY) <= MOUSE_TARGET_STOP_DISTANCE) {
-      this.intent = { x: 0, y: 0 };
-      return;
-    }
-    this.setIntentFromDelta(deltaX, deltaY);
+    this.intent = directionTowardPoint(localPlayer, mouseTarget, MOUSE_TARGET_STOP_DISTANCE);
   }
 
   private setIntentFromDelta(deltaX: number, deltaY: number): void {
