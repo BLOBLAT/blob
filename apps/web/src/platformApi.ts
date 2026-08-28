@@ -17,19 +17,24 @@ export interface GameIdentityTicket {
 }
 
 export interface ReferralDashboard {
-  code: string;
-  inviteUrl: string;
-  totalPoints: string;
-  invitedCount: number;
-  qualifiedCount: number;
-  referralBound: boolean;
-  qualificationRules: {
+  emailVerification: {
+    state: "NOT_STARTED" | "PENDING" | "VERIFIED" | "UNAVAILABLE";
+    expiresAt: string | null;
+    privacyNoticeVersion: string;
+  };
+  code?: string;
+  inviteUrl?: string;
+  totalPoints?: string;
+  invitedCount?: number;
+  qualifiedCount?: number;
+  referralBound?: boolean;
+  qualificationRules?: {
     attributionWindowHours: number;
     minFoodCollected: number;
     minSurvivalSeconds: number;
     maxQualificationsPerReferrerPerDay: number;
   };
-  recentEntries: Array<{
+  recentEntries?: Array<{
     delta: string;
     reason: "REFERRER_QUALIFIED_PLAYER" | "REFEREE_QUALIFIED_PLAYER" | "ADMIN_ADJUSTMENT";
     createdAt: string;
@@ -101,6 +106,21 @@ export class PlatformApi {
 
   async captureReferralAttribution(code: string): Promise<"CAPTURED" | "ALREADY_ATTRIBUTED"> {
     const response = await this.request<{ status: "CAPTURED" | "ALREADY_ATTRIBUTED" }>("/v1/me/referral/attribution", {
+      method: "POST",
+      body: { code },
+    });
+    return response.status;
+  }
+
+  async startReferralEmailVerification(input: { email: string; privacyNoticeVersion: string }): Promise<{ status: "PENDING" | "ALREADY_VERIFIED" | "COOLDOWN"; retryAfterMs: number | null }> {
+    return this.request("/v1/me/referral/email/start", {
+      method: "POST",
+      body: { ...input, acceptedPrivacyNotice: true },
+    });
+  }
+
+  async verifyReferralEmail(code: string): Promise<"VERIFIED" | "INVALID_CODE" | "EXPIRED" | "NOT_STARTED" | "ALREADY_VERIFIED"> {
+    const response = await this.request<{ status: "VERIFIED" | "INVALID_CODE" | "EXPIRED" | "NOT_STARTED" | "ALREADY_VERIFIED" }>("/v1/me/referral/email/verify", {
       method: "POST",
       body: { code },
     });

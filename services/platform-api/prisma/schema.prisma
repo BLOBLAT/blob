@@ -106,6 +106,7 @@ model User {
   referralReceived    ReferralAttribution?  @relation("ReferralAttributionReferee")
   referralQualifications ReferralQualification[]
   referralPoints      ReferralPointsLedger[]
+  referralEmailVerification ReferralEmailVerification?
 
   @@unique([displayNameKey])
 }
@@ -457,4 +458,26 @@ model ReferralPointsLedger {
   @@index([userId, createdAt])
   @@index([referralAttributionId])
   @@index([qualificationId])
+}
+
+/// Email verification is optional for a BLOB profile but mandatory before the
+/// referral program can issue a public code or count a qualification. The raw
+/// email is never stored: emailHash and verificationCodeHash are keyed HMACs.
+model ReferralEmailVerification {
+  id                    String   @id @default(uuid())
+  userId                String   @unique
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  emailHash             String   @unique
+  verificationCodeHash  String?
+  verificationExpiresAt DateTime?
+  failedAttempts        Int      @default(0)
+  lastSentAt            DateTime?
+  privacyNoticeVersion  String
+  privacyAcceptedAt     DateTime
+  verifiedAt            DateTime?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([verifiedAt])
+  @@index([verificationExpiresAt])
 }

@@ -45,14 +45,17 @@ memory. In production, accepted messages are written to a private, signed
 PostgreSQL audit record before broadcast and automatically expire after 90
 days. Chat is not a public archive or a source of competitive authority.
 
-Wallet-backed profiles also receive an optional opaque referral link. A
-referral is bound only once during the invited profile's new-account window;
+Wallet-backed profiles may opt into the referral program after confirming a
+one-time email code and accepting the current Privacy Notice. The raw address
+is used only to send that code; PostgreSQL retains a keyed cryptographic
+fingerprint and verification record rather than the address itself. A referral
+is bound only once during the invited profile's new-account window;
 self-referrals, repeat claims, and browser-only activity are rejected. Both
 parties receive server-issued **BLOB Points** only after the invitee completes
-an activity-qualified, authoritative Free round. A durable per-referrer UTC
-day cap limits mass reward farming. Points are an in-app, non-transferable
-record with no current redemption, gameplay benefit, token conversion, or
-promised value.
+an activity-qualified, authoritative Free round and both referral profiles
+have verified email membership. A durable per-referrer UTC day cap limits mass
+reward farming. Points are an in-app, non-transferable record with no current
+redemption, gameplay benefit, token conversion, or promised value.
 Referral links never include wallet addresses. See [the referral guide](docs/referrals.md).
 
 The same isolated service contains an unexposed paid-match domain: bigint

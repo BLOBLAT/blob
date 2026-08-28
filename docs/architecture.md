@@ -66,14 +66,19 @@ It has no DMs, wallet addresses, cookies, IPs, raw HTML, bot-generated
 messages, public history endpoint, or fabricated messages.
 
 The referral program is likewise deliberately outside the Colyseus protocol.
-After wallet-backed profile sign-in, Platform API creates one opaque public
-referral code for the internal user. A visitor can carry that code in
-`?ref=CODE`; the browser may submit it once only after authentication, while
-PostgreSQL enforces first-valid-referrer attribution, the new-profile binding
-window, and blocks self-referral. The server-finalized fact contains only
-internal identity plus authoritative food/survival activity. Platform API
-enforces the configured minimum activity and a durable per-referrer UTC-day
-qualification cap before it can write the append-only ledger.
+After wallet-backed profile sign-in, a user must accept the current Privacy
+Notice and confirm a one-time email code before Platform API creates or returns
+their opaque public referral code. The raw address is sent only to the email
+delivery provider for that one verification message; PostgreSQL stores a
+server-keyed HMAC fingerprint, code hash, expiry, consent version, and
+verification time instead of the address. A visitor can carry that code in
+`?ref=CODE`; the browser may submit it once only after authentication and
+email verification, while PostgreSQL enforces first-valid-referrer attribution,
+the new-profile binding window, and blocks self-referral. The server-finalized
+fact contains only internal identity plus authoritative food/survival activity.
+Platform API enforces verified membership for both parties, the configured
+minimum activity, and a durable per-referrer UTC-day qualification cap before
+it can write the append-only ledger.
 No wallet address appears in the URL. At finalization of a real Free round,
 the authoritative game server sends a compact, Ed25519-signed completion fact
 to Platform API over Railway private networking. The API validates the

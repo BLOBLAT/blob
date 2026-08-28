@@ -29,7 +29,8 @@ export type ReferralQualificationOutcome =
   | "ALREADY_QUALIFIED"
   | "EVENT_ALREADY_PROCESSED"
   | "INSUFFICIENT_GAMEPLAY"
-  | "DAILY_CAP_REACHED";
+  | "DAILY_CAP_REACHED"
+  | "EMAIL_NOT_VERIFIED";
 
 export interface ReferralProgramRules {
   /** A link may only bind to a newly created BLOB profile. */

@@ -52,6 +52,18 @@ export interface PlatformApiConfig {
   /** Process-local protection for referral-link capture requests. */
   referralAttributionRateLimit: number;
   referralAttributionGlobalRateLimit: number;
+  /** Server-only keyed HMAC secret for privacy-preserving referral email state. */
+  referralEmailHashSecret: Uint8Array | undefined;
+  /** Resend is optional; without all three email settings referrals fail closed. */
+  resendApiKey: string | undefined;
+  resendFrom: string | undefined;
+  referralEmailVerificationTtlMs: number;
+  referralEmailResendCooldownMs: number;
+  referralEmailMaxFailedAttempts: number;
+  referralEmailStartRateLimit: number;
+  referralEmailStartGlobalRateLimit: number;
+  referralEmailVerifyRateLimit: number;
+  referralEmailVerifyGlobalRateLimit: number;
 }
 
 const LOCAL_WEB_ORIGINS = ["http://127.0.0.1:5173", "http://localhost:5173"];
@@ -118,6 +130,16 @@ export function loadPlatformApiConfig(environment: NodeJS.ProcessEnv = process.e
   if (environment.BLOB_REFERRAL_QUALIFICATION_PUBLIC_KEY_BASE58 && !referralQualificationPublicKey) {
     throw new Error("BLOB_REFERRAL_QUALIFICATION_PUBLIC_KEY_BASE58 must be a base58 Ed25519 public key.");
   }
+  const referralEmailHashSecret = decodeFixedBase64Secret(
+    environment.PLATFORM_REFERRAL_EMAIL_HMAC_SECRET_BASE64,
+    "PLATFORM_REFERRAL_EMAIL_HMAC_SECRET_BASE64",
+  );
+  const resendApiKey = normalizeServerSecret(environment.RESEND_API_KEY);
+  const resendFrom = normalizeMailFrom(environment.BLOB_REFERRAL_EMAIL_FROM);
+  const configuredEmailValues = [referralEmailHashSecret, resendApiKey, resendFrom].filter(Boolean).length;
+  if (configuredEmailValues !== 0 && configuredEmailValues !== 3) {
+    throw new Error("PLATFORM_REFERRAL_EMAIL_HMAC_SECRET_BASE64, RESEND_API_KEY, and BLOB_REFERRAL_EMAIL_FROM must be configured together.");
+  }
 
   return {
     databaseUrl,
@@ -151,10 +173,28 @@ export function loadPlatformApiConfig(environment: NodeJS.ProcessEnv = process.e
     referralMaxQualificationsPerReferrerPerDay: parsePositiveInteger(environment.BLOB_REFERRAL_MAX_QUALIFICATIONS_PER_REFERRER_PER_DAY, 10, "BLOB_REFERRAL_MAX_QUALIFICATIONS_PER_REFERRER_PER_DAY"),
     referralAttributionRateLimit: parsePositiveInteger(environment.BLOB_REFERRAL_ATTRIBUTION_RATE_LIMIT, 4, "BLOB_REFERRAL_ATTRIBUTION_RATE_LIMIT"),
     referralAttributionGlobalRateLimit: parsePositiveInteger(environment.BLOB_REFERRAL_ATTRIBUTION_GLOBAL_RATE_LIMIT, 120, "BLOB_REFERRAL_ATTRIBUTION_GLOBAL_RATE_LIMIT"),
+    referralEmailHashSecret,
+    resendApiKey,
+    resendFrom,
+    referralEmailVerificationTtlMs: parsePositiveInteger(environment.BLOB_REFERRAL_EMAIL_VERIFICATION_TTL_MS, 10 * 60 * 1_000, "BLOB_REFERRAL_EMAIL_VERIFICATION_TTL_MS"),
+    referralEmailResendCooldownMs: parsePositiveInteger(environment.BLOB_REFERRAL_EMAIL_RESEND_COOLDOWN_MS, 60_000, "BLOB_REFERRAL_EMAIL_RESEND_COOLDOWN_MS"),
+    referralEmailMaxFailedAttempts: parsePositiveInteger(environment.BLOB_REFERRAL_EMAIL_MAX_FAILED_ATTEMPTS, 5, "BLOB_REFERRAL_EMAIL_MAX_FAILED_ATTEMPTS"),
+    referralEmailStartRateLimit: parsePositiveInteger(environment.BLOB_REFERRAL_EMAIL_START_RATE_LIMIT, 3, "BLOB_REFERRAL_EMAIL_START_RATE_LIMIT"),
+    referralEmailStartGlobalRateLimit: parsePositiveInteger(environment.BLOB_REFERRAL_EMAIL_START_GLOBAL_RATE_LIMIT, 60, "BLOB_REFERRAL_EMAIL_START_GLOBAL_RATE_LIMIT"),
+    referralEmailVerifyRateLimit: parsePositiveInteger(environment.BLOB_REFERRAL_EMAIL_VERIFY_RATE_LIMIT, 8, "BLOB_REFERRAL_EMAIL_VERIFY_RATE_LIMIT"),
+    referralEmailVerifyGlobalRateLimit: parsePositiveInteger(environment.BLOB_REFERRAL_EMAIL_VERIFY_GLOBAL_RATE_LIMIT, 180, "BLOB_REFERRAL_EMAIL_VERIFY_GLOBAL_RATE_LIMIT"),
   };
 }
 
 function decodeEd25519PrivateKey(value: string | undefined, variableName: string): Uint8Array | undefined {
+  const decoded = decodeFixedBase64Secret(value, variableName, "32-byte Ed25519 private key");
+  if (decoded === undefined) {
+    return undefined;
+  }
+  return decoded;
+}
+
+function decodeFixedBase64Secret(value: string | undefined, variableName: string, description = "32-byte secret"): Uint8Array | undefined {
   if (!value) {
     return undefined;
   }
@@ -163,7 +203,7 @@ function decodeEd25519PrivateKey(value: string | undefined, variableName: string
   }
   const decoded = Buffer.from(value, "base64");
   if (decoded.length !== 32) {
-    throw new Error(variableName + " must decode to a 32-byte Ed25519 private key.");
+    throw new Error(variableName + " must decode to a " + description + ".");
   }
   return new Uint8Array(decoded);
 }
@@ -212,6 +252,28 @@ function parseNonNegativeBigInt(value: string | undefined, fallback: bigint, nam
     throw new Error(name + " must be a non-negative integer.");
   }
   return BigInt(value);
+}
+
+function normalizeServerSecret(value: string | undefined): string | undefined {
+  const secret = value?.trim();
+  if (!secret) {
+    return undefined;
+  }
+  if (secret.length < 20 || /[\r\n]/.test(secret)) {
+    throw new Error("RESEND_API_KEY is invalid.");
+  }
+  return secret;
+}
+
+function normalizeMailFrom(value: string | undefined): string | undefined {
+  const from = value?.trim();
+  if (!from) {
+    return undefined;
+  }
+  if (from.length > 320 || /[\r\n]/.test(from) || !/^[^<>\r\n]+<[^<>\s@]+@[^<>\s@]+>$/.test(from)) {
+    throw new Error("BLOB_REFERRAL_EMAIL_FROM must be a safe display-name and email address, for example BLOB <verify@blob.lat>.");
+  }
+  return from;
 }
 import { timingSafeEqual } from "node:crypto";
 import { decodeArenaChatAuditPublicKey } from "./arena-chat-audit.js";

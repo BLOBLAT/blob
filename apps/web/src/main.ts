@@ -199,6 +199,7 @@ function renderSite(): void {
       <div>
         <a href="https://github.com/BLOBLAT/blob" target="_blank" rel="noreferrer">GitHub</a>
         <a href="/terms.html">Terms &amp; Risk</a>
+        <a href="/privacy.html">Privacy</a>
         <span>Community channels soon</span>
       </div>
     </footer>
@@ -671,6 +672,17 @@ async function refreshReferralExperience(): Promise<void> {
     referralDashboard = undefined;
     return;
   }
+  try {
+    referralDashboard = await platformApi.getReferralDashboard();
+  } catch (error) {
+    console.warn("[BLOB] referral dashboard could not be loaded", error);
+    return;
+  }
+  // An opaque ref code may wait in session storage, but the server does not
+  // bind it until the wallet profile has verified its referral email.
+  if (referralDashboard.emailVerification.state !== "VERIFIED") {
+    return;
+  }
   const candidate = window.sessionStorage.getItem(REFERRAL_CANDIDATE_STORAGE_KEY);
   if (candidate) {
     try {
@@ -708,12 +720,30 @@ function renderReferralProgram(container: HTMLElement): void {
   const copy = document.createElement("p");
   copy.className = "profile-copy";
   if (!referralDashboard) {
-    copy.textContent = "Preparing your private referral link…";
+    copy.textContent = "Referral membership is temporarily unavailable.";
     card.append(label, copy);
     container.append(card);
     return;
   }
   const dashboard = referralDashboard;
+  if (dashboard.emailVerification.state === "UNAVAILABLE") {
+    copy.textContent = "Referral membership requires email verification, which is not configured for this deployment yet.";
+    card.append(label, copy);
+    container.append(card);
+    return;
+  }
+  if (dashboard.emailVerification.state !== "VERIFIED") {
+    card.append(label);
+    renderReferralEmailEnrollment(card, dashboard.emailVerification.state, dashboard.emailVerification.privacyNoticeVersion);
+    container.append(card);
+    return;
+  }
+  if (!dashboard.code || !dashboard.inviteUrl || !dashboard.qualificationRules) {
+    copy.textContent = "Your verified referral membership is being prepared. Please try again shortly.";
+    card.append(label, copy);
+    container.append(card);
+    return;
+  }
   const rules = dashboard.qualificationRules;
   copy.textContent = `Invite a new player. Their link must be attached within ${formatReferralWindow(rules.attributionWindowHours)} of creating a BLOB profile; points count after a server-confirmed Free Mode round with ${rules.minFoodCollected} food eaten and ${formatReferralDuration(rules.minSurvivalSeconds)} alive.`;
   const link = document.createElement("code");
@@ -721,9 +751,9 @@ function renderReferralProgram(container: HTMLElement): void {
   const stats = document.createElement("dl");
   stats.className = "referral-stats";
   const referralStats: ReadonlyArray<readonly [string, string]> = [
-    ["BLOB Points", dashboard.totalPoints],
-    ["Invited", String(dashboard.invitedCount)],
-    ["Active", String(dashboard.qualifiedCount)],
+    ["BLOB Points", dashboard.totalPoints ?? "0"],
+    ["Invited", String(dashboard.invitedCount ?? 0)],
+    ["Active", String(dashboard.qualifiedCount ?? 0)],
   ];
   for (const [term, value] of referralStats) {
     const row = document.createElement("div");
@@ -743,6 +773,117 @@ function renderReferralProgram(container: HTMLElement): void {
   note.textContent = `One referral link per profile. Self-referrals, repeat claims, browser-only activity, and duplicate rewards are blocked; up to ${rules.maxQualificationsPerReferrerPerDay} qualified referrals per referrer count each UTC day. Points are not a token, cash balance, or promise of future value.`;
   card.append(label, copy, link, stats, copyButton, note);
   container.append(card);
+}
+
+function renderReferralEmailEnrollment(card: HTMLElement, state: "NOT_STARTED" | "PENDING", privacyNoticeVersion: string): void {
+  const copy = document.createElement("p");
+  copy.className = "profile-copy";
+  copy.textContent = state === "PENDING"
+    ? "Enter the six-digit code sent to your email. Your referral link and points unlock only after verification."
+    : "Verify an email to activate the BLOB referral program. We use it only for this verification; the database keeps a keyed fingerprint, not the address itself.";
+  card.append(copy);
+
+  if (state === "PENDING") {
+    const form = document.createElement("form");
+    form.className = "referral-email-form";
+    const label = document.createElement("label");
+    label.htmlFor = "referral-email-code";
+    label.textContent = "Verification code";
+    const code = document.createElement("input");
+    code.id = "referral-email-code";
+    code.name = "code";
+    code.inputMode = "numeric";
+    code.autocomplete = "one-time-code";
+    code.pattern = "[0-9]{6}";
+    code.maxLength = 6;
+    code.placeholder = "000000";
+    code.required = true;
+    const submit = document.createElement("button");
+    submit.type = "submit";
+    submit.className = "referral-copy";
+    submit.textContent = "Verify code";
+    form.append(label, code, submit);
+    form.addEventListener("submit", (event) => void verifyReferralEmail(event, code, submit));
+    card.append(form);
+    return;
+  }
+
+  const form = document.createElement("form");
+  form.className = "referral-email-form";
+  const label = document.createElement("label");
+  label.htmlFor = "referral-email";
+  label.textContent = "Email for verification";
+  const email = document.createElement("input");
+  email.id = "referral-email";
+  email.name = "email";
+  email.type = "email";
+  email.autocomplete = "email";
+  email.maxLength = 254;
+  email.required = true;
+  email.placeholder = "you@example.com";
+  const consent = document.createElement("label");
+  consent.className = "referral-consent";
+  const accepted = document.createElement("input");
+  accepted.type = "checkbox";
+  accepted.required = true;
+  const consentText = document.createElement("span");
+  consentText.append("I agree to the ");
+  const privacyLink = document.createElement("a");
+  privacyLink.href = "/privacy.html";
+  privacyLink.target = "_blank";
+  privacyLink.rel = "noreferrer";
+  privacyLink.textContent = "Privacy Notice";
+  consentText.append(privacyLink, " for referral email verification.");
+  consent.append(accepted, consentText);
+  const submit = document.createElement("button");
+  submit.type = "submit";
+  submit.className = "referral-copy";
+  submit.textContent = "Send verification code";
+  form.append(label, email, consent, submit);
+  form.addEventListener("submit", (event) => void startReferralEmailVerification(event, email, accepted, submit, privacyNoticeVersion));
+  card.append(form);
+}
+
+async function startReferralEmailVerification(event: SubmitEvent, email: HTMLInputElement, accepted: HTMLInputElement, submit: HTMLButtonElement, privacyNoticeVersion: string): Promise<void> {
+  event.preventDefault();
+  if (!platformApi || !accepted.checked) {
+    return;
+  }
+  submit.disabled = true;
+  try {
+    const result = await platformApi.startReferralEmailVerification({ email: email.value, privacyNoticeVersion });
+    referralNotice = result.status === "COOLDOWN"
+      ? "Please wait a moment before requesting another verification email."
+      : result.status === "ALREADY_VERIFIED"
+        ? "Your email is already verified."
+        : "Verification code sent. Check your inbox and enter the six-digit code.";
+    await refreshReferralExperience();
+    renderProfileDialog(referralNotice);
+  } catch (error) {
+    renderProfileDialog(describeProfileError(error));
+  }
+}
+
+async function verifyReferralEmail(event: SubmitEvent, code: HTMLInputElement, submit: HTMLButtonElement): Promise<void> {
+  event.preventDefault();
+  if (!platformApi) {
+    return;
+  }
+  submit.disabled = true;
+  try {
+    const status = await platformApi.verifyReferralEmail(code.value.trim());
+    if (status !== "VERIFIED" && status !== "ALREADY_VERIFIED") {
+      referralNotice = status === "EXPIRED" ? "That code expired. Request a new one." : "That verification code is not valid.";
+      await refreshReferralExperience();
+      renderProfileDialog(referralNotice);
+      return;
+    }
+    referralNotice = "Email verified. Your referral program is now active.";
+    await refreshReferralExperience();
+    renderProfileDialog(referralNotice);
+  } catch (error) {
+    renderProfileDialog(describeProfileError(error));
+  }
 }
 
 function formatReferralDuration(seconds: number): string {
@@ -801,6 +942,21 @@ function describeProfileError(error: unknown): string {
     }
     if (error.code === "GAME_IDENTITY_UNAVAILABLE") {
       return "Profile names are temporarily unavailable. Please try again shortly.";
+    }
+    if (error.code === "EMAIL_INVALID") {
+      return "Enter a valid email address.";
+    }
+    if (error.code === "EMAIL_UNAVAILABLE") {
+      return "This email cannot be used for another BLOB referral profile.";
+    }
+    if (error.code === "EMAIL_CHANGE_NOT_ALLOWED") {
+      return "A verified referral email cannot be changed from this profile.";
+    }
+    if (error.code === "EMAIL_DELIVERY_UNAVAILABLE" || error.code === "REFERRAL_EMAIL_UNAVAILABLE") {
+      return "Email verification is temporarily unavailable. Please try again later.";
+    }
+    if (error.code === "PRIVACY_CONSENT_REQUIRED") {
+      return "Accept the Privacy Notice before requesting a verification email.";
     }
     if (error.code === "REQUEST_INVALID") {
       return "Use 3–16 letters, numbers, spaces, underscores, or hyphens.";

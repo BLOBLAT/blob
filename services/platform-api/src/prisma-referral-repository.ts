@@ -141,6 +141,18 @@ export class PrismaReferralRepository implements ReferralRepository {
       if (attribution.status !== ReferralAttributionStatus.PENDING) {
         return "ALREADY_QUALIFIED";
       }
+      const verifiedMemberships = await transaction.referralEmailVerification.count({
+        where: {
+          userId: { in: [attribution.referrerUserId, input.profileUserId] },
+          verifiedAt: { not: null },
+        },
+      });
+      // A link can never turn into points until both sides have confirmed an
+      // email. This check lives beside the append-only ledger transaction, not
+      // in browser state or an arena client.
+      if (verifiedMemberships !== 2) {
+        return "EMAIL_NOT_VERIFIED";
+      }
       const existingQualification = await transaction.referralQualification.findUnique({
         where: {
           refereeUserId_kind: {

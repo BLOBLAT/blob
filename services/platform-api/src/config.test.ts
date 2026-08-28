@@ -116,4 +116,20 @@ describe("platform API production configuration", () => {
       BLOB_REFERRAL_MAX_QUALIFICATIONS_PER_REFERRER_PER_DAY: "10.5",
     })).toThrow("BLOB_REFERRAL_MAX_QUALIFICATIONS_PER_REFERRER_PER_DAY must be a positive integer");
   });
+
+  it("fails closed unless the complete server-only referral email configuration is present", () => {
+    expect(() => loadPlatformApiConfig({
+      DATABASE_URL,
+      PLATFORM_REFERRAL_EMAIL_HMAC_SECRET_BASE64: Buffer.alloc(32, 5).toString("base64"),
+    })).toThrow("must be configured together");
+
+    const config = loadPlatformApiConfig({
+      DATABASE_URL,
+      PLATFORM_REFERRAL_EMAIL_HMAC_SECRET_BASE64: Buffer.alloc(32, 5).toString("base64"),
+      RESEND_API_KEY: "re_test_only_non_production_key",
+      BLOB_REFERRAL_EMAIL_FROM: "BLOB <verify@blob.lat>",
+    });
+    expect(config.referralEmailHashSecret).toHaveLength(32);
+    expect(config.resendFrom).toBe("BLOB <verify@blob.lat>");
+  });
 });

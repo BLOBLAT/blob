@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="BLOB referral and profile privacy notice." />
+    <title>BLOB — Privacy Notice</title>
+    <link rel="icon" href="/blob-lat-favicon.png" />
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <main class="terms-page">
+      <nav class="site-nav" aria-label="Privacy navigation">
+        <a class="wordmark" href="/" aria-label="BLOB home">BLOB<span>.</span></a>
+        <a class="nav-buy-button" href="/">Back to BLOB <span aria-hidden="true">←</span></a>
+      </nav>
+      <article class="terms-content">
+        <p class="eyebrow">BLOB.LAT</p>
+        <h1>PRIVACY<br /><em>NOTICE.</em></h1>
+        <p class="terms-updated">Version: 2026-08-28</p>
+        <p class="terms-lead">This notice explains the data used by BLOB today. It is presented before an email is collected for referral verification. Free Mode does not require an email or a wallet profile.</p>
+
+        <section>
+          <h2>1. What BLOB collects</h2>
+          <p>Wallet profiles use a public wallet address, a display name, a one-time signed login challenge, and an opaque session token. Referral membership additionally asks for an email address only to send a verification code. The address is used in memory for that delivery; BLOB stores a keyed cryptographic fingerprint of the normalized address, the verification state, verification timestamps, and the accepted notice version—not the raw email address or the code.</p>
+          <p>BLOB also retains the information needed to operate the game: server-authoritative match results, referral attribution and point-ledger entries, and accepted arena-chat messages under the stated chat-retention policy. The game server does not receive browser cookies or wallet addresses.</p>
+        </section>
+
+        <section>
+          <h2>2. Why it is used</h2>
+          <p>We use profile data to provide a wallet-backed display name; referral data to prevent duplicate/self-referrals, issue points according to the disclosed server rules, and review abuse; and chat records to operate and moderate the public arena. BLOB does not use referral email addresses for marketing, advertising audiences, token promotions, or newsletters.</p>
+        </section>
+
+        <section>
+          <h2>3. Who receives it</h2>
+          <p>BLOB does not sell, rent, or trade personal data. Technical providers may process only the information necessary to operate their service: hosting and database providers process application records, and the configured transactional-email provider receives the submitted email solely to deliver the verification message. Wallet extensions and blockchain networks are independent third parties; BLOB never receives a seed phrase or private key.</p>
+        </section>
+
+        <section>
+          <h2>4. Retention and security</h2>
+          <p>Unverified email challenges expire quickly and invalid delivery attempts are removed. A verified email fingerprint remains while the referral membership is active so the program can prevent duplicate accounts; no raw email is retained for that purpose. Referral point and qualification records are append-only anti-fraud records. Accepted arena-chat records have a configurable retention period (90 days by default) and are then purged.</p>
+          <p>We use HTTPS, server-only secrets, opaque HTTP-only sessions, database constraints, and rate limits. No online service can promise perfect security; protect your wallet, device, and email account, and never share a seed phrase or private key.</p>
+        </section>
+
+        <section>
+          <h2>5. Your choice</h2>
+          <p>Email verification is voluntary and is required only to activate the referral program. You can play Free Mode without providing an email. If you do not agree to this notice, do not submit an email or use referral membership.</p>
+          <p>For a privacy request concerning your BLOB profile, use the verified public BLOB contact channel at <a href="https://x.com/BLOBLat" target="_blank" rel="noreferrer">@BLOBLat</a>. Do not send a seed phrase, private key, or wallet credentials in any request.</p>
+        </section>
+
+        <section>
+          <h2>6. Changes</h2>
+          <p>We will update this notice before using personal data for a materially new purpose. Referral email verification records the notice version accepted with each request. This notice does not limit rights that cannot legally be limited, and it is not legal advice.</p>
+        </section>
+      </article>
+    </main>
+  </body>
+</html>

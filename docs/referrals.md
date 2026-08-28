@@ -25,20 +25,28 @@ are never accepted from the browser or game client.
 
 1. A user connects a wallet and signs BLOB's off-chain login message. This
    creates an internal user/profile; it is not a transaction.
-2. Platform API creates one opaque code for that user. The profile panel shows
+2. The user reads the current Privacy Notice, submits an email, and confirms a
+   six-digit email code. This is required to open referral membership; Free
+   Mode itself remains available without an email.
+3. Platform API keeps only an HMAC fingerprint of the normalized address,
+   verification/consent timestamps, and the notice version. It never persists
+   the raw address or code. The configured transactional-email provider sees
+   the raw address only to deliver the one verification email.
+4. Only then does Platform API create one opaque code for that user. The profile panel shows
    `https://blob.lat/?ref=<CODE>` and supports copying it.
-3. A visitor opening that URL has the code kept only in session storage. The
+5. A visitor opening that URL has the code kept only in session storage. The
    URL is immediately cleaned with `history.replaceState` so it is not kept in
    navigation history.
-4. After the visitor has authenticated, the browser submits the code once to
+6. After the visitor has authenticated **and verified their own referral
+   email**, the browser submits the code once to
    Platform API. PostgreSQL accepts only the first valid attribution. A user
    cannot refer themself or overwrite a prior referrer. The account must be
    inside the server-configured new-profile attribution window.
-5. The user must complete a real authoritative Free Mode round while their
+7. The user must complete a real authoritative Free Mode round while their
    signed profile identity is present. Link clicks, chat messages, client
    scores, and wallet connection never qualify a reward. The immutable result
    must meet the configured server-side food and survival thresholds.
-6. When the game server finalizes that immutable round result, it sends a
+8. When the game server finalizes that immutable round result, it sends a
    compact signed completion fact over Railway private networking. Platform API
    verifies the Ed25519 signature and time window, then records the
    qualification and two immutable point ledger entries in one serializable
@@ -63,6 +71,9 @@ defaults, a referral is recorded only when all of the following are true:
    server-finalized game statistics, not browser values.
 4. The referrer remains below the durable limit of 10 newly qualified referrals
    in the applicable UTC day.
+5. Both the referrer and invited profile have a verified referral email at the
+   moment the immutable result is processed. A browser cannot bypass this
+   server-side database check.
 
 The exact thresholds are platform-api environment configuration. Failing an
 activity check does not create an award or a ledger row. The browser cannot
@@ -81,6 +92,34 @@ submit a result, alter the threshold, or turn clicks into points.
   total, or redeem a point.
 - A disabled or misconfigured signed handoff fails closed for points while
   Free Mode remains playable.
+
+## Email membership delivery
+
+Referral membership is deliberately unavailable until the wallet-backed
+profile accepts the current Privacy Notice and confirms a six-digit code. The
+email address is normalized only in request memory, sent to the configured
+delivery provider for the code, and never written to the BLOB PostgreSQL
+database, game state, chat, URLs, browser storage, or logs. PostgreSQL stores
+only a server-keyed HMAC fingerprint, a hash of the short-lived code, consent
+version/time, expiry, and verification state.
+
+**MANUAL DASHBOARD ACTION REQUIRED:** configure a transactional email provider
+and a verified sender domain before enabling this. For the current Resend
+adapter, add these three variables to Railway's `platform-api` service as one
+atomic configuration change:
+
+```sh
+PLATFORM_REFERRAL_EMAIL_HMAC_SECRET_BASE64=<new-random-32-byte-base64-secret>
+RESEND_API_KEY=<Resend-server-api-key>
+BLOB_REFERRAL_EMAIL_FROM=BLOB <verify@blob.lat>
+```
+
+Keep the HMAC secret stable: replacing it changes email fingerprints and makes
+existing verified membership records unrecognizable. Do not place any of these
+values in Vercel, Vite variables, Git, screenshots, or browser code. Railway
+will apply the committed migration at deployment. If one or more of the three
+variables is absent, referral membership remains visibly unavailable and
+points fail closed; Free Mode continues normally.
 
 ## Neon database setup
 

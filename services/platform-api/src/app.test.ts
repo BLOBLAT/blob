@@ -37,6 +37,16 @@ const config: PlatformApiConfig = {
   referralMaxQualificationsPerReferrerPerDay: 10,
   referralAttributionRateLimit: 4,
   referralAttributionGlobalRateLimit: 120,
+  referralEmailHashSecret: undefined,
+  resendApiKey: undefined,
+  resendFrom: undefined,
+  referralEmailVerificationTtlMs: 10 * 60_000,
+  referralEmailResendCooldownMs: 60_000,
+  referralEmailMaxFailedAttempts: 5,
+  referralEmailStartRateLimit: 3,
+  referralEmailStartGlobalRateLimit: 60,
+  referralEmailVerifyRateLimit: 8,
+  referralEmailVerifyGlobalRateLimit: 180,
 };
 
 const servers: ReturnType<typeof createServer>[] = [];

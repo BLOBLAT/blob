@@ -6,6 +6,8 @@ import { PrismaAuthRepository } from "./prisma-auth-repository.js";
 import { PrismaArenaChatAuditRepository } from "./arena-chat-audit.js";
 import { PrismaPaidAdmissionRepository } from "./paid-admission-repository.js";
 import { PrismaReferralRepository } from "./prisma-referral-repository.js";
+import { PrismaReferralEmailRepository } from "./prisma-referral-email-repository.js";
+import { ResendReferralEmailSender } from "./referral-email-sender.js";
 
 const config = loadPlatformApiConfig();
 const prisma = createPrismaClient(config.databaseUrl);
@@ -13,6 +15,10 @@ await verifyPrismaConnection(prisma);
 const arenaChatRepository = new PrismaArenaChatAuditRepository(prisma);
 const paidAdmissionRepository = new PrismaPaidAdmissionRepository(prisma);
 const referralRepository = new PrismaReferralRepository(prisma);
+const referralEmailRepository = new PrismaReferralEmailRepository(prisma);
+const referralEmailSender = config.referralEmailHashSecret && config.resendApiKey && config.resendFrom
+  ? new ResendReferralEmailSender({ apiKey: config.resendApiKey, from: config.resendFrom })
+  : undefined;
 await arenaChatRepository.pruneExpired(new Date());
 const app = createPlatformApp({
   config,
@@ -20,6 +26,8 @@ const app = createPlatformApp({
   arenaChatRepository,
   paidAdmissionRepository,
   referralRepository,
+  referralEmailRepository,
+  referralEmailSender,
   healthCheck: () => verifyPrismaConnection(prisma)
 });
 const server = createServer(app);

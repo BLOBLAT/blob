@@ -12,6 +12,13 @@ import { verifyPaidAdmissionConsumeRequest } from "./paid-admission-consumer.js"
 import type { PrismaPaidAdmissionRepository } from "./paid-admission-repository.js";
 import { ReferralError, ReferralService, type ReferralDashboard, type ReferralRepository } from "./referrals.js";
 import { verifyReferralQualificationRequest } from "./referral-qualification.js";
+import {
+  ReferralEmailError,
+  ReferralEmailService,
+  type ReferralEmailRepository,
+  type ReferralEmailSender,
+  REFERRAL_PRIVACY_NOTICE_VERSION,
+} from "./referral-email.js";
 
 class OriginNotAllowedError extends Error {}
 
@@ -33,12 +40,24 @@ const referralAttributionRequestSchema = z.object({
   code: z.string().min(1).max(32)
 }).strict();
 
+const referralEmailStartRequestSchema = z.object({
+  email: z.string().min(3).max(254),
+  privacyNoticeVersion: z.string().min(1).max(32),
+  acceptedPrivacyNotice: z.literal(true),
+}).strict();
+
+const referralEmailVerifyRequestSchema = z.object({
+  code: z.string().regex(/^\d{6}$/),
+}).strict();
+
 export interface PlatformAppOptions {
   config: PlatformApiConfig;
   repository: PlatformAuthRepository;
   arenaChatRepository?: ArenaChatAuditRepository;
   paidAdmissionRepository?: Pick<PrismaPaidAdmissionRepository, "consume">;
   referralRepository?: ReferralRepository;
+  referralEmailRepository?: ReferralEmailRepository;
+  referralEmailSender?: ReferralEmailSender;
   /** The production entrypoint supplies a durable-store readiness probe. */
   healthCheck: () => Promise<void>;
 }
@@ -81,6 +100,24 @@ export function createPlatformApp(options: PlatformAppOptions): express.Express 
     options.config.globalRateLimitWindowMs,
     1,
   );
+  const referralEmailStartRateLimiter = new FixedWindowRateLimiter(
+    options.config.referralEmailStartRateLimit,
+    options.config.authRateLimitWindowMs,
+  );
+  const globalReferralEmailStartRateLimiter = new FixedWindowRateLimiter(
+    options.config.referralEmailStartGlobalRateLimit,
+    options.config.globalRateLimitWindowMs,
+    1,
+  );
+  const referralEmailVerifyRateLimiter = new FixedWindowRateLimiter(
+    options.config.referralEmailVerifyRateLimit,
+    options.config.authRateLimitWindowMs,
+  );
+  const globalReferralEmailVerifyRateLimiter = new FixedWindowRateLimiter(
+    options.config.referralEmailVerifyGlobalRateLimit,
+    options.config.globalRateLimitWindowMs,
+    1,
+  );
   const cachedHealthCheck = createCachedHealthCheck(options.healthCheck);
   const auth = new AuthService(options.repository, {
     publicOrigin: options.config.publicOrigin,
@@ -97,6 +134,16 @@ export function createPlatformApp(options: PlatformAppOptions): express.Express 
       minFoodCollected: options.config.referralMinimumFoodCollected,
       minSurvivalTimeMs: options.config.referralMinimumSurvivalTimeMs,
       maxQualificationsPerReferrerPerDay: options.config.referralMaxQualificationsPerReferrerPerDay,
+    })
+    : undefined;
+  const referralEmail = options.referralEmailRepository
+    && options.referralEmailSender
+    && options.config.referralEmailHashSecret
+    ? new ReferralEmailService(options.referralEmailRepository, options.referralEmailSender, {
+      hashSecret: options.config.referralEmailHashSecret,
+      verificationTtlMs: options.config.referralEmailVerificationTtlMs,
+      resendCooldownMs: options.config.referralEmailResendCooldownMs,
+      maxFailedAttempts: options.config.referralEmailMaxFailedAttempts,
     })
     : undefined;
 
@@ -277,18 +324,65 @@ export function createPlatformApp(options: PlatformAppOptions): express.Express 
 
   app.get("/v1/me/referral", asyncRoute(async (request, response) => {
     const user = await requireUser(auth, options.config, request);
-    if (!referrals) {
-      response.status(503).json({ error: "REFERRALS_UNAVAILABLE", message: "The referral program is temporarily unavailable." });
+    if (!referrals || !referralEmail) {
+      response.status(200).json({ referral: { emailVerification: { state: "UNAVAILABLE", expiresAt: null, privacyNoticeVersion: REFERRAL_PRIVACY_NOTICE_VERSION } } });
+      return;
+    }
+    const emailStatus = await referralEmail.getStatus(user.userId);
+    if (emailStatus.state !== "VERIFIED") {
+      response.status(200).json({ referral: { emailVerification: toPublicReferralEmailStatus(emailStatus) } });
       return;
     }
     const dashboard = await referrals.getDashboard(user.userId);
-    response.status(200).json({ referral: toPublicReferralDashboard(dashboard, options.config) });
+    response.status(200).json({ referral: { ...toPublicReferralDashboard(dashboard, options.config), emailVerification: toPublicReferralEmailStatus(emailStatus) } });
+  }));
+
+  app.post("/v1/me/referral/email/start", asyncRoute(async (request, response) => {
+    const user = await requireUser(auth, options.config, request);
+    if (!referralEmail) {
+      response.status(503).json({ error: "REFERRAL_EMAIL_UNAVAILABLE", message: "Email verification is temporarily unavailable." });
+      return;
+    }
+    if (!consumeRateLimit(response, referralEmailStartRateLimiter, "referral-email-start:" + user.userId)
+      || !consumeRateLimit(response, globalReferralEmailStartRateLimiter, "referral-email-start:global")) {
+      return;
+    }
+    const body = referralEmailStartRequestSchema.parse(request.body);
+    const result = await referralEmail.start({
+      userId: user.userId,
+      email: body.email,
+      privacyNoticeVersion: body.privacyNoticeVersion,
+      acceptedPrivacyNotice: body.acceptedPrivacyNotice,
+    });
+    response.status(200).json({ status: result.status, retryAfterMs: result.retryAfterMs ?? null });
+  }));
+
+  app.post("/v1/me/referral/email/verify", asyncRoute(async (request, response) => {
+    const user = await requireUser(auth, options.config, request);
+    if (!referralEmail) {
+      response.status(503).json({ error: "REFERRAL_EMAIL_UNAVAILABLE", message: "Email verification is temporarily unavailable." });
+      return;
+    }
+    if (!consumeRateLimit(response, referralEmailVerifyRateLimiter, "referral-email-verify:" + user.userId)
+      || !consumeRateLimit(response, globalReferralEmailVerifyRateLimiter, "referral-email-verify:global")) {
+      return;
+    }
+    const body = referralEmailVerifyRequestSchema.parse(request.body);
+    const status = await referralEmail.verify({ userId: user.userId, code: body.code });
+    // Invalid, expired, and exhausted one-time codes are expected user-input
+    // outcomes. Return their bounded status payload so the browser can show a
+    // useful retry message without exposing an error stack or any email data.
+    response.status(200).json({ status });
   }));
 
   app.post("/v1/me/referral/attribution", asyncRoute(async (request, response) => {
     const user = await requireUser(auth, options.config, request);
-    if (!referrals) {
+    if (!referrals || !referralEmail) {
       response.status(503).json({ error: "REFERRALS_UNAVAILABLE", message: "The referral program is temporarily unavailable." });
+      return;
+    }
+    if ((await referralEmail.getStatus(user.userId)).state !== "VERIFIED") {
+      response.status(409).json({ error: "REFERRAL_EMAIL_REQUIRED", message: "Verify your email before joining the referral program." });
       return;
     }
     if (!consumeRateLimit(response, referralAttributionRateLimiter, "referral-attribution:" + user.userId)
@@ -355,6 +449,13 @@ export function createPlatformApp(options: PlatformAppOptions): express.Express 
     }
     if (error instanceof ReferralError) {
       response.status(error.code === "REFERRAL_CODE_INVALID" ? 400 : 409).json({ error: error.code, message: error.message });
+      return;
+    }
+    if (error instanceof ReferralEmailError) {
+      const status = error.code === "EMAIL_UNAVAILABLE" || error.code === "EMAIL_CHANGE_NOT_ALLOWED" ? 409
+        : error.code === "EMAIL_DELIVERY_UNAVAILABLE" ? 503
+          : 400;
+      response.status(status).json({ error: error.code, message: error.message });
       return;
     }
     if (error instanceof SyntaxError && "body" in error) {
@@ -482,5 +583,13 @@ function toPublicReferralDashboard(dashboard: ReferralDashboard, config: Platfor
       reason: entry.reason,
       createdAt: entry.createdAt.toISOString(),
     })),
+  };
+}
+
+function toPublicReferralEmailStatus(status: { state: string; expiresAt: Date | null; privacyNoticeVersion: string | null }) {
+  return {
+    state: status.state,
+    expiresAt: status.expiresAt?.toISOString() ?? null,
+    privacyNoticeVersion: status.privacyNoticeVersion ?? REFERRAL_PRIVACY_NOTICE_VERSION,
   };
 }

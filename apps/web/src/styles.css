@@ -175,6 +175,7 @@ footer { display: flex; justify-content: space-between; gap: 20px; padding-block
 .referral-stats dd { margin: 4px 0 0; color: #fff7f2; font-size: .92rem; font-weight: 900; }
 .referral-copy { width: fit-content; border: 1px solid rgba(255,211,79,.68); border-radius: 999px; padding: 8px 12px; color: #1b0719; background: #ffd34f; cursor: pointer; font: inherit; font-size: .64rem; font-weight: 900; letter-spacing: .07em; text-transform: uppercase; }
 .referral-copy:hover, .referral-copy:focus-visible { background: #fff7f2; outline: none; }
+.referral-email-form { display: grid; gap: 8px; }.referral-email-form > label:first-child { color: #fff7f2; font-size: .63rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }.referral-email-form input:not([type="checkbox"]) { width: 100%; border: 1px solid rgba(255,184,206,.34); border-radius: 10px; padding: 10px 11px; color: #fff7f2; background: rgba(12,4,14,.8); font: inherit; font-size: .8rem; outline: none; }.referral-email-form input:not([type="checkbox"]):focus { border-color: #ff668e; box-shadow: 0 0 0 3px rgba(244,43,104,.18); }.referral-consent { display: flex; align-items: flex-start; gap: 8px; color: #bba8b7; font-size: .67rem; line-height: 1.45; }.referral-consent input { width: 16px; height: 16px; margin: 1px 0 0; accent-color: #ff668e; }.referral-consent a { color: #ffd34f; text-decoration: underline; text-underline-offset: 2px; }
 
 @media (max-width: 680px) {
   .referral-stats { gap: 6px; }
