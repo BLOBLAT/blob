@@ -139,8 +139,10 @@ export function createPlatformApp(options: PlatformAppOptions): express.Express 
   const referralEmail = options.referralEmailRepository
     && options.referralEmailSender
     && options.config.referralEmailHashSecret
+    && options.config.referralEmailEncryptionKey
     ? new ReferralEmailService(options.referralEmailRepository, options.referralEmailSender, {
       hashSecret: options.config.referralEmailHashSecret,
+      encryptionKey: options.config.referralEmailEncryptionKey,
       verificationTtlMs: options.config.referralEmailVerificationTtlMs,
       resendCooldownMs: options.config.referralEmailResendCooldownMs,
       maxFailedAttempts: options.config.referralEmailMaxFailedAttempts,

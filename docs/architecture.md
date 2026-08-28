@@ -68,10 +68,10 @@ messages, public history endpoint, or fabricated messages.
 The referral program is likewise deliberately outside the Colyseus protocol.
 After wallet-backed profile sign-in, a user must accept the current Privacy
 Notice and confirm a one-time email code before Platform API creates or returns
-their opaque public referral code. The raw address is sent only to the email
-delivery provider for that one verification message; PostgreSQL stores a
-server-keyed HMAC fingerprint, code hash, expiry, consent version, and
-verification time instead of the address. A visitor can carry that code in
+their opaque public referral code. PostgreSQL stores the address only as an
+AES-256-GCM encrypted record; a separate server-keyed HMAC fingerprint is used
+for duplicate prevention alongside the code hash, expiry, consent version, and
+verification time. A visitor can carry that code in
 `?ref=CODE`; the browser may submit it once only after authentication and
 email verification, while PostgreSQL enforces first-valid-referrer attribution,
 the new-profile binding window, and blocks self-referral. The server-finalized

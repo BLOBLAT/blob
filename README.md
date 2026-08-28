@@ -46,9 +46,10 @@ PostgreSQL audit record before broadcast and automatically expire after 90
 days. Chat is not a public archive or a source of competitive authority.
 
 Wallet-backed profiles may opt into the referral program after confirming a
-one-time email code and accepting the current Privacy Notice. The raw address
-is used only to send that code; PostgreSQL retains a keyed cryptographic
-fingerprint and verification record rather than the address itself. A referral
+one-time email code and accepting the current Privacy Notice. PostgreSQL
+retains the address only as a separately AES-256-GCM encrypted record alongside
+a keyed cryptographic fingerprint used to prevent duplicates; neither is
+exposed to the game, chat, URLs, or browser storage. A referral
 is bound only once during the invited profile's new-account window;
 self-referrals, repeat claims, and browser-only activity are rejected. Both
 parties receive server-issued **BLOB Points** only after the invitee completes

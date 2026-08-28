@@ -468,6 +468,7 @@ model ReferralEmailVerification {
   userId                String   @unique
   user                  User     @relation(fields: [userId], references: [id], onDelete: Restrict)
   emailHash             String   @unique
+  encryptedEmail        String?
   verificationCodeHash  String?
   verificationExpiresAt DateTime?
   failedAttempts        Int      @default(0)

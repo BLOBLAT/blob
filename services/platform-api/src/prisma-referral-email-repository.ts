@@ -10,6 +10,7 @@ type EmailVerificationRow = {
   id: string;
   userId: string;
   emailHash: string;
+  encryptedEmail: string | null;
   verificationCodeHash: string | null;
   verificationExpiresAt: Date | null;
   failedAttempts: number;
@@ -42,6 +43,7 @@ export class PrismaReferralEmailRepository implements ReferralEmailRepository {
   async prepareVerification(input: {
     userId: string;
     emailHash: string;
+    encryptedEmail: string;
     verificationCodeHash: string;
     expiresAt: Date;
     privacyNoticeVersion: string;
@@ -70,6 +72,7 @@ export class PrismaReferralEmailRepository implements ReferralEmailRepository {
       }
       const payload = {
         emailHash: input.emailHash,
+        encryptedEmail: input.encryptedEmail,
         verificationCodeHash: input.verificationCodeHash,
         verificationExpiresAt: input.expiresAt,
         failedAttempts: 0,

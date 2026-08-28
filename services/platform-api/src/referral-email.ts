@@ -1,4 +1,4 @@
-import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
+import { createCipheriv, createHmac, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 
 export const REFERRAL_PRIVACY_NOTICE_VERSION = "2026-08-28";
 
@@ -23,6 +23,7 @@ export interface ReferralEmailRepository {
   prepareVerification(input: {
     userId: string;
     emailHash: string;
+    encryptedEmail: string;
     verificationCodeHash: string;
     expiresAt: Date;
     privacyNoticeVersion: string;
@@ -42,6 +43,8 @@ export interface ReferralEmailSender {
 
 export interface ReferralEmailServiceConfig {
   hashSecret: Uint8Array;
+  /** Separate AES-256-GCM key for the encrypted Neon email record. */
+  encryptionKey: Uint8Array;
   verificationTtlMs: number;
   resendCooldownMs: number;
   maxFailedAttempts: number;
@@ -61,9 +64,9 @@ export class ReferralEmailError extends Error {
 
 /**
  * Referral membership uses a short verification code, but the application
- * deliberately persists only an HMAC of the normalized email. The address is
- * supplied to the delivery provider for the one verification message and is
- * never placed in PostgreSQL, arena state, logs, or browser storage.
+ * stores a keyed HMAC for duplicate prevention and a separate AES-256-GCM
+ * encrypted copy in Neon for the referral membership record. The address is
+ * never placed in arena state, logs, URLs, or browser storage.
  */
 export class ReferralEmailService {
   constructor(
@@ -83,6 +86,7 @@ export class ReferralEmailService {
     const email = normalizeEmail(input.email);
     const now = input.now ?? new Date();
     const emailHash = this.hash("email:v1:" + email);
+    const encryptedEmail = encryptEmailForStorage(email, this.config.encryptionKey);
     const code = String(randomInt(100_000, 1_000_000));
     const verificationCodeHash = this.hash("code:v1:" + emailHash + ":" + code);
     const expiresAt = new Date(now.getTime() + this.config.verificationTtlMs);
@@ -91,6 +95,7 @@ export class ReferralEmailService {
       prepared = await this.repository.prepareVerification({
         userId: input.userId,
         emailHash,
+        encryptedEmail,
         verificationCodeHash,
         expiresAt,
         privacyNoticeVersion: REFERRAL_PRIVACY_NOTICE_VERSION,
@@ -157,6 +162,19 @@ export class ReferralEmailService {
   private hash(value: string): string {
     return createHmac("sha256", this.config.hashSecret).update(value).digest("base64url");
   }
+}
+
+/**
+ * Versioned authenticated encryption for the only durable raw-email field.
+ * Its separate key means the HMAC fingerprint cannot be reversed even by a
+ * component that only receives encrypted records.
+ */
+export function encryptEmailForStorage(email: string, key: Uint8Array): string {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  const ciphertext = Buffer.concat([cipher.update(email, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return ["v1", iv.toString("base64url"), tag.toString("base64url"), ciphertext.toString("base64url")].join(".");
 }
 
 export function normalizeEmail(value: string): string {

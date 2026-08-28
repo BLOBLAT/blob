@@ -22,7 +22,7 @@
 
         <section>
           <h2>1. What BLOB collects</h2>
-          <p>Wallet profiles use a public wallet address, a display name, a one-time signed login challenge, and an opaque session token. Referral membership additionally asks for an email address only to send a verification code. The address is used in memory for that delivery; BLOB stores a keyed cryptographic fingerprint of the normalized address, the verification state, verification timestamps, and the accepted notice version—not the raw email address or the code.</p>
+          <p>Wallet profiles use a public wallet address, a display name, a one-time signed login challenge, and an opaque session token. Referral membership additionally asks for an email address only to operate verification and anti-duplicate rules. BLOB stores the normalized address only as an AES-256-GCM encrypted record in PostgreSQL, with a separate keyed cryptographic fingerprint for duplicate checks, verification state/timestamps, and the accepted notice version. It does not store the code in plaintext.</p>
           <p>BLOB also retains the information needed to operate the game: server-authoritative match results, referral attribution and point-ledger entries, and accepted arena-chat messages under the stated chat-retention policy. The game server does not receive browser cookies or wallet addresses.</p>
         </section>
 
@@ -38,7 +38,7 @@
 
         <section>
           <h2>4. Retention and security</h2>
-          <p>Unverified email challenges expire quickly and invalid delivery attempts are removed. A verified email fingerprint remains while the referral membership is active so the program can prevent duplicate accounts; no raw email is retained for that purpose. Referral point and qualification records are append-only anti-fraud records. Accepted arena-chat records have a configurable retention period (90 days by default) and are then purged.</p>
+          <p>Unverified email challenges expire quickly and invalid delivery attempts are removed. A verified encrypted email record and its fingerprint remain while referral membership is active so the program can prevent duplicate accounts; the address is not exposed to the game, chat, public site, or browser. Referral point and qualification records are append-only anti-fraud records. Accepted arena-chat records have a configurable retention period (90 days by default) and are then purged.</p>
           <p>We use HTTPS, server-only secrets, opaque HTTP-only sessions, database constraints, and rate limits. No online service can promise perfect security; protect your wallet, device, and email account, and never share a seed phrase or private key.</p>
         </section>
 

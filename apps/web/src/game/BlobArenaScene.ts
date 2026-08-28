@@ -114,10 +114,6 @@ export interface ArenaUiState {
 const INPUT_SEND_INTERVAL_MS = 45;
 const INPUT_HEARTBEAT_INTERVAL_MS = 180;
 const INPUT_CHANGE_EPSILON = 0.01;
-// Pointer events arrive many times per second on desktop. A short grace period
-// tolerates a single delayed event without making a released cursor feel like
-// it has inertia.
-const MOUSE_INTENT_HOLD_MS = 90;
 const RENDER_TELEPORT_DISTANCE = 260;
 const MOUSE_TARGET_STOP_DISTANCE = 8;
 
@@ -156,7 +152,6 @@ export class BlobArenaScene extends Phaser.Scene {
    * the cursor while the server remains the only authority for movement.
    */
   private mouseScreenPosition: ScreenPosition | undefined;
-  private mouseIntentExpiresAt = 0;
   /** The mobile DOM joystick owns this flag; the canvas never owns touch movement. */
   private externalTouchInputActive = false;
   private worldWidth = 0;
@@ -178,7 +173,6 @@ export class BlobArenaScene extends Phaser.Scene {
   setTouchIntent(x: number, y: number): void {
     this.externalTouchInputActive = true;
     this.mouseScreenPosition = undefined;
-    this.mouseIntentExpiresAt = 0;
     this.setNormalizedIntent(x, y);
     this.sendIntent();
   }
@@ -186,7 +180,6 @@ export class BlobArenaScene extends Phaser.Scene {
   clearTouchIntent(): void {
     this.externalTouchInputActive = false;
     this.intent = { x: 0, y: 0 };
-    this.mouseIntentExpiresAt = 0;
     this.sendIntent(true);
   }
 
@@ -253,7 +246,7 @@ export class BlobArenaScene extends Phaser.Scene {
         if (this.hasKeyboardInput()) {
           this.applyKeyboardIntent();
         } else if (!this.externalTouchInputActive && !this.isTextEntryFocused()) {
-          if (this.hasFreshMouseIntent()) {
+          if (this.hasActiveMouseTarget()) {
             this.applyMouseIntent();
           } else {
             this.stopMouseSteering();
@@ -357,12 +350,11 @@ export class BlobArenaScene extends Phaser.Scene {
       return;
     }
     this.mouseScreenPosition = { x: pointer.x, y: pointer.y };
-    this.mouseIntentExpiresAt = performance.now() + MOUSE_INTENT_HOLD_MS;
     this.applyMouseIntent();
   }
 
-  private hasFreshMouseIntent(now = performance.now()): boolean {
-    return this.mouseScreenPosition !== undefined && now < this.mouseIntentExpiresAt;
+  private hasActiveMouseTarget(): boolean {
+    return this.mouseScreenPosition !== undefined;
   }
 
   private stopMouseSteering(): void {
@@ -372,7 +364,6 @@ export class BlobArenaScene extends Phaser.Scene {
       || Math.abs(this.lastSentIntent.y) > INPUT_CHANGE_EPSILON;
     this.intent = { x: 0, y: 0 };
     this.mouseScreenPosition = undefined;
-    this.mouseIntentExpiresAt = 0;
     if (wasMoving) {
       this.sendIntent(true);
     }
@@ -477,7 +468,7 @@ export class BlobArenaScene extends Phaser.Scene {
     }
     const hasContinuousControl = this.externalTouchInputActive
       || this.hasKeyboardInput()
-      || this.hasFreshMouseIntent(now);
+      || this.hasActiveMouseTarget();
     if (!force && !changed && (!hasContinuousControl || elapsed < INPUT_HEARTBEAT_INTERVAL_MS)) {
       return;
     }

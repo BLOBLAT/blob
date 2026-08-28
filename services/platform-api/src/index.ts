@@ -16,7 +16,7 @@ const arenaChatRepository = new PrismaArenaChatAuditRepository(prisma);
 const paidAdmissionRepository = new PrismaPaidAdmissionRepository(prisma);
 const referralRepository = new PrismaReferralRepository(prisma);
 const referralEmailRepository = new PrismaReferralEmailRepository(prisma);
-const referralEmailSender = config.referralEmailHashSecret && config.resendApiKey && config.resendFrom
+const referralEmailSender = config.referralEmailHashSecret && config.referralEmailEncryptionKey && config.resendApiKey && config.resendFrom
   ? new ResendReferralEmailSender({ apiKey: config.resendApiKey, from: config.resendFrom })
   : undefined;
 await arenaChatRepository.pruneExpired(new Date());

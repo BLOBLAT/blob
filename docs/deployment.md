@@ -215,9 +215,10 @@ BLOB_REFERRAL_QUALIFICATION_PUBLIC_KEY_BASE58=<separate-base58-public-key>
 # BLOB_REFERRAL_MAX_QUALIFICATIONS_PER_REFERRER_PER_DAY=10
 # BLOB_REFERRAL_ATTRIBUTION_RATE_LIMIT=4
 # BLOB_REFERRAL_ATTRIBUTION_GLOBAL_RATE_LIMIT=120
-# Referral email membership: all three are required together and remain
+# Referral email membership: all four are required together and remain
 # platform-api-only. The key is a stable random 32-byte base64 secret.
 PLATFORM_REFERRAL_EMAIL_HMAC_SECRET_BASE64=<random-server-only-32-byte-secret-in-base64>
+PLATFORM_REFERRAL_EMAIL_ENCRYPTION_KEY_BASE64=<different-random-server-only-32-byte-secret-in-base64>
 RESEND_API_KEY=<server-only-resend-api-key>
 BLOB_REFERRAL_EMAIL_FROM=BLOB <verify@blob.lat>
 # Future Paid Room only; does not enable Paid Mode.

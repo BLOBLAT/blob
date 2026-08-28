@@ -28,10 +28,11 @@ are never accepted from the browser or game client.
 2. The user reads the current Privacy Notice, submits an email, and confirms a
    six-digit email code. This is required to open referral membership; Free
    Mode itself remains available without an email.
-3. Platform API keeps only an HMAC fingerprint of the normalized address,
-   verification/consent timestamps, and the notice version. It never persists
-   the raw address or code. The configured transactional-email provider sees
-   the raw address only to deliver the one verification email.
+3. Platform API keeps an AES-256-GCM encrypted copy of the normalized address
+   in Neon together with an independent HMAC fingerprint for duplicate
+   prevention, verification/consent timestamps, and the notice version. It
+   never persists the code. The configured transactional-email provider sees
+   the raw address only to deliver the verification email.
 4. Only then does Platform API create one opaque code for that user. The profile panel shows
    `https://blob.lat/?ref=<CODE>` and supports copying it.
 5. A visitor opening that URL has the code kept only in session storage. The
@@ -97,27 +98,30 @@ submit a result, alter the threshold, or turn clicks into points.
 
 Referral membership is deliberately unavailable until the wallet-backed
 profile accepts the current Privacy Notice and confirms a six-digit code. The
-email address is normalized only in request memory, sent to the configured
-delivery provider for the code, and never written to the BLOB PostgreSQL
-database, game state, chat, URLs, browser storage, or logs. PostgreSQL stores
-only a server-keyed HMAC fingerprint, a hash of the short-lived code, consent
-version/time, expiry, and verification state.
+email address is normalized in request memory, AES-256-GCM encrypted before it
+is written to Neon, and sent to the configured delivery provider for the code.
+It is never placed in game state, chat, URLs, browser storage, or logs.
+PostgreSQL separately stores an HMAC fingerprint for duplicate prevention, a
+hash of the short-lived code, consent version/time, expiry, and verification
+state.
 
 **MANUAL DASHBOARD ACTION REQUIRED:** configure a transactional email provider
 and a verified sender domain before enabling this. For the current Resend
-adapter, add these three variables to Railway's `platform-api` service as one
+adapter, add these four variables to Railway's `platform-api` service as one
 atomic configuration change:
 
 ```sh
 PLATFORM_REFERRAL_EMAIL_HMAC_SECRET_BASE64=<new-random-32-byte-base64-secret>
+PLATFORM_REFERRAL_EMAIL_ENCRYPTION_KEY_BASE64=<different-new-random-32-byte-base64-secret>
 RESEND_API_KEY=<Resend-server-api-key>
 BLOB_REFERRAL_EMAIL_FROM=BLOB <verify@blob.lat>
 ```
 
-Keep the HMAC secret stable: replacing it changes email fingerprints and makes
-existing verified membership records unrecognizable. Do not place any of these
-values in Vercel, Vite variables, Git, screenshots, or browser code. Railway
-will apply the committed migration at deployment. If one or more of the three
+Keep both secrets stable: replacing the HMAC key changes email fingerprints,
+and replacing the encryption key prevents controlled recovery of retained
+encrypted addresses. Do not place any of these values in Vercel, Vite
+variables, Git, screenshots, or browser code. Railway
+will apply the committed migration at deployment. If one or more of the four
 variables is absent, referral membership remains visibly unavailable and
 points fail closed; Free Mode continues normally.
 

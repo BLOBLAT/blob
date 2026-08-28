@@ -25,6 +25,7 @@ describe("referral email verification", () => {
     })).resolves.toEqual({ status: "PENDING" });
     expect(deliveries).toEqual([{ email: "player@example.com", code: expect.stringMatching(/^\d{6}$/) }]);
     expect(repository.rows[0]?.emailHash).not.toContain("player@example.com");
+    expect(repository.rows[0]?.encryptedEmail).not.toContain("player@example.com");
     await expect(service.verify({ userId: "user-a", code: "000000", now: new Date("2026-08-28T10:01:00.000Z") }))
       .resolves.toBe("INVALID_CODE");
     await expect(service.verify({ userId: "user-a", code: deliveries[0]!.code, now: new Date("2026-08-28T10:01:00.000Z") }))
@@ -61,6 +62,7 @@ interface Row {
   id: string;
   userId: string;
   emailHash: string;
+  encryptedEmail: string | null;
   verificationCodeHash: string | null;
   verificationExpiresAt: Date | null;
   failedAttempts: number;
@@ -78,7 +80,7 @@ class MemoryRepository implements ReferralEmailRepository {
   }
 
   async prepareVerification(input: {
-    userId: string; emailHash: string; verificationCodeHash: string; expiresAt: Date; privacyNoticeVersion: string; acceptedAt: Date; resendCooldownMs: number;
+    userId: string; emailHash: string; encryptedEmail: string; verificationCodeHash: string; expiresAt: Date; privacyNoticeVersion: string; acceptedAt: Date; resendCooldownMs: number;
   }): Promise<{ status: "READY"; verificationId: string } | { status: "ALREADY_VERIFIED" } | { status: "COOLDOWN"; retryAfterMs: number }> {
     const owner = this.rows.find((row) => row.emailHash === input.emailHash);
     if (owner && owner.userId !== input.userId) throw new ReferralEmailRepositoryError("EMAIL_UNAVAILABLE");
@@ -93,11 +95,13 @@ class MemoryRepository implements ReferralEmailRepository {
     }
     const row = current ?? {
       id: "email-" + (this.rows.length + 1), userId: input.userId, emailHash: input.emailHash,
+      encryptedEmail: null,
       verificationCodeHash: null, verificationExpiresAt: null, failedAttempts: 0,
       privacyNoticeVersion: input.privacyNoticeVersion, verifiedAt: null, lastSentAt: null,
     };
     Object.assign(row, {
       emailHash: input.emailHash, verificationCodeHash: input.verificationCodeHash,
+      encryptedEmail: input.encryptedEmail,
       verificationExpiresAt: input.expiresAt, failedAttempts: 0, lastSentAt: input.acceptedAt,
       privacyNoticeVersion: input.privacyNoticeVersion,
     });
@@ -148,5 +152,5 @@ function toStatus(row: Row | undefined, now: Date): ReferralEmailVerificationSta
 }
 
 function config() {
-  return { hashSecret: new Uint8Array(32).fill(9), verificationTtlMs: 10 * 60_000, resendCooldownMs: 1, maxFailedAttempts: 5 };
+  return { hashSecret: new Uint8Array(32).fill(9), encryptionKey: new Uint8Array(32).fill(8), verificationTtlMs: 10 * 60_000, resendCooldownMs: 1, maxFailedAttempts: 5 };
 }

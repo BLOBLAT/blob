@@ -126,10 +126,12 @@ describe("platform API production configuration", () => {
     const config = loadPlatformApiConfig({
       DATABASE_URL,
       PLATFORM_REFERRAL_EMAIL_HMAC_SECRET_BASE64: Buffer.alloc(32, 5).toString("base64"),
+      PLATFORM_REFERRAL_EMAIL_ENCRYPTION_KEY_BASE64: Buffer.alloc(32, 6).toString("base64"),
       RESEND_API_KEY: "re_test_only_non_production_key",
       BLOB_REFERRAL_EMAIL_FROM: "BLOB <verify@blob.lat>",
     });
     expect(config.referralEmailHashSecret).toHaveLength(32);
+    expect(config.referralEmailEncryptionKey).toHaveLength(32);
     expect(config.resendFrom).toBe("BLOB <verify@blob.lat>");
   });
 });

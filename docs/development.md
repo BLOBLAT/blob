@@ -177,8 +177,9 @@ BLOB_REFERRAL_QUALIFICATION_PUBLIC_KEY_BASE58=<separate-base58-public-key>
 # BLOB_REFERRAL_MIN_FOOD_COLLECTED=20
 # BLOB_REFERRAL_MIN_SURVIVAL_TIME_MS=120000
 # BLOB_REFERRAL_MAX_QUALIFICATIONS_PER_REFERRER_PER_DAY=10
-# Referral email membership: configure all three together, only on platform-api.
+# Referral email membership: configure all four together, only on platform-api.
 PLATFORM_REFERRAL_EMAIL_HMAC_SECRET_BASE64=<random-server-only-32-byte-secret-in-base64>
+PLATFORM_REFERRAL_EMAIL_ENCRYPTION_KEY_BASE64=<different-random-server-only-32-byte-secret-in-base64>
 RESEND_API_KEY=<server-only-resend-api-key>
 BLOB_REFERRAL_EMAIL_FROM=BLOB <verify@blob.lat>
 ```

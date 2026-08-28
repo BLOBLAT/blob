@@ -54,7 +54,9 @@ export interface PlatformApiConfig {
   referralAttributionGlobalRateLimit: number;
   /** Server-only keyed HMAC secret for privacy-preserving referral email state. */
   referralEmailHashSecret: Uint8Array | undefined;
-  /** Resend is optional; without all three email settings referrals fail closed. */
+  /** Separate server-only AES-256-GCM key for encrypted referral email storage. */
+  referralEmailEncryptionKey: Uint8Array | undefined;
+  /** Resend is optional; without all four email settings referrals fail closed. */
   resendApiKey: string | undefined;
   resendFrom: string | undefined;
   referralEmailVerificationTtlMs: number;
@@ -134,11 +136,15 @@ export function loadPlatformApiConfig(environment: NodeJS.ProcessEnv = process.e
     environment.PLATFORM_REFERRAL_EMAIL_HMAC_SECRET_BASE64,
     "PLATFORM_REFERRAL_EMAIL_HMAC_SECRET_BASE64",
   );
+  const referralEmailEncryptionKey = decodeFixedBase64Secret(
+    environment.PLATFORM_REFERRAL_EMAIL_ENCRYPTION_KEY_BASE64,
+    "PLATFORM_REFERRAL_EMAIL_ENCRYPTION_KEY_BASE64",
+  );
   const resendApiKey = normalizeServerSecret(environment.RESEND_API_KEY);
   const resendFrom = normalizeMailFrom(environment.BLOB_REFERRAL_EMAIL_FROM);
-  const configuredEmailValues = [referralEmailHashSecret, resendApiKey, resendFrom].filter(Boolean).length;
-  if (configuredEmailValues !== 0 && configuredEmailValues !== 3) {
-    throw new Error("PLATFORM_REFERRAL_EMAIL_HMAC_SECRET_BASE64, RESEND_API_KEY, and BLOB_REFERRAL_EMAIL_FROM must be configured together.");
+  const configuredEmailValues = [referralEmailHashSecret, referralEmailEncryptionKey, resendApiKey, resendFrom].filter(Boolean).length;
+  if (configuredEmailValues !== 0 && configuredEmailValues !== 4) {
+    throw new Error("PLATFORM_REFERRAL_EMAIL_HMAC_SECRET_BASE64, PLATFORM_REFERRAL_EMAIL_ENCRYPTION_KEY_BASE64, RESEND_API_KEY, and BLOB_REFERRAL_EMAIL_FROM must be configured together.");
   }
 
   return {
@@ -174,6 +180,7 @@ export function loadPlatformApiConfig(environment: NodeJS.ProcessEnv = process.e
     referralAttributionRateLimit: parsePositiveInteger(environment.BLOB_REFERRAL_ATTRIBUTION_RATE_LIMIT, 4, "BLOB_REFERRAL_ATTRIBUTION_RATE_LIMIT"),
     referralAttributionGlobalRateLimit: parsePositiveInteger(environment.BLOB_REFERRAL_ATTRIBUTION_GLOBAL_RATE_LIMIT, 120, "BLOB_REFERRAL_ATTRIBUTION_GLOBAL_RATE_LIMIT"),
     referralEmailHashSecret,
+    referralEmailEncryptionKey,
     resendApiKey,
     resendFrom,
     referralEmailVerificationTtlMs: parsePositiveInteger(environment.BLOB_REFERRAL_EMAIL_VERIFICATION_TTL_MS, 10 * 60 * 1_000, "BLOB_REFERRAL_EMAIL_VERIFICATION_TTL_MS"),

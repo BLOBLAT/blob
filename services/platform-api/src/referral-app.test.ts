@@ -96,6 +96,7 @@ async function requestQualification(
       referralAttributionRateLimit: 4,
       referralAttributionGlobalRateLimit: 120,
       referralEmailHashSecret: undefined,
+      referralEmailEncryptionKey: undefined,
       resendApiKey: undefined,
       resendFrom: undefined,
       referralEmailVerificationTtlMs: 10 * 60_000,
