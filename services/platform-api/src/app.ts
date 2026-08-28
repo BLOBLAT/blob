@@ -72,6 +72,15 @@ export function createPlatformApp(options: PlatformAppOptions): express.Express 
     options.config.globalRateLimitWindowMs,
     1
   );
+  const referralAttributionRateLimiter = new FixedWindowRateLimiter(
+    options.config.referralAttributionRateLimit,
+    options.config.authRateLimitWindowMs,
+  );
+  const globalReferralAttributionRateLimiter = new FixedWindowRateLimiter(
+    options.config.referralAttributionGlobalRateLimit,
+    options.config.globalRateLimitWindowMs,
+    1,
+  );
   const cachedHealthCheck = createCachedHealthCheck(options.healthCheck);
   const auth = new AuthService(options.repository, {
     publicOrigin: options.config.publicOrigin,
@@ -83,6 +92,11 @@ export function createPlatformApp(options: PlatformAppOptions): express.Express 
     ? new ReferralService(options.referralRepository, {
       referrer: options.config.referralReferrerPoints,
       referee: options.config.referralRefereePoints,
+    }, {
+      attributionWindowMs: options.config.referralAttributionWindowMs,
+      minFoodCollected: options.config.referralMinimumFoodCollected,
+      minSurvivalTimeMs: options.config.referralMinimumSurvivalTimeMs,
+      maxQualificationsPerReferrerPerDay: options.config.referralMaxQualificationsPerReferrerPerDay,
     })
     : undefined;
 
@@ -200,6 +214,8 @@ export function createPlatformApp(options: PlatformAppOptions): express.Express 
       roundId: verified.record.roundId,
       sourceEventId: verified.record.eventId,
       completedAt: new Date(verified.record.completedAt),
+      foodCollected: verified.record.foodCollected,
+      survivalTimeMs: verified.record.survivalTimeMs,
     });
     console.info(JSON.stringify({
       service: "blob-platform-api",
@@ -266,13 +282,17 @@ export function createPlatformApp(options: PlatformAppOptions): express.Express 
       return;
     }
     const dashboard = await referrals.getDashboard(user.userId);
-    response.status(200).json({ referral: toPublicReferralDashboard(dashboard, options.config.publicOrigin) });
+    response.status(200).json({ referral: toPublicReferralDashboard(dashboard, options.config) });
   }));
 
   app.post("/v1/me/referral/attribution", asyncRoute(async (request, response) => {
     const user = await requireUser(auth, options.config, request);
     if (!referrals) {
       response.status(503).json({ error: "REFERRALS_UNAVAILABLE", message: "The referral program is temporarily unavailable." });
+      return;
+    }
+    if (!consumeRateLimit(response, referralAttributionRateLimiter, "referral-attribution:" + user.userId)
+      || !consumeRateLimit(response, globalReferralAttributionRateLimiter, "referral-attribution:global")) {
       return;
     }
     const body = referralAttributionRequestSchema.parse(request.body);
@@ -334,7 +354,7 @@ export function createPlatformApp(options: PlatformAppOptions): express.Express 
       return;
     }
     if (error instanceof ReferralError) {
-      response.status(error.code === "REFERRAL_SELF_NOT_ALLOWED" ? 409 : 400).json({ error: error.code, message: error.message });
+      response.status(error.code === "REFERRAL_CODE_INVALID" ? 400 : 409).json({ error: error.code, message: error.message });
       return;
     }
     if (error instanceof SyntaxError && "body" in error) {
@@ -443,14 +463,20 @@ function toPublicUser(user: { userId: string; displayName: string; walletAddress
   };
 }
 
-function toPublicReferralDashboard(dashboard: ReferralDashboard, publicOrigin: string) {
+function toPublicReferralDashboard(dashboard: ReferralDashboard, config: PlatformApiConfig) {
   return {
     code: dashboard.code,
-    inviteUrl: publicOrigin + "/?ref=" + dashboard.code,
+    inviteUrl: config.publicOrigin + "/?ref=" + dashboard.code,
     totalPoints: dashboard.totalPoints.toString(),
     invitedCount: dashboard.invitedCount,
     qualifiedCount: dashboard.qualifiedCount,
     referralBound: dashboard.referralBound,
+    qualificationRules: {
+      attributionWindowHours: Math.floor(config.referralAttributionWindowMs / (60 * 60 * 1_000)),
+      minFoodCollected: config.referralMinimumFoodCollected,
+      minSurvivalSeconds: Math.ceil(config.referralMinimumSurvivalTimeMs / 1_000),
+      maxQualificationsPerReferrerPerDay: config.referralMaxQualificationsPerReferrerPerDay,
+    },
     recentEntries: dashboard.recentEntries.map((entry) => ({
       delta: entry.delta.toString(),
       reason: entry.reason,

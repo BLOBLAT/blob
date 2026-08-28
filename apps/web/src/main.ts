@@ -677,14 +677,16 @@ async function refreshReferralExperience(): Promise<void> {
       const outcome = await platformApi.captureReferralAttribution(candidate);
       window.sessionStorage.removeItem(REFERRAL_CANDIDATE_STORAGE_KEY);
       referralNotice = outcome === "CAPTURED"
-        ? "Referral saved. Points unlock only after a real server-confirmed Free Mode round."
+        ? "Referral saved. Points unlock only after an eligible server-confirmed Free Mode round."
         : "Your referral is already linked and cannot be changed.";
     } catch (error) {
-      if (error instanceof PlatformApiError && (error.code === "REFERRAL_CODE_INVALID" || error.code === "REFERRAL_SELF_NOT_ALLOWED")) {
+      if (error instanceof PlatformApiError && (error.code === "REFERRAL_CODE_INVALID" || error.code === "REFERRAL_SELF_NOT_ALLOWED" || error.code === "REFERRAL_ATTRIBUTION_WINDOW_CLOSED")) {
         window.sessionStorage.removeItem(REFERRAL_CANDIDATE_STORAGE_KEY);
         referralNotice = error.code === "REFERRAL_SELF_NOT_ALLOWED"
           ? "You cannot use your own referral link."
-          : "That referral link is not valid.";
+          : error.code === "REFERRAL_ATTRIBUTION_WINDOW_CLOSED"
+            ? "Referral links can only be attached to a new BLOB profile."
+            : "That referral link is not valid.";
       } else {
         console.warn("[BLOB] referral attribution could not be completed", error);
       }
@@ -712,7 +714,8 @@ function renderReferralProgram(container: HTMLElement): void {
     return;
   }
   const dashboard = referralDashboard;
-  copy.textContent = "Invite a new player. Points are recorded only after their first server-confirmed Free Mode round.";
+  const rules = dashboard.qualificationRules;
+  copy.textContent = `Invite a new player. Their link must be attached within ${formatReferralWindow(rules.attributionWindowHours)} of creating a BLOB profile; points count after a server-confirmed Free Mode round with ${rules.minFoodCollected} food eaten and ${formatReferralDuration(rules.minSurvivalSeconds)} alive.`;
   const link = document.createElement("code");
   link.textContent = dashboard.inviteUrl;
   const stats = document.createElement("dl");
@@ -737,9 +740,24 @@ function renderReferralProgram(container: HTMLElement): void {
   copyButton.textContent = "Copy invite link";
   copyButton.addEventListener("click", () => void copyReferralLink(copyButton, dashboard.inviteUrl));
   const note = document.createElement("small");
-  note.textContent = "Points are not a token, cash balance, or promise of future value.";
+  note.textContent = `One referral link per profile. Self-referrals, repeat claims, browser-only activity, and duplicate rewards are blocked; up to ${rules.maxQualificationsPerReferrerPerDay} qualified referrals per referrer count each UTC day. Points are not a token, cash balance, or promise of future value.`;
   card.append(label, copy, link, stats, copyButton, note);
   container.append(card);
+}
+
+function formatReferralDuration(seconds: number): string {
+  if (seconds % 60 === 0) {
+    return `${seconds / 60} minute${seconds === 60 ? "" : "s"}`;
+  }
+  return `${seconds} seconds`;
+}
+
+function formatReferralWindow(hours: number): string {
+  if (hours >= 24 && hours % 24 === 0) {
+    const days = hours / 24;
+    return `${days} day${days === 1 ? "" : "s"}`;
+  }
+  return `${hours} hours`;
 }
 
 async function copyReferralLink(button: HTMLButtonElement, inviteUrl: string | undefined): Promise<void> {

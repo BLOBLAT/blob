@@ -8,6 +8,8 @@ const RECORD = {
   matchId: "free-match-1",
   roundId: "round-1",
   completedAt: Date.UTC(2026, 7, 28, 12, 0, 0),
+  foodCollected: 20,
+  survivalTimeMs: 2 * 60 * 1_000,
 };
 
 describe("referral qualification signature", () => {

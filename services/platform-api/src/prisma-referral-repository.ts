@@ -49,7 +49,7 @@ export class PrismaReferralRepository implements ReferralRepository {
     };
   }
 
-  async captureAttribution(input: { refereeUserId: string; code: string; now: Date }): Promise<ReferralCaptureOutcome> {
+  async captureAttribution(input: { refereeUserId: string; code: string; now: Date; attributionWindowMs: number }): Promise<ReferralCaptureOutcome> {
     return this.withSerializableRetry<ReferralCaptureOutcome>(async (transaction) => {
       const existing = await transaction.referralAttribution.findUnique({
         where: { refereeUserId: input.refereeUserId },
@@ -57,6 +57,13 @@ export class PrismaReferralRepository implements ReferralRepository {
       });
       if (existing) {
         return "ALREADY_ATTRIBUTED";
+      }
+      const referee = await transaction.user.findUnique({
+        where: { id: input.refereeUserId },
+        select: { createdAt: true },
+      });
+      if (!referee || input.now.getTime() - referee.createdAt.getTime() > input.attributionWindowMs) {
+        throw new ReferralRepositoryError("REFERRAL_ATTRIBUTION_WINDOW_CLOSED");
       }
       const referralCode = await transaction.referralCode.findUnique({
         where: { code: input.code },
@@ -110,8 +117,11 @@ export class PrismaReferralRepository implements ReferralRepository {
     roundId: string;
     sourceEventId: string;
     completedAt: Date;
+    foodCollected: number;
+    survivalTimeMs: number;
     referrerPoints: bigint;
     refereePoints: bigint;
+    maxQualificationsPerReferrerPerDay: number;
   }): Promise<ReferralQualificationOutcome> {
     return this.withSerializableRetry<ReferralQualificationOutcome>(async (transaction) => {
       const seenEvent = await transaction.referralQualification.findUnique({
@@ -143,6 +153,15 @@ export class PrismaReferralRepository implements ReferralRepository {
       if (existingQualification) {
         return "ALREADY_QUALIFIED";
       }
+      const qualifiedToday = await transaction.referralQualification.count({
+        where: {
+          attribution: { referrerUserId: attribution.referrerUserId },
+          qualifiedAt: utcDayRange(input.completedAt),
+        },
+      });
+      if (qualifiedToday >= input.maxQualificationsPerReferrerPerDay) {
+        return "DAILY_CAP_REACHED";
+      }
       const update = await transaction.referralAttribution.updateMany({
         where: { id: attribution.id, status: ReferralAttributionStatus.PENDING },
         data: { status: ReferralAttributionStatus.QUALIFIED, qualifiedAt: input.completedAt },
@@ -170,7 +189,7 @@ export class PrismaReferralRepository implements ReferralRepository {
             referralAttributionId: attribution.id,
             qualificationId: qualification.id,
             idempotencyKey: "referrer-qualified:" + qualification.id,
-            metadata: { matchId: input.matchId, roundId: input.roundId },
+            metadata: { matchId: input.matchId, roundId: input.roundId, foodCollected: input.foodCollected, survivalTimeMs: input.survivalTimeMs },
           },
           {
             userId: input.profileUserId,
@@ -179,7 +198,7 @@ export class PrismaReferralRepository implements ReferralRepository {
             referralAttributionId: attribution.id,
             qualificationId: qualification.id,
             idempotencyKey: "referee-qualified:" + qualification.id,
-            metadata: { matchId: input.matchId, roundId: input.roundId },
+            metadata: { matchId: input.matchId, roundId: input.roundId, foodCollected: input.foodCollected, survivalTimeMs: input.survivalTimeMs },
           },
         ],
       });
@@ -278,9 +297,16 @@ export class PrismaReferralRepository implements ReferralRepository {
 }
 
 class ReferralRepositoryError extends Error {
-  constructor(readonly code: "REFERRAL_CODE_INVALID" | "REFERRAL_SELF_NOT_ALLOWED") {
+  constructor(readonly code: "REFERRAL_CODE_INVALID" | "REFERRAL_SELF_NOT_ALLOWED" | "REFERRAL_ATTRIBUTION_WINDOW_CLOSED") {
     super(code);
   }
+}
+
+function utcDayRange(date: Date): { gte: Date; lt: Date } {
+  const start = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 1);
+  return { gte: start, lt: end };
 }
 
 function createReferralCode(): string {

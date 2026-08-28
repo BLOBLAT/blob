@@ -8,6 +8,9 @@ export interface ReferralQualificationRecord {
   matchId: string;
   roundId: string;
   completedAt: number;
+  /** Final authoritative activity—never browser counters. */
+  foodCollected: number;
+  survivalTimeMs: number;
 }
 
 export interface ReferralQualificationPersistence {

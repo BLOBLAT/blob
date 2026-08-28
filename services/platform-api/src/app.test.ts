@@ -30,7 +30,13 @@ const config: PlatformApiConfig = {
   referralQualificationPublicKey: undefined,
   arenaChatRetentionDays: 90,
   referralReferrerPoints: 100n,
-  referralRefereePoints: 25n
+  referralRefereePoints: 25n,
+  referralAttributionWindowMs: 7 * 24 * 60 * 60 * 1_000,
+  referralMinimumFoodCollected: 20,
+  referralMinimumSurvivalTimeMs: 2 * 60 * 1_000,
+  referralMaxQualificationsPerReferrerPerDay: 10,
+  referralAttributionRateLimit: 4,
+  referralAttributionGlobalRateLimit: 120,
 };
 
 const servers: ReturnType<typeof createServer>[] = [];

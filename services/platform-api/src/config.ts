@@ -42,6 +42,16 @@ export interface PlatformApiConfig {
   referralReferrerPoints: bigint;
   /** Integer BLOB Points for the invited player after that same qualification. */
   referralRefereePoints: bigint;
+  /** Referrals bind only during this new-profile window. */
+  referralAttributionWindowMs: number;
+  /** Server-result activity required before a Free referral can qualify. */
+  referralMinimumFoodCollected: number;
+  referralMinimumSurvivalTimeMs: number;
+  /** Durable per-referrer UTC-day ceiling for qualified referrals. */
+  referralMaxQualificationsPerReferrerPerDay: number;
+  /** Process-local protection for referral-link capture requests. */
+  referralAttributionRateLimit: number;
+  referralAttributionGlobalRateLimit: number;
 }
 
 const LOCAL_WEB_ORIGINS = ["http://127.0.0.1:5173", "http://localhost:5173"];
@@ -135,6 +145,12 @@ export function loadPlatformApiConfig(environment: NodeJS.ProcessEnv = process.e
     arenaChatRetentionDays: parsePositiveInteger(environment.BLOB_CHAT_RETENTION_DAYS, 90, "BLOB_CHAT_RETENTION_DAYS"),
     referralReferrerPoints: parseNonNegativeBigInt(environment.BLOB_REFERRAL_REFERRER_POINTS, 100n, "BLOB_REFERRAL_REFERRER_POINTS"),
     referralRefereePoints: parseNonNegativeBigInt(environment.BLOB_REFERRAL_REFEREE_POINTS, 25n, "BLOB_REFERRAL_REFEREE_POINTS"),
+    referralAttributionWindowMs: parsePositiveInteger(environment.BLOB_REFERRAL_ATTRIBUTION_WINDOW_MS, 7 * 24 * 60 * 60 * 1_000, "BLOB_REFERRAL_ATTRIBUTION_WINDOW_MS"),
+    referralMinimumFoodCollected: parsePositiveInteger(environment.BLOB_REFERRAL_MIN_FOOD_COLLECTED, 20, "BLOB_REFERRAL_MIN_FOOD_COLLECTED"),
+    referralMinimumSurvivalTimeMs: parsePositiveInteger(environment.BLOB_REFERRAL_MIN_SURVIVAL_TIME_MS, 2 * 60 * 1_000, "BLOB_REFERRAL_MIN_SURVIVAL_TIME_MS"),
+    referralMaxQualificationsPerReferrerPerDay: parsePositiveInteger(environment.BLOB_REFERRAL_MAX_QUALIFICATIONS_PER_REFERRER_PER_DAY, 10, "BLOB_REFERRAL_MAX_QUALIFICATIONS_PER_REFERRER_PER_DAY"),
+    referralAttributionRateLimit: parsePositiveInteger(environment.BLOB_REFERRAL_ATTRIBUTION_RATE_LIMIT, 4, "BLOB_REFERRAL_ATTRIBUTION_RATE_LIMIT"),
+    referralAttributionGlobalRateLimit: parsePositiveInteger(environment.BLOB_REFERRAL_ATTRIBUTION_GLOBAL_RATE_LIMIT, 120, "BLOB_REFERRAL_ATTRIBUTION_GLOBAL_RATE_LIMIT"),
   };
 }
 

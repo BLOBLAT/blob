@@ -9,6 +9,8 @@ export const referralQualificationRecordSchema = z.object({
   matchId: z.string().min(3).max(120).regex(/^[A-Za-z0-9_-]+$/),
   roundId: z.string().min(3).max(120).regex(/^[A-Za-z0-9_-]+$/),
   completedAt: z.number().int().positive(),
+  foodCollected: z.number().int().min(0).max(100_000),
+  survivalTimeMs: z.number().int().min(0).max(24 * 60 * 60 * 1_000),
 }).strict();
 
 export type ReferralQualificationRecord = z.infer<typeof referralQualificationRecordSchema>;

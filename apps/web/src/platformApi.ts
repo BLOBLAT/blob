@@ -23,6 +23,12 @@ export interface ReferralDashboard {
   invitedCount: number;
   qualifiedCount: number;
   referralBound: boolean;
+  qualificationRules: {
+    attributionWindowHours: number;
+    minFoodCollected: number;
+    minSurvivalSeconds: number;
+    maxQualificationsPerReferrerPerDay: number;
+  };
   recentEntries: Array<{
     delta: string;
     reason: "REFERRER_QUALIFIED_PLAYER" | "REFEREE_QUALIFIED_PLAYER" | "ADMIN_ADJUSTMENT";

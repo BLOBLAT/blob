@@ -32,10 +32,12 @@ are never accepted from the browser or game client.
    navigation history.
 4. After the visitor has authenticated, the browser submits the code once to
    Platform API. PostgreSQL accepts only the first valid attribution. A user
-   cannot refer themself or overwrite a prior referrer.
+   cannot refer themself or overwrite a prior referrer. The account must be
+   inside the server-configured new-profile attribution window.
 5. The user must complete a real authoritative Free Mode round while their
-   signed profile identity is present. Link clicks, chat messages, food,
-   client scores, and wallet connection never qualify a reward.
+   signed profile identity is present. Link clicks, chat messages, client
+   scores, and wallet connection never qualify a reward. The immutable result
+   must meet the configured server-side food and survival thresholds.
 6. When the game server finalizes that immutable round result, it sends a
    compact signed completion fact over Railway private networking. Platform API
    verifies the Ed25519 signature and time window, then records the
@@ -46,6 +48,25 @@ Every qualifying event has a deterministic idempotency key built from the
 Free match, round, and internal profile ID. Database unique constraints cover
 attribution, one initial qualification, source events, and ledger rows, so a
 retry cannot create a second award.
+
+## When a referral qualifies
+
+The profile card shows the current server configuration. With the production
+defaults, a referral is recorded only when all of the following are true:
+
+1. The invited wallet signs in through an opaque referral link within seven
+   days of creating its BLOB profile.
+2. It is not the referrer's own profile, and that profile has not already
+   consumed a referral attribution.
+3. The invited player completes an authoritative Free Mode round, has eaten at
+   least 20 food pellets, and has spent at least two minutes alive. These are
+   server-finalized game statistics, not browser values.
+4. The referrer remains below the durable limit of 10 newly qualified referrals
+   in the applicable UTC day.
+
+The exact thresholds are platform-api environment configuration. Failing an
+activity check does not create an award or a ledger row. The browser cannot
+submit a result, alter the threshold, or turn clicks into points.
 
 ## Privacy and authority
 
@@ -100,6 +121,12 @@ Set only the **public base58 key** on Railway `platform-api`:
 BLOB_REFERRAL_QUALIFICATION_PUBLIC_KEY_BASE58=<matching-public-key>
 BLOB_REFERRAL_REFERRER_POINTS=100
 BLOB_REFERRAL_REFEREE_POINTS=25
+BLOB_REFERRAL_ATTRIBUTION_WINDOW_MS=604800000
+BLOB_REFERRAL_MIN_FOOD_COLLECTED=20
+BLOB_REFERRAL_MIN_SURVIVAL_TIME_MS=120000
+BLOB_REFERRAL_MAX_QUALIFICATIONS_PER_REFERRER_PER_DAY=10
+BLOB_REFERRAL_ATTRIBUTION_RATE_LIMIT=4
+BLOB_REFERRAL_ATTRIBUTION_GLOBAL_RATE_LIMIT=120
 ```
 
 Set only the matching **private base64 key** on Railway `blob`:

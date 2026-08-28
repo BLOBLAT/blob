@@ -69,7 +69,11 @@ The referral program is likewise deliberately outside the Colyseus protocol.
 After wallet-backed profile sign-in, Platform API creates one opaque public
 referral code for the internal user. A visitor can carry that code in
 `?ref=CODE`; the browser may submit it once only after authentication, while
-PostgreSQL enforces first-valid-referrer attribution and blocks self-referral.
+PostgreSQL enforces first-valid-referrer attribution, the new-profile binding
+window, and blocks self-referral. The server-finalized fact contains only
+internal identity plus authoritative food/survival activity. Platform API
+enforces the configured minimum activity and a durable per-referrer UTC-day
+qualification cap before it can write the append-only ledger.
 No wallet address appears in the URL. At finalization of a real Free round,
 the authoritative game server sends a compact, Ed25519-signed completion fact
 to Platform API over Railway private networking. The API validates the

@@ -95,9 +95,9 @@ Chat cannot determine a match result or change gameplay state.
 
 Wallet-backed profiles receive one opaque referral code. A referral link is
 `https://blob.lat/?ref=<CODE>` and deliberately contains no wallet address.
-When a newly authenticated profile opens a valid link, Platform API records the
-first valid referrer only; self-referrals and subsequent attribution attempts
-are rejected server-side.
+When a newly authenticated profile opens a valid link during the configured
+new-profile window, Platform API records the first valid referrer only;
+self-referrals and subsequent attribution attempts are rejected server-side.
 
 Points are not awarded for opening a link, connecting a wallet, or browser
 activity. At the authoritative finalization of a real Free Mode round, the

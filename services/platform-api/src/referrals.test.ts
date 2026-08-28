@@ -14,7 +14,7 @@ describe("referral service", () => {
         calls.push(input);
         return "CAPTURED";
       },
-    }, { referrer: 100n, referee: 25n });
+    }, points(), rules());
 
     await expect(service.captureAttribution({
       refereeUserId: "aa3b4583-48e4-4963-b32d-b18be97e1dc6",
@@ -24,6 +24,7 @@ describe("referral service", () => {
       refereeUserId: "aa3b4583-48e4-4963-b32d-b18be97e1dc6",
       code: "ABCD234567",
       now: expect.any(Date),
+      attributionWindowMs: 7 * 24 * 60 * 60 * 1_000,
     }]);
   });
 
@@ -33,7 +34,7 @@ describe("referral service", () => {
       captureAttribution: async () => {
         throw { code: "REFERRAL_SELF_NOT_ALLOWED" };
       },
-    }, { referrer: 100n, referee: 25n });
+    }, points(), rules());
 
     await expect(service.captureAttribution({
       refereeUserId: "aa3b4583-48e4-4963-b32d-b18be97e1dc6",
@@ -53,7 +54,7 @@ describe("referral service", () => {
         calls.push(input);
         return "QUALIFIED";
       },
-    }, { referrer: 100n, referee: 25n });
+    }, points(), rules());
 
     await expect(service.qualify({
       profileUserId: "aa3b4583-48e4-4963-b32d-b18be97e1dc6",
@@ -61,6 +62,8 @@ describe("referral service", () => {
       roundId: "round-1",
       sourceEventId: "free-round:free-match-1:round-1:aa3b4583-48e4-4963-b32d-b18be97e1dc6",
       completedAt: new Date("2026-08-28T12:00:00.000Z"),
+      foodCollected: 20,
+      survivalTimeMs: 120_000,
     })).resolves.toBe("QUALIFIED");
     expect(calls).toEqual([{
       profileUserId: "aa3b4583-48e4-4963-b32d-b18be97e1dc6",
@@ -68,11 +71,29 @@ describe("referral service", () => {
       roundId: "round-1",
       sourceEventId: "free-round:free-match-1:round-1:aa3b4583-48e4-4963-b32d-b18be97e1dc6",
       completedAt: new Date("2026-08-28T12:00:00.000Z"),
+      foodCollected: 20,
+      survivalTimeMs: 120_000,
       referrerPoints: 100n,
       refereePoints: 25n,
+      maxQualificationsPerReferrerPerDay: 10,
     }]);
+    });
   });
-});
+
+  it("does not reach the ledger repository for an idle or trivial Free-round result", async () => {
+    const qualifyReferral = async () => "QUALIFIED" as const;
+    const service = new ReferralService({ ...repository(), qualifyReferral }, points(), rules());
+
+    await expect(service.qualify({
+      profileUserId: "aa3b4583-48e4-4963-b32d-b18be97e1dc6",
+      matchId: "free-match-1",
+      roundId: "round-1",
+      sourceEventId: "free-round:free-match-1:round-1:aa3b4583-48e4-4963-b32d-b18be97e1dc6",
+      completedAt: new Date("2026-08-28T12:00:00.000Z"),
+      foodCollected: 19,
+      survivalTimeMs: 120_000,
+    })).resolves.toBe("INSUFFICIENT_GAMEPLAY");
+  });
 
 function repository(): ReferralRepository {
   return {
@@ -86,5 +107,18 @@ function repository(): ReferralRepository {
     }),
     captureAttribution: async () => "ALREADY_ATTRIBUTED",
     qualifyReferral: async () => "NOT_ATTRIBUTED",
+  };
+}
+
+function points() {
+  return { referrer: 100n, referee: 25n };
+}
+
+function rules() {
+  return {
+    attributionWindowMs: 7 * 24 * 60 * 60 * 1_000,
+    minFoodCollected: 20,
+    minSurvivalTimeMs: 120_000,
+    maxQualificationsPerReferrerPerDay: 10,
   };
 }

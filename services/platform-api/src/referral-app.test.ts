@@ -13,6 +13,8 @@ const RECORD = {
   matchId: "free-match-1",
   roundId: "round-1",
   completedAt: Date.UTC(2026, 7, 28, 12, 0, 0),
+  foodCollected: 20,
+  survivalTimeMs: 2 * 60 * 1_000,
 };
 
 afterEach(async () => {
@@ -35,8 +37,11 @@ describe("referral qualification endpoint", () => {
       roundId: record.roundId,
       sourceEventId: record.eventId,
       completedAt: new Date(record.completedAt),
+      foodCollected: record.foodCollected,
+      survivalTimeMs: record.survivalTimeMs,
       referrerPoints: 100n,
       refereePoints: 25n,
+      maxQualificationsPerReferrerPerDay: 10,
     });
   });
 
@@ -84,6 +89,12 @@ async function requestQualification(
       arenaChatRetentionDays: 90,
       referralReferrerPoints: 100n,
       referralRefereePoints: 25n,
+      referralAttributionWindowMs: 7 * 24 * 60 * 60 * 1_000,
+      referralMinimumFoodCollected: 20,
+      referralMinimumSurvivalTimeMs: 2 * 60 * 1_000,
+      referralMaxQualificationsPerReferrerPerDay: 10,
+      referralAttributionRateLimit: 4,
+      referralAttributionGlobalRateLimit: 120,
     } satisfies PlatformApiConfig,
     repository: {} as PlatformAuthRepository,
     referralRepository: {

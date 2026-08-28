@@ -107,5 +107,13 @@ describe("platform API production configuration", () => {
       DATABASE_URL,
       BLOB_REFERRAL_REFERRER_POINTS: "1.5",
     })).toThrow("BLOB_REFERRAL_REFERRER_POINTS must be a non-negative integer");
+    expect(() => loadPlatformApiConfig({
+      DATABASE_URL,
+      BLOB_REFERRAL_MIN_FOOD_COLLECTED: "0",
+    })).toThrow("BLOB_REFERRAL_MIN_FOOD_COLLECTED must be a positive integer");
+    expect(() => loadPlatformApiConfig({
+      DATABASE_URL,
+      BLOB_REFERRAL_MAX_QUALIFICATIONS_PER_REFERRER_PER_DAY: "10.5",
+    })).toThrow("BLOB_REFERRAL_MAX_QUALIFICATIONS_PER_REFERRER_PER_DAY must be a positive integer");
   });
 });

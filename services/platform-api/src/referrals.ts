@@ -23,24 +23,48 @@ export interface ReferralDashboard {
 }
 
 export type ReferralCaptureOutcome = "CAPTURED" | "ALREADY_ATTRIBUTED";
-export type ReferralQualificationOutcome = "QUALIFIED" | "NOT_ATTRIBUTED" | "ALREADY_QUALIFIED" | "EVENT_ALREADY_PROCESSED";
+export type ReferralQualificationOutcome =
+  | "QUALIFIED"
+  | "NOT_ATTRIBUTED"
+  | "ALREADY_QUALIFIED"
+  | "EVENT_ALREADY_PROCESSED"
+  | "INSUFFICIENT_GAMEPLAY"
+  | "DAILY_CAP_REACHED";
+
+export interface ReferralProgramRules {
+  /** A link may only bind to a newly created BLOB profile. */
+  attributionWindowMs: number;
+  /** Activity comes solely from the final server-authoritative arena result. */
+  minFoodCollected: number;
+  minSurvivalTimeMs: number;
+  /** Durable UTC-day ceiling per referrer; it is not a browser counter. */
+  maxQualificationsPerReferrerPerDay: number;
+}
 
 export interface ReferralRepository {
   getDashboard(userId: string): Promise<ReferralDashboard>;
-  captureAttribution(input: { refereeUserId: string; code: string; now: Date }): Promise<ReferralCaptureOutcome>;
+  captureAttribution(input: {
+    refereeUserId: string;
+    code: string;
+    now: Date;
+    attributionWindowMs: number;
+  }): Promise<ReferralCaptureOutcome>;
   qualifyReferral(input: {
     profileUserId: string;
     matchId: string;
     roundId: string;
     sourceEventId: string;
     completedAt: Date;
+    foodCollected: number;
+    survivalTimeMs: number;
     referrerPoints: bigint;
     refereePoints: bigint;
+    maxQualificationsPerReferrerPerDay: number;
   }): Promise<ReferralQualificationOutcome>;
 }
 
 export class ReferralError extends Error {
-  constructor(readonly code: "REFERRAL_CODE_INVALID" | "REFERRAL_SELF_NOT_ALLOWED", message: string) {
+  constructor(readonly code: "REFERRAL_CODE_INVALID" | "REFERRAL_SELF_NOT_ALLOWED" | "REFERRAL_ATTRIBUTION_WINDOW_CLOSED", message: string) {
     super(message);
   }
 }
@@ -49,6 +73,7 @@ export class ReferralService {
   constructor(
     private readonly repository: ReferralRepository,
     private readonly points: { referrer: bigint; referee: bigint },
+    private readonly rules: ReferralProgramRules,
   ) {}
 
   async getDashboard(userId: string): Promise<ReferralDashboard> {
@@ -65,6 +90,7 @@ export class ReferralService {
         refereeUserId: input.refereeUserId,
         code,
         now: input.now ?? new Date(),
+        attributionWindowMs: this.rules.attributionWindowMs,
       });
     } catch (error) {
       if (typeof error === "object" && error !== null && "code" in error) {
@@ -74,6 +100,9 @@ export class ReferralService {
         }
         if (errorCode === "REFERRAL_SELF_NOT_ALLOWED") {
           throw new ReferralError("REFERRAL_SELF_NOT_ALLOWED", "You cannot use your own referral link.");
+        }
+        if (errorCode === "REFERRAL_ATTRIBUTION_WINDOW_CLOSED") {
+          throw new ReferralError("REFERRAL_ATTRIBUTION_WINDOW_CLOSED", "Referral links can only be attached to a new BLOB profile.");
         }
       }
       throw error;
@@ -86,11 +115,17 @@ export class ReferralService {
     roundId: string;
     sourceEventId: string;
     completedAt: Date;
+    foodCollected: number;
+    survivalTimeMs: number;
   }): Promise<ReferralQualificationOutcome> {
+    if (input.foodCollected < this.rules.minFoodCollected || input.survivalTimeMs < this.rules.minSurvivalTimeMs) {
+      return "INSUFFICIENT_GAMEPLAY";
+    }
     return this.repository.qualifyReferral({
       ...input,
       referrerPoints: this.points.referrer,
       refereePoints: this.points.referee,
+      maxQualificationsPerReferrerPerDay: this.rules.maxQualificationsPerReferrerPerDay,
     });
   }
 }

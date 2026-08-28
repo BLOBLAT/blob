@@ -316,6 +316,8 @@ export class BlobArenaRoom extends Room<{ state: BlobArenaState }> {
           matchId: snapshot.result!.matchId,
           roundId: snapshot.result!.roundId,
           completedAt: snapshot.result!.finalizedAt,
+          foodCollected: ranking.foodCollected,
+          survivalTimeMs: ranking.survivalTimeMs,
         }];
       });
     for (const record of records) {
