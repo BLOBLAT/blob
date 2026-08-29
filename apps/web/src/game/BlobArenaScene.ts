@@ -125,6 +125,26 @@ interface RenderedPlayerPosition {
   alive: boolean;
 }
 
+type BlobMood = "CALM" | "HUNT" | "PANIC";
+
+interface PlayerRenderSnapshot {
+  player: NetworkPlayer;
+  position: ScreenPosition;
+  motion: ScreenPosition;
+}
+
+interface BlobContourPoint {
+  x: number;
+  y: number;
+}
+
+interface BlobExpression {
+  mood: BlobMood;
+  facingAngle: number;
+  pullAngle?: number;
+  pullStrength: number;
+}
+
 type DirectionKeys = Record<"up" | "down" | "left" | "right", Phaser.Input.Keyboard.Key>;
 
 interface KeyboardControls {
@@ -557,9 +577,28 @@ export class BlobArenaScene extends Phaser.Scene {
       this.graphics.fillStyle(0xfff7f2, 0.62);
       this.graphics.fillCircle(pellet.x - 2, pellet.y - 2 + bob, 2);
     });
+    const playerSnapshots: PlayerRenderSnapshot[] = [];
     state.players.forEach((player) => {
-      this.drawPlayer(player, player.id === localPlayerId, state.serverTime, time, this.getRenderedPosition(player));
+      const position = this.getRenderedPosition(player);
+      playerSnapshots.push({
+        player,
+        position,
+        motion: this.getRenderedMotion(player),
+      });
     });
+    for (const snapshot of playerSnapshots) {
+      this.drawPlayer(
+        snapshot.player,
+        snapshot.player.id === localPlayerId,
+        state.serverTime,
+        time,
+        snapshot.position,
+        snapshot.motion,
+        playerSnapshots,
+        width,
+        height,
+      );
+    }
   }
 
   private drawPlayer(
@@ -568,17 +607,34 @@ export class BlobArenaScene extends Phaser.Scene {
     serverTime: number,
     time: number,
     position: ScreenPosition,
+    motion: ScreenPosition,
+    players: PlayerRenderSnapshot[],
+    worldWidth: number,
+    worldHeight: number,
   ): void {
     const { x, y } = position;
     const radius = Math.max(18, Math.sqrt(Math.max(0, player.mass)) * 3.2);
     const color = colorForPlayer(player.id);
     const wobble = player.alive ? Math.sin((time + x + y) / 145) * Math.min(2.2, radius * 0.05) : 0;
+    const expression = this.getBlobExpression(player, position, motion, players, radius);
+    const contour = this.getBlobContour(player, position, radius, time, motion, expression, worldWidth, worldHeight);
     this.graphics.fillStyle(0x000000, 0.18);
-    this.graphics.fillCircle(x + 4, y + radius * 0.25, radius * 1.02);
+    this.graphics.fillEllipse(x + 5, y + radius * 0.3, radius * 2.04, radius * 1.58);
+    this.graphics.beginPath();
+    this.graphics.moveTo(contour[0]?.x ?? x, (contour[0]?.y ?? y) + wobble);
+    for (let index = 1; index < contour.length; index += 1) {
+      const point = contour[index];
+      if (point) {
+        this.graphics.lineTo(point.x, point.y + wobble);
+      }
+    }
+    this.graphics.closePath();
     this.graphics.fillStyle(color, player.alive ? 1 : 0.2);
-    this.graphics.fillCircle(x, y + wobble, radius);
+    this.graphics.fillPath();
+    this.graphics.lineStyle(Math.max(1.5, radius * 0.035), darkenColor(color, 0.42), player.alive ? 0.86 : 0.2);
+    this.graphics.strokePath();
     this.graphics.fillStyle(0xffffff, 0.16);
-    this.graphics.fillCircle(x - radius * 0.28, y - radius * 0.3 + wobble, radius * 0.24);
+    this.graphics.fillEllipse(x - radius * 0.27, y - radius * 0.28 + wobble, radius * 0.34, radius * 0.46);
     if (isLocalPlayer) {
       this.graphics.lineStyle(3, 0xfff7f2, 0.95);
       this.graphics.strokeCircle(x, y + wobble, radius + 5);
@@ -607,13 +663,213 @@ export class BlobArenaScene extends Phaser.Scene {
       this.playerNameLabels.get(player.id)?.setVisible(false);
       return;
     }
-    this.graphics.fillStyle(0x260719, 1);
-    this.graphics.fillCircle(x - radius * 0.22, y - radius * 0.02 + wobble, Math.max(3, radius * 0.1));
-    this.graphics.fillCircle(x + radius * 0.22, y - radius * 0.02 + wobble, Math.max(3, radius * 0.1));
-    this.graphics.fillStyle(0xfff7f2, 0.78);
-    this.graphics.fillCircle(x - radius * 0.25, y - radius * 0.07 + wobble, Math.max(1.2, radius * 0.033));
-    this.graphics.fillCircle(x + radius * 0.19, y - radius * 0.07 + wobble, Math.max(1.2, radius * 0.033));
+    this.drawBlobFace(x, y + wobble, radius, expression, time, player.id);
     this.updatePlayerNameLabel(player, isLocalPlayer, x, y + wobble - radius - 10);
+  }
+
+  private getRenderedMotion(player: NetworkPlayer): ScreenPosition {
+    const rendered = this.renderedPlayerPositions.get(player.id);
+    if (!rendered) {
+      return { x: 0, y: 0 };
+    }
+    return {
+      x: rendered.targetX - rendered.x,
+      y: rendered.targetY - rendered.y,
+    };
+  }
+
+  /**
+   * Faces are a local presentation cue only. The same server-owned masses and
+   * positions that are already rendered determine whether a BLOB is relaxed,
+   * hunting prey, or alarmed by a nearby larger opponent.
+   */
+  private getBlobExpression(
+    player: NetworkPlayer,
+    position: ScreenPosition,
+    motion: ScreenPosition,
+    players: PlayerRenderSnapshot[],
+    radius: number,
+  ): BlobExpression {
+    const fallbackFacingAngle = Math.atan2(motion.y, motion.x);
+    const facingAngle = Number.isFinite(fallbackFacingAngle) && Math.hypot(motion.x, motion.y) > 0.6
+      ? fallbackFacingAngle
+      : Math.PI / 2;
+    let nearestThreat: { angle: number; strength: number } | undefined;
+    let nearestPrey: { angle: number; strength: number } | undefined;
+
+    for (const candidate of players) {
+      const other = candidate.player;
+      if (other.id === player.id || !other.alive || !other.inRound) {
+        continue;
+      }
+      const offsetX = candidate.position.x - position.x;
+      const offsetY = candidate.position.y - position.y;
+      const distance = Math.hypot(offsetX, offsetY);
+      if (distance <= 0) {
+        continue;
+      }
+      const angle = Math.atan2(offsetY, offsetX);
+      const perceptionRange = Math.max(280, radius * 5.5);
+      if (distance > perceptionRange) {
+        continue;
+      }
+      const closeness = Phaser.Math.Clamp(1 - distance / perceptionRange, 0, 1);
+      if (other.mass >= player.mass * 1.2) {
+        const strength = closeness * Phaser.Math.Clamp(other.mass / Math.max(1, player.mass) - 1, 0.2, 1.3);
+        if (!nearestThreat || strength > nearestThreat.strength) {
+          nearestThreat = { angle, strength };
+        }
+      } else if (player.mass >= other.mass * 1.25) {
+        const strength = closeness * Phaser.Math.Clamp(player.mass / Math.max(1, other.mass) - 1, 0.15, 1.2);
+        if (!nearestPrey || strength > nearestPrey.strength) {
+          nearestPrey = { angle, strength };
+        }
+      }
+    }
+
+    if (nearestThreat && nearestThreat.strength >= 0.08) {
+      return {
+        mood: "PANIC",
+        facingAngle: nearestThreat.angle,
+        pullAngle: nearestThreat.angle,
+        pullStrength: Phaser.Math.Clamp(nearestThreat.strength * 0.75, 0, 0.24),
+      };
+    }
+    if (nearestPrey && nearestPrey.strength >= 0.08) {
+      return {
+        mood: "HUNT",
+        facingAngle: nearestPrey.angle,
+        pullStrength: 0,
+      };
+    }
+    return { mood: "CALM", facingAngle, pullStrength: 0 };
+  }
+
+  private getBlobContour(
+    player: NetworkPlayer,
+    position: ScreenPosition,
+    radius: number,
+    time: number,
+    motion: ScreenPosition,
+    expression: BlobExpression,
+    worldWidth: number,
+    worldHeight: number,
+  ): BlobContourPoint[] {
+    const motionLength = Math.hypot(motion.x, motion.y);
+    const motionAngle = motionLength > 0.6 ? Math.atan2(motion.y, motion.x) : expression.facingAngle;
+    const motionStretch = Phaser.Math.Clamp(motionLength / Math.max(18, radius * 0.45), 0, 0.11);
+    const edgeZone = Math.max(12, radius * 0.46);
+    const left = Phaser.Math.Clamp(1 - (position.x - radius) / edgeZone, 0, 1);
+    const right = Phaser.Math.Clamp(1 - (worldWidth - (position.x + radius)) / edgeZone, 0, 1);
+    const top = Phaser.Math.Clamp(1 - (position.y - radius) / edgeZone, 0, 1);
+    const bottom = Phaser.Math.Clamp(1 - (worldHeight - (position.y + radius)) / edgeZone, 0, 1);
+    const normalX = right - left;
+    const normalY = bottom - top;
+    const wallPressure = Phaser.Math.Clamp(Math.hypot(normalX, normalY), 0, 1);
+    const wallAngle = wallPressure > 0.01 ? Math.atan2(normalY, normalX) : 0;
+    const identityPhase = stableHash(player.id) % 628;
+    const points: BlobContourPoint[] = [];
+    const segments = 26;
+    for (let index = 0; index < segments; index += 1) {
+      const angle = (Math.PI * 2 * index) / segments;
+      const travelAlignment = Math.cos(angle - motionAngle);
+      const wallAlignment = Math.cos(angle - wallAngle);
+      const pullAlignment = expression.pullAngle === undefined ? 0 : Math.max(0, Math.cos(angle - expression.pullAngle));
+      const livingWobble = player.alive
+        ? Math.sin(time / 170 + identityPhase + index * 1.71) * radius * 0.018
+          + Math.sin(time / 310 + identityPhase * 0.3 + index * 2.13) * radius * 0.012
+        : 0;
+      const travelScale = 1 + motionStretch * (travelAlignment * travelAlignment * 2 - 0.65);
+      const wallScale = 1 - wallPressure * 0.18 * (wallAlignment * wallAlignment)
+        + wallPressure * 0.075 * (1 - wallAlignment * wallAlignment);
+      const pullScale = 1 + expression.pullStrength * pullAlignment;
+      const contourRadius = Math.max(radius * 0.72, (radius + livingWobble) * travelScale * wallScale * pullScale);
+      points.push({
+        x: position.x + Math.cos(angle) * contourRadius,
+        y: position.y + Math.sin(angle) * contourRadius,
+      });
+    }
+    return points;
+  }
+
+  private drawBlobFace(x: number, y: number, radius: number, expression: BlobExpression, time: number, id: string): void {
+    const forwardX = Math.cos(expression.facingAngle);
+    const forwardY = Math.sin(expression.facingAngle);
+    const sideX = -forwardY;
+    const sideY = forwardX;
+    const faceX = x + forwardX * radius * 0.1;
+    const faceY = y + forwardY * radius * 0.07;
+    const eyeSpread = radius * 0.22;
+    const eyeForward = radius * 0.02;
+    const eyeWidth = Math.max(6, radius * (expression.mood === "PANIC" ? 0.19 : 0.16));
+    const eyeHeight = Math.max(6, radius * (expression.mood === "PANIC" ? 0.22 : 0.17));
+    const blink = ((time + stableHash(id) * 13) % 3_900) < 115;
+    const leftEye = {
+      x: faceX - sideX * eyeSpread + forwardX * eyeForward,
+      y: faceY - sideY * eyeSpread + forwardY * eyeForward,
+    };
+    const rightEye = {
+      x: faceX + sideX * eyeSpread + forwardX * eyeForward,
+      y: faceY + sideY * eyeSpread + forwardY * eyeForward,
+    };
+    this.graphics.fillStyle(0xfff7f2, 0.94);
+    if (blink) {
+      this.graphics.lineStyle(Math.max(2, radius * 0.045), 0x260719, 0.9);
+      this.graphics.lineBetween(leftEye.x - sideX * eyeWidth * 0.32, leftEye.y - sideY * eyeWidth * 0.32, leftEye.x + sideX * eyeWidth * 0.32, leftEye.y + sideY * eyeWidth * 0.32);
+      this.graphics.lineBetween(rightEye.x - sideX * eyeWidth * 0.32, rightEye.y - sideY * eyeWidth * 0.32, rightEye.x + sideX * eyeWidth * 0.32, rightEye.y + sideY * eyeWidth * 0.32);
+    } else {
+      this.graphics.fillEllipse(leftEye.x, leftEye.y, eyeWidth, eyeHeight);
+      this.graphics.fillEllipse(rightEye.x, rightEye.y, eyeWidth, eyeHeight);
+      const pupilForward = expression.mood === "PANIC" ? radius * 0.035 : radius * 0.075;
+      const pupilRadius = Math.max(2.8, radius * 0.07);
+      this.graphics.fillStyle(0x260719, 1);
+      this.graphics.fillCircle(leftEye.x + forwardX * pupilForward, leftEye.y + forwardY * pupilForward, pupilRadius);
+      this.graphics.fillCircle(rightEye.x + forwardX * pupilForward, rightEye.y + forwardY * pupilForward, pupilRadius);
+      this.graphics.fillStyle(0xffffff, 0.7);
+      this.graphics.fillCircle(leftEye.x + forwardX * pupilForward - sideX * pupilRadius * 0.24, leftEye.y + forwardY * pupilForward - sideY * pupilRadius * 0.24, Math.max(1, pupilRadius * 0.28));
+      this.graphics.fillCircle(rightEye.x + forwardX * pupilForward - sideX * pupilRadius * 0.24, rightEye.y + forwardY * pupilForward - sideY * pupilRadius * 0.24, Math.max(1, pupilRadius * 0.28));
+    }
+
+    if (expression.mood === "HUNT") {
+      this.graphics.lineStyle(Math.max(2, radius * 0.04), 0x260719, 0.95);
+      this.graphics.lineBetween(leftEye.x - sideX * eyeWidth * 0.5 - forwardX * eyeHeight * 0.22, leftEye.y - sideY * eyeWidth * 0.5 - forwardY * eyeHeight * 0.22, leftEye.x + sideX * eyeWidth * 0.4 + forwardX * eyeHeight * 0.16, leftEye.y + sideY * eyeWidth * 0.4 + forwardY * eyeHeight * 0.16);
+      this.graphics.lineBetween(rightEye.x + sideX * eyeWidth * 0.5 - forwardX * eyeHeight * 0.22, rightEye.y + sideY * eyeWidth * 0.5 - forwardY * eyeHeight * 0.22, rightEye.x - sideX * eyeWidth * 0.4 + forwardX * eyeHeight * 0.16, rightEye.y - sideY * eyeWidth * 0.4 + forwardY * eyeHeight * 0.16);
+    }
+
+    const mouthX = faceX + forwardX * radius * 0.32;
+    const mouthY = faceY + forwardY * radius * 0.32;
+    const mouthWidth = radius * (expression.mood === "HUNT" ? 0.54 : 0.46);
+    const mouthHeight = radius * (expression.mood === "PANIC" ? 0.3 : 0.21);
+    this.graphics.fillStyle(0x260719, 0.98);
+    this.graphics.fillEllipse(mouthX, mouthY, mouthWidth, mouthHeight);
+    this.graphics.fillStyle(0xfff7f2, 0.96);
+    const toothWidth = Math.max(3, mouthWidth * 0.16);
+    const toothHeight = Math.max(3, mouthHeight * 0.42);
+    const toothCount = expression.mood === "HUNT" ? 4 : expression.mood === "PANIC" ? 3 : 3;
+    for (let index = 0; index < toothCount; index += 1) {
+      const spread = (index / (toothCount - 1) - 0.5) * mouthWidth * 0.62;
+      const toothX = mouthX + sideX * spread;
+      const toothY = mouthY + sideY * spread - forwardY * mouthHeight * 0.32;
+      this.graphics.fillTriangle(
+        toothX - sideX * toothWidth / 2,
+        toothY - sideY * toothWidth / 2,
+        toothX + sideX * toothWidth / 2,
+        toothY + sideY * toothWidth / 2,
+        toothX + forwardX * toothHeight,
+        toothY + forwardY * toothHeight,
+      );
+      if (expression.mood === "HUNT" && index % 2 === 0) {
+        const lowerY = mouthY + sideY * spread + forwardY * mouthHeight * 0.22;
+        this.graphics.fillTriangle(
+          toothX - sideX * toothWidth * 0.4,
+          lowerY - sideY * toothWidth * 0.4,
+          toothX + sideX * toothWidth * 0.4,
+          lowerY + sideY * toothWidth * 0.4,
+          toothX - forwardX * toothHeight * 0.75,
+          lowerY - forwardY * toothHeight * 0.75,
+        );
+      }
+    }
   }
 
   private updatePlayerNameLabel(player: NetworkPlayer, isLocalPlayer: boolean, x: number, y: number): void {
@@ -665,9 +921,35 @@ function toArray<T>(collection: NetworkCollection<T>): T[] {
 }
 
 function colorForPlayer(id: string): number {
+  const palette = [
+    0xf42b68,
+    0x8e6bff,
+    0x21c7a8,
+    0xff9d3d,
+    0x42a5f5,
+    0xd86df6,
+    0xff6fae,
+    0x63d8ee,
+    0xc7ef4d,
+    0xff715f,
+    0x6c78f7,
+    0x00c9a7,
+  ];
+  return palette[stableHash(id) % palette.length] ?? 0xf42b68;
+}
+
+function stableHash(value: string): number {
   let hash = 0;
-  for (let index = 0; index < id.length; index += 1) {
-    hash = (hash * 31 + id.charCodeAt(index)) >>> 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
   }
-  return [0xf42b68, 0x8e6bff, 0x21c7a8, 0xff9d3d, 0x42a5f5][hash % 5] ?? 0xf42b68;
+  return hash;
+}
+
+function darkenColor(color: number, amount: number): number {
+  const factor = Phaser.Math.Clamp(1 - amount, 0, 1);
+  const red = Math.round(((color >> 16) & 0xff) * factor);
+  const green = Math.round(((color >> 8) & 0xff) * factor);
+  const blue = Math.round((color & 0xff) * factor);
+  return (red << 16) | (green << 8) | blue;
 }
