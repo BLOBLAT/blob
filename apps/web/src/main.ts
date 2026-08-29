@@ -18,6 +18,9 @@ const app: HTMLDivElement = appRoot;
 const BLOB_TOKEN_ADDRESS = "6htcaSYtVdDaGtRGn2jPnxc1q2hsAyYCECxteodipump";
 const BLOB_TOKEN_PUMP_URL = `https://pump.fun/coin/${BLOB_TOKEN_ADDRESS}`;
 const REFERRAL_CANDIDATE_STORAGE_KEY = "blob.referral-candidate";
+// Referral attribution remains entirely server-owned. This is only the
+// browser-side format used to help someone paste an invite code correctly.
+const REFERRAL_CODE_PATTERN = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{10}$/;
 const FREE_ARENA_LANDING = `
   <div class="arena-grid" aria-hidden="true"></div>
   <div class="arena-food food-one" aria-hidden="true"></div>
@@ -49,7 +52,7 @@ let referralNotice: string | undefined;
 // This draft exists only in the current page memory. It avoids making a
 // player retype an email after a transient delivery failure without putting
 // personal data in browser storage, URLs, or logs.
-let referralEmailDraft: { email: string; acceptedPrivacyNotice: boolean } | undefined;
+let referralEmailDraft: { email: string; acceptedPrivacyNotice: boolean; referralCode?: string } | undefined;
 let availableWallets: AvailableWallet[] = [];
 let liveMetricsController: LiveMetricsController | undefined;
 
@@ -665,12 +668,35 @@ function captureReferralCandidateFromLocation(): void {
   if (!rawCode) {
     return;
   }
-  const code = rawCode.trim().toUpperCase();
-  if (/^[A-Z0-9_-]{1,32}$/.test(code)) {
-    window.sessionStorage.setItem(REFERRAL_CANDIDATE_STORAGE_KEY, code);
-  }
+  storeReferralCandidate(rawCode);
   url.searchParams.delete("ref");
   window.history.replaceState(window.history.state, "", url);
+}
+
+function normalizeReferralCode(value: string): string | undefined {
+  const code = value.replace(/[\s-]+/g, "").toUpperCase();
+  return REFERRAL_CODE_PATTERN.test(code) ? code : undefined;
+}
+
+function storeReferralCandidate(value: string): string | undefined {
+  const code = normalizeReferralCode(value);
+  if (!code) {
+    return undefined;
+  }
+  window.sessionStorage.setItem(REFERRAL_CANDIDATE_STORAGE_KEY, code);
+  return code;
+}
+
+function getReferralCandidate(): string | undefined {
+  const stored = window.sessionStorage.getItem(REFERRAL_CANDIDATE_STORAGE_KEY);
+  if (!stored) {
+    return undefined;
+  }
+  const code = normalizeReferralCode(stored);
+  if (!code) {
+    window.sessionStorage.removeItem(REFERRAL_CANDIDATE_STORAGE_KEY);
+  }
+  return code;
 }
 
 async function refreshReferralExperience(): Promise<void> {
@@ -689,7 +715,7 @@ async function refreshReferralExperience(): Promise<void> {
   if (referralDashboard.emailVerification.state !== "VERIFIED") {
     return;
   }
-  const candidate = window.sessionStorage.getItem(REFERRAL_CANDIDATE_STORAGE_KEY);
+  const candidate = getReferralCandidate();
   if (candidate) {
     try {
       const outcome = await platformApi.captureReferralAttribution(candidate);
@@ -750,10 +776,24 @@ function renderReferralProgram(container: HTMLElement): void {
     container.append(card);
     return;
   }
+  const referralCode = dashboard.code;
+  const inviteUrl = dashboard.inviteUrl;
   const rules = dashboard.qualificationRules;
   copy.textContent = `Invite a new player. Their link must be attached within ${formatReferralWindow(rules.attributionWindowHours)} of creating a BLOB profile; points count after a server-confirmed Free Mode round with ${rules.minFoodCollected} food eaten and ${formatReferralDuration(rules.minSurvivalSeconds)} alive.`;
+  const codeBox = document.createElement("section");
+  codeBox.className = "referral-code-box";
+  const codeLabel = document.createElement("span");
+  codeLabel.textContent = "Your referral code";
+  const ownCode = document.createElement("code");
+  ownCode.textContent = referralCode;
+  const codeCopy = document.createElement("button");
+  codeCopy.type = "button";
+  codeCopy.className = "referral-copy referral-code-copy";
+  codeCopy.textContent = "Copy code";
+  codeCopy.addEventListener("click", () => void copyReferralText(codeCopy, referralCode, "Referral code copied"));
+  codeBox.append(codeLabel, ownCode, codeCopy);
   const link = document.createElement("code");
-  link.textContent = dashboard.inviteUrl;
+  link.textContent = inviteUrl;
   const stats = document.createElement("dl");
   stats.className = "referral-stats";
   const referralStats: ReadonlyArray<readonly [string, string]> = [
@@ -774,10 +814,14 @@ function renderReferralProgram(container: HTMLElement): void {
   copyButton.type = "button";
   copyButton.className = "referral-copy";
   copyButton.textContent = "Copy invite link";
-  copyButton.addEventListener("click", () => void copyReferralLink(copyButton, dashboard.inviteUrl));
+  copyButton.addEventListener("click", () => void copyReferralLink(copyButton, inviteUrl));
   const note = document.createElement("small");
   note.textContent = `One referral link per profile. Self-referrals, repeat claims, browser-only activity, and duplicate rewards are blocked; up to ${rules.maxQualificationsPerReferrerPerDay} qualified referrals per referrer count each UTC day. Points are not a token, cash balance, or promise of future value.`;
-  card.append(label, copy, link, stats, copyButton, note);
+  card.append(label, copy, codeBox, link, stats, copyButton);
+  if (!dashboard.referralBound) {
+    renderReferralCodeEntry(card);
+  }
+  card.append(note);
   container.append(card);
 }
 
@@ -828,6 +872,24 @@ function renderReferralEmailEnrollment(card: HTMLElement, state: "NOT_STARTED" |
   email.required = true;
   email.placeholder = "you@example.com";
   email.value = referralEmailDraft?.email ?? "";
+  const referralLabel = document.createElement("label");
+  referralLabel.htmlFor = "referral-code";
+  referralLabel.textContent = "Referral code (optional)";
+  const referralCode = document.createElement("input");
+  referralCode.id = "referral-code";
+  referralCode.name = "referral-code";
+  referralCode.inputMode = "text";
+  referralCode.autocomplete = "off";
+  referralCode.autocapitalize = "characters";
+  referralCode.spellcheck = false;
+  referralCode.maxLength = 14;
+  referralCode.placeholder = "ABCD234567";
+  referralCode.value = referralEmailDraft?.referralCode ?? getReferralCandidate() ?? "";
+  referralCode.setAttribute("aria-describedby", "referral-code-help");
+  const referralHelp = document.createElement("small");
+  referralHelp.id = "referral-code-help";
+  referralHelp.className = "referral-code-help";
+  referralHelp.textContent = "Paste a 10-character code from an invite link. It is checked and locked by the server after email verification.";
   const consent = document.createElement("label");
   consent.className = "referral-consent";
   const accepted = document.createElement("input");
@@ -847,18 +909,52 @@ function renderReferralEmailEnrollment(card: HTMLElement, state: "NOT_STARTED" |
   submit.type = "submit";
   submit.className = "referral-copy";
   submit.textContent = "Send verification code";
-  form.append(label, email, consent, submit);
-  form.addEventListener("submit", (event) => void startReferralEmailVerification(event, email, accepted, submit, privacyNoticeVersion));
+  form.append(label, email, referralLabel, referralCode, referralHelp, consent, submit);
+  form.addEventListener("submit", (event) => void startReferralEmailVerification(event, email, referralCode, accepted, submit, privacyNoticeVersion));
   card.append(form);
 }
 
-async function startReferralEmailVerification(event: SubmitEvent, email: HTMLInputElement, accepted: HTMLInputElement, submit: HTMLButtonElement, privacyNoticeVersion: string): Promise<void> {
+function renderReferralCodeEntry(card: HTMLElement): void {
+  const form = document.createElement("form");
+  form.className = "referral-email-form referral-code-entry";
+  const label = document.createElement("label");
+  label.htmlFor = "apply-referral-code";
+  label.textContent = "Have a referral code?";
+  const input = document.createElement("input");
+  input.id = "apply-referral-code";
+  input.name = "referral-code";
+  input.inputMode = "text";
+  input.autocomplete = "off";
+  input.autocapitalize = "characters";
+  input.spellcheck = false;
+  input.maxLength = 14;
+  input.placeholder = "ABCD234567";
+  input.value = getReferralCandidate() ?? "";
+  const submit = document.createElement("button");
+  submit.type = "submit";
+  submit.className = "referral-copy";
+  submit.textContent = "Apply code";
+  form.append(label, input, submit);
+  form.addEventListener("submit", (event) => void applyReferralCode(event, input, submit));
+  card.append(form);
+}
+
+async function startReferralEmailVerification(event: SubmitEvent, email: HTMLInputElement, referralCode: HTMLInputElement, accepted: HTMLInputElement, submit: HTMLButtonElement, privacyNoticeVersion: string): Promise<void> {
   event.preventDefault();
   if (!platformApi || !accepted.checked) {
     return;
   }
+  const referralCodeValue = referralCode.value.trim();
+  const normalizedReferralCode = referralCodeValue ? storeReferralCandidate(referralCodeValue) : undefined;
+  if (referralCodeValue && !normalizedReferralCode) {
+    referralCode.setAttribute("aria-invalid", "true");
+    referralNotice = "Enter the 10-character referral code from the invite link, or leave this field empty.";
+    renderProfileDialog(referralNotice);
+    return;
+  }
+  referralCode.removeAttribute("aria-invalid");
   submit.disabled = true;
-  const draft = { email: email.value, acceptedPrivacyNotice: accepted.checked };
+  const draft = { email: email.value, acceptedPrivacyNotice: accepted.checked, referralCode: normalizedReferralCode };
   try {
     const result = await platformApi.startReferralEmailVerification({ email: email.value, privacyNoticeVersion });
     referralNotice = result.status === "COOLDOWN"
@@ -873,6 +969,28 @@ async function startReferralEmailVerification(event: SubmitEvent, email: HTMLInp
     referralEmailDraft = draft;
     referralNotice = describeProfileError(error);
     renderProfileDialog(referralNotice);
+  } finally {
+    submit.disabled = false;
+  }
+}
+
+async function applyReferralCode(event: SubmitEvent, input: HTMLInputElement, submit: HTMLButtonElement): Promise<void> {
+  event.preventDefault();
+  if (!platformApi || !profile) {
+    return;
+  }
+  const code = storeReferralCandidate(input.value);
+  if (!code) {
+    input.setAttribute("aria-invalid", "true");
+    referralNotice = "Enter the 10-character referral code from the invite link.";
+    renderProfileDialog(referralNotice);
+    return;
+  }
+  input.removeAttribute("aria-invalid");
+  submit.disabled = true;
+  try {
+    await refreshReferralExperience();
+    renderProfileDialog(referralNotice ?? "Referral code saved.");
   } finally {
     submit.disabled = false;
   }
@@ -919,10 +1037,14 @@ async function copyReferralLink(button: HTMLButtonElement, inviteUrl: string | u
   if (!inviteUrl) {
     return;
   }
+  await copyReferralText(button, inviteUrl, "Invite link copied");
+}
+
+async function copyReferralText(button: HTMLButtonElement, value: string, successMessage: string): Promise<void> {
   const previous = button.textContent;
   try {
-    await navigator.clipboard.writeText(inviteUrl);
-    button.textContent = "Invite link copied";
+    await navigator.clipboard.writeText(value);
+    button.textContent = successMessage;
   } catch {
     button.textContent = "Copy unavailable";
   }
