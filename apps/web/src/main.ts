@@ -45,6 +45,10 @@ const platformApi = resolvePlatformApi();
 let profile: BlobProfile | null = null;
 let referralDashboard: ReferralDashboard | undefined;
 let referralNotice: string | undefined;
+// This draft exists only in the current page memory. It avoids making a
+// player retype an email after a transient delivery failure without putting
+// personal data in browser storage, URLs, or logs.
+let referralEmailDraft: { email: string; acceptedPrivacyNotice: boolean } | undefined;
 let availableWallets: AvailableWallet[] = [];
 let liveMetricsController: LiveMetricsController | undefined;
 
@@ -645,6 +649,7 @@ async function logoutProfile(button: HTMLButtonElement): Promise<void> {
     profile = null;
     referralDashboard = undefined;
     referralNotice = undefined;
+    referralEmailDraft = undefined;
     setProfileGameName(undefined);
     renderProfileTrigger();
     renderProfileDialog("You are signed out of BLOB. Your wallet itself remains connected in its extension.");
@@ -821,11 +826,13 @@ function renderReferralEmailEnrollment(card: HTMLElement, state: "NOT_STARTED" |
   email.maxLength = 254;
   email.required = true;
   email.placeholder = "you@example.com";
+  email.value = referralEmailDraft?.email ?? "";
   const consent = document.createElement("label");
   consent.className = "referral-consent";
   const accepted = document.createElement("input");
   accepted.type = "checkbox";
   accepted.required = true;
+  accepted.checked = referralEmailDraft?.acceptedPrivacyNotice ?? false;
   const consentText = document.createElement("span");
   consentText.append("I agree to the ");
   const privacyLink = document.createElement("a");
@@ -850,6 +857,7 @@ async function startReferralEmailVerification(event: SubmitEvent, email: HTMLInp
     return;
   }
   submit.disabled = true;
+  const draft = { email: email.value, acceptedPrivacyNotice: accepted.checked };
   try {
     const result = await platformApi.startReferralEmailVerification({ email: email.value, privacyNoticeVersion });
     referralNotice = result.status === "COOLDOWN"
@@ -857,10 +865,15 @@ async function startReferralEmailVerification(event: SubmitEvent, email: HTMLInp
       : result.status === "ALREADY_VERIFIED"
         ? "Your email is already verified."
         : "Verification code sent. Check your inbox and enter the six-digit code.";
+    referralEmailDraft = undefined;
     await refreshReferralExperience();
     renderProfileDialog(referralNotice);
   } catch (error) {
-    renderProfileDialog(describeProfileError(error));
+    referralEmailDraft = draft;
+    referralNotice = describeProfileError(error);
+    renderProfileDialog(referralNotice);
+  } finally {
+    submit.disabled = false;
   }
 }
 
@@ -1383,10 +1396,12 @@ function renderRoundResults(
     ? "YOUR RESULT: #" + mine.rank + " · " + Math.floor(mine.finalMass) + " MASS · " + mine.foodCollected + " FOOD · " + mine.eliminations + " ELIMS"
     : "Round result locked by the authoritative server.";
   if (mine) {
+    const shareUrl = referralDashboard?.inviteUrl ?? "https://blob.lat";
     shareButton.hidden = false;
-    shareButton.textContent = "Share result";
-    shareButton.dataset.shareText = "I finished #" + mine.rank + " in the BLOB Free Mode arena — "
-      + Math.floor(mine.finalMass) + " mass, " + mine.foodCollected + " food, " + mine.eliminations + " elims.\n\nEAT. GROW. SURVIVE.\nhttps://blob.lat";
+    shareButton.textContent = "Share on X";
+    shareButton.dataset.shareText = "I just finished #" + mine.rank + " in the @bloblat arena — "
+      + Math.floor(mine.finalMass) + " MASS, " + mine.foodCollected + " food collected, " + mine.eliminations + " eliminations."
+      + "\n\nEAT. GROW. SURVIVE.\nThe pit is live. Can you take the top spot?\n\n" + shareUrl;
   }
   nextRound.textContent = phase === "RESULTS" ? "NEXT MATCHMAKING STARTS SOON" : "LOCKING FINAL RESULT…";
 }
@@ -1398,15 +1413,20 @@ async function shareRoundResultText(button: HTMLButtonElement): Promise<void> {
   }
   const originalLabel = button.textContent;
   try {
-    if (navigator.share) {
-      await navigator.share({ title: "BLOB Free Mode result", text });
-      button.textContent = "Shared";
-    } else {
+    const shareWindow = window.open(
+      "https://x.com/intent/post?text=" + encodeURIComponent(text),
+      "_blank",
+      "noopener,noreferrer",
+    );
+    if (!shareWindow) {
       await navigator.clipboard.writeText(text);
-      button.textContent = "Copied";
+      button.textContent = "Post copied";
+    } else {
+      shareWindow.opener = null;
+      button.textContent = "X opened";
     }
   } catch {
-    button.textContent = "Share unavailable";
+    button.textContent = "Could not open X";
   }
   window.setTimeout(() => {
     button.textContent = originalLabel;

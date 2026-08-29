@@ -687,8 +687,26 @@ export class ArenaSimulation {
     const speed = this.config.baseMoveSpeed
       * Math.pow(this.config.startingMass / Math.max(player.mass, this.config.startingMass), 0.22)
       * (player.isBot ? this.config.botMoveSpeedMultiplier : 1);
-    player.x += normalizedX * speed * (elapsed / 1_000);
-    player.y += normalizedY * speed * (elapsed / 1_000);
+    const radius = radiusFromMass(player.mass);
+    const minimumX = Math.min(radius, this.world.width / 2);
+    const maximumX = this.world.width - minimumX;
+    const minimumY = Math.min(radius, this.world.height / 2);
+    const maximumY = this.world.height - minimumY;
+    let deltaX = normalizedX * speed * (elapsed / 1_000);
+    let deltaY = normalizedY * speed * (elapsed / 1_000);
+
+    // Preserve the component of an intentional diagonal move that remains
+    // inside the arena. A BLOB pressed against a wall therefore slides along
+    // it instead of appearing to stick whenever its target is beyond a
+    // boundary. The server still owns and clamps every final position.
+    if ((player.x <= minimumX && deltaX < 0) || (player.x >= maximumX && deltaX > 0)) {
+      deltaX = 0;
+    }
+    if ((player.y <= minimumY && deltaY < 0) || (player.y >= maximumY && deltaY > 0)) {
+      deltaY = 0;
+    }
+    player.x += deltaX;
+    player.y += deltaY;
     this.constrainPlayerToWorld(player);
   }
 

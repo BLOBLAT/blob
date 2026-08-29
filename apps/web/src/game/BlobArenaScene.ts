@@ -189,7 +189,9 @@ export class BlobArenaScene extends Phaser.Scene {
     this.cameras.main.setZoom(0.84);
     this.input.on("pointermove", this.onPointerMove, this);
     this.input.on("pointerdown", this.onPointerDown, this);
-    this.input.on("gameout", this.clearPointerIntent, this);
+    // `gameout` fires as soon as a desktop cursor reaches the canvas edge.
+    // It is not a deliberate stop command: retaining the last in-canvas
+    // target lets a BLOB reliably travel all the way to an arena boundary.
     document.addEventListener("visibilitychange", this.clearHiddenTabIntent);
     document.addEventListener("keydown", this.preventArenaArrowScroll, { passive: false });
     const keyboardPlugin = this.input.keyboard;
@@ -220,7 +222,6 @@ export class BlobArenaScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.input.off("pointermove", this.onPointerMove, this);
       this.input.off("pointerdown", this.onPointerDown, this);
-      this.input.off("gameout", this.clearPointerIntent, this);
       document.removeEventListener("visibilitychange", this.clearHiddenTabIntent);
       document.removeEventListener("keydown", this.preventArenaArrowScroll);
       this.sendIntentEvent?.remove();
@@ -327,12 +328,6 @@ export class BlobArenaScene extends Phaser.Scene {
       // Do not wait for the periodic heartbeat before the first directional
       // update. This is the critical path for responsive mouse steering.
       this.sendIntent();
-    }
-  }
-
-  private clearPointerIntent(): void {
-    if (!this.externalTouchInputActive && !this.hasKeyboardInput()) {
-      this.stopMouseSteering();
     }
   }
 

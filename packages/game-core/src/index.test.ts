@@ -203,6 +203,29 @@ describe("authoritative round lifecycle", () => {
     expect(mover.y).toBeGreaterThanOrEqual(radius);
   });
 
+  it("slides a player along a world boundary instead of sticking on a diagonal input", () => {
+    const simulation = new ArenaSimulation({ ...testConfig, foodMass: 1 });
+    simulation.addPlayer("one", "Blob One", 0);
+    simulation.addPlayer("two", "Blob Two", 0);
+    let now = startActive(simulation);
+    for (let step = 0; step < 10; step += 1) {
+      now += 50;
+      expect(simulation.setInput("one", { x: -1, y: 0 }, now)).toBe(true);
+      simulation.advance(now);
+    }
+    const againstLeftWall = player(simulation, "one");
+    const radius = radiusFromMass(againstLeftWall.mass);
+    expect(againstLeftWall.x).toBe(radius);
+
+    now += 50;
+    expect(simulation.setInput("one", { x: -1, y: 1 }, now)).toBe(true);
+    simulation.advance(now);
+    const afterDiagonalMove = player(simulation, "one");
+
+    expect(afterDiagonalMove.x).toBe(radius);
+    expect(afterDiagonalMove.y).toBeGreaterThan(againstLeftWall.y);
+  });
+
   it("tracks personal food, validates an eat, records death, and respawns", () => {
     const simulation = new ArenaSimulation({ ...testConfig, respawnDelayMs: 200 });
     simulation.addPlayer("one", "Blob One", 0);
