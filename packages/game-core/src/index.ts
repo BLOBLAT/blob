@@ -35,6 +35,12 @@ export interface ArenaConfig {
   foodRadius: number;
   baseMoveSpeed: number;
   minimumMassRatioToEat: number;
+  /**
+   * Extra server-owned capture allowance only when both BLOBs are pinned in
+   * the same world corner. It prevents a very large BLOB from being unable
+   * to reach a much smaller BLOB that has nowhere else to go.
+   */
+  cornerCaptureAssistRatio: number;
   absorbedMassPercent: number;
   respawnEnabled: boolean;
   respawnDelayMs: number;
@@ -109,6 +115,7 @@ export const DEFAULT_ARENA_CONFIG: ArenaConfig = {
   foodRadius: 7,
   baseMoveSpeed: 260,
   minimumMassRatioToEat: 1.25,
+  cornerCaptureAssistRatio: 0.45,
   absorbedMassPercent: 0.75,
   respawnEnabled: true,
   respawnDelayMs: 3_000,
@@ -222,6 +229,9 @@ export function createArenaConfig(overrides: Partial<ArenaConfig> = {}): ArenaCo
   }
   if (config.minimumMassRatioToEat <= 1) {
     throw new Error("minimumMassRatioToEat must be greater than 1");
+  }
+  if (config.cornerCaptureAssistRatio > 0.5) {
+    throw new Error("cornerCaptureAssistRatio cannot exceed 0.5");
   }
   if (config.absorbedMassPercent > 1) {
     throw new Error("absorbedMassPercent cannot exceed 1");
@@ -806,7 +816,9 @@ export class ArenaSimulation {
         }
         const winner = firstCanEat ? first : second;
         const loser = firstCanEat ? second : first;
-        if (Math.hypot(winner.x - loser.x, winner.y - loser.y) > radiusFromMass(winner.mass)) {
+        const winnerRadius = radiusFromMass(winner.mass);
+        const captureDistance = winnerRadius + this.cornerCaptureAssist(winner, loser, winnerRadius);
+        if (Math.hypot(winner.x - loser.x, winner.y - loser.y) > captureDistance) {
           continue;
         }
         winner.mass += loser.mass * this.config.absorbedMassPercent;
@@ -821,6 +833,27 @@ export class ArenaSimulation {
         this.events.push({ type: ServerEvent.PLAYER_DIED, playerId: loser.id, targetPlayerId: winner.id, matchId: this.matchId, roundId: this.roundId });
       }
     }
+  }
+
+  /**
+   * A circle whose centre must remain one radius from each wall cannot reach
+   * a small circle pinned in that same corner, even when it is enormously
+   * larger. The assist is deliberately unavailable along a single wall or in
+   * open space, so ordinary combat range never changes.
+   */
+  private cornerCaptureAssist(winner: SimulationPlayer, loser: SimulationPlayer, winnerRadius: number): number {
+    const loserRadius = radiusFromMass(loser.mass);
+    const tolerance = Math.max(4, Math.min(winnerRadius, loserRadius) * 0.12);
+    const sharesLeft = winner.x - winnerRadius <= tolerance && loser.x - loserRadius <= tolerance;
+    const sharesRight = this.world.width - (winner.x + winnerRadius) <= tolerance
+      && this.world.width - (loser.x + loserRadius) <= tolerance;
+    const sharesTop = winner.y - winnerRadius <= tolerance && loser.y - loserRadius <= tolerance;
+    const sharesBottom = this.world.height - (winner.y + winnerRadius) <= tolerance
+      && this.world.height - (loser.y + loserRadius) <= tolerance;
+
+    return (sharesLeft || sharesRight) && (sharesTop || sharesBottom)
+      ? winnerRadius * this.config.cornerCaptureAssistRatio
+      : 0;
   }
 
   private respawnPlayer(player: SimulationPlayer): void {

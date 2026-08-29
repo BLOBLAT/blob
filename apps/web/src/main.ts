@@ -41,6 +41,7 @@ let freeGameController: {
   clearTouchIntent(): void;
 } | undefined;
 let openingFreeArena = false;
+let freeArenaFullscreenCleanup: (() => void) | undefined;
 const platformApi = resolvePlatformApi();
 let profile: BlobProfile | null = null;
 let referralDashboard: ReferralDashboard | undefined;
@@ -999,6 +1000,9 @@ async function openFreeArena(): Promise<void> {
   arenaShell.innerHTML = `
     <div class="game-stage">
       <div class="game-canvas" id="game-canvas" aria-label="Live BLOB arena"></div>
+      <button class="game-fullscreen-toggle" id="game-fullscreen-toggle" type="button" aria-pressed="false" aria-label="Enter fullscreen gameplay" title="Fullscreen gameplay">
+        <span aria-hidden="true">⛶</span><span>Focus</span>
+      </button>
       <div class="game-hud" aria-label="Your current arena status">
         <div><span>MASS</span><strong id="game-mass">0</strong></div>
         <div><span>RANK</span><strong id="game-rank">—</strong></div>
@@ -1087,6 +1091,9 @@ async function openFreeArena(): Promise<void> {
   const joystickDock = requiredElement<HTMLElement>("#mobile-joystick-dock");
   const joystick = requiredElement<HTMLElement>("#mobile-joystick");
   const joystickKnob = requiredElement<HTMLElement>("#mobile-joystick-knob");
+  const fullscreenToggle = requiredElement<HTMLButtonElement>("#game-fullscreen-toggle");
+  freeArenaFullscreenCleanup?.();
+  freeArenaFullscreenCleanup = bindArenaFullscreen(arenaShell, fullscreenToggle);
   let touchHand = getPreferredTouchHand();
   const externalJoystick = bindExternalTouchJoystick(joystick, joystickKnob, () => freeGameController);
   renderTouchHandButton(joystickHandButton, joystickDock, touchHand);
@@ -1276,12 +1283,46 @@ function bindExternalTouchJoystick(
 }
 
 async function leaveFreeArena(): Promise<void> {
+  freeArenaFullscreenCleanup?.();
+  freeArenaFullscreenCleanup = undefined;
   const controller = freeGameController;
   freeGameController = undefined;
   await controller?.leave();
   openingFreeArena = false;
   renderFreeArenaLanding();
   setPlayButtonsDisabled(false);
+}
+
+function bindArenaFullscreen(target: HTMLElement, button: HTMLButtonElement): () => void {
+  const updateButton = (): void => {
+    const active = document.fullscreenElement === target;
+    target.classList.toggle("is-focus-mode", active);
+    button.setAttribute("aria-pressed", String(active));
+    button.setAttribute("aria-label", active ? "Exit fullscreen gameplay" : "Enter fullscreen gameplay");
+    button.title = active ? "Exit fullscreen gameplay" : "Fullscreen gameplay";
+    button.lastElementChild!.textContent = active ? "Exit" : "Focus";
+  };
+  const toggle = (): void => {
+    if (document.fullscreenElement === target) {
+      void document.exitFullscreen().catch(() => undefined);
+      return;
+    }
+    if (!target.requestFullscreen) {
+      return;
+    }
+    void target.requestFullscreen().catch(() => undefined);
+  };
+  button.addEventListener("click", toggle);
+  document.addEventListener("fullscreenchange", updateButton);
+  updateButton();
+  return () => {
+    button.removeEventListener("click", toggle);
+    document.removeEventListener("fullscreenchange", updateButton);
+    target.classList.remove("is-focus-mode");
+    if (document.fullscreenElement === target) {
+      void document.exitFullscreen().catch(() => undefined);
+    }
+  };
 }
 
 function renderLeaderboard(container: HTMLElement, players: Array<{ playerId: string; name: string; isBot: boolean; mass: number; kills: number; rank: number }>, localPlayerId: string | undefined): void {

@@ -257,6 +257,48 @@ describe("authoritative round lifecycle", () => {
     expect(player(simulation, "two").mass).toBe(simulation.config.startingMass);
   });
 
+  it("allows a large BLOB to finish a valid server-side capture in the same corner", () => {
+    const simulation = new ArenaSimulation({
+      ...testConfig,
+      width: 1_000,
+      height: 800,
+      maxWorldWidth: 1_000,
+      maxWorldHeight: 800,
+      foodMass: 1,
+    });
+    simulation.addPlayer("large", "Large Blob", 0);
+    simulation.addPlayer("small", "Small Blob", 0);
+    const now = startActive(simulation);
+
+    // Set up a deterministic representation of the geometrically awkward
+    // case: both BLOBs are constrained by the same top-left world corner.
+    // The next real simulation tick resolves the collision.
+    const internals = simulation as unknown as {
+      players: Map<string, {
+        x: number;
+        y: number;
+        mass: number;
+        spawnProtectedUntil: number;
+      }>;
+    };
+    const large = internals.players.get("large");
+    const small = internals.players.get("small");
+    if (!large || !small) {
+      throw new Error("Expected controlled simulation players");
+    }
+    large.mass = 5_000;
+    large.x = radiusFromMass(large.mass);
+    large.y = radiusFromMass(large.mass);
+    large.spawnProtectedUntil = 0;
+    small.x = radiusFromMass(small.mass);
+    small.y = radiusFromMass(small.mass);
+    small.spawnProtectedUntil = 0;
+
+    simulation.advance(now + 50);
+    expect(player(simulation, "small").alive).toBe(false);
+    expect(player(simulation, "large").kills).toBe(1);
+  });
+
   it("uses survival time and then join sequence as deterministic round tie breakers", () => {
     const simulation = new ArenaSimulation({
       ...testConfig,

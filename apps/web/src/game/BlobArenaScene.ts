@@ -122,6 +122,8 @@ interface RenderedPlayerPosition {
   y: number;
   targetX: number;
   targetY: number;
+  motionX: number;
+  motionY: number;
   alive: boolean;
 }
 
@@ -140,7 +142,7 @@ interface BlobContourPoint {
 
 interface BlobExpression {
   mood: BlobMood;
-  facingAngle: number;
+  lookAngle?: number;
   pullAngle?: number;
   pullStrength: number;
 }
@@ -514,6 +516,8 @@ export class BlobArenaScene extends Phaser.Scene {
           y: player.y,
           targetX: player.x,
           targetY: player.y,
+          motionX: 0,
+          motionY: 0,
           alive: player.alive,
         });
         return;
@@ -527,8 +531,16 @@ export class BlobArenaScene extends Phaser.Scene {
       const playerInterpolationAlpha = player.id === this.room.sessionId
         ? Math.min(1, interpolationAlpha * 1.45)
         : interpolationAlpha;
+      const oldX = previous.x;
+      const oldY = previous.y;
       previous.x = Phaser.Math.Linear(previous.x, previous.targetX, playerInterpolationAlpha);
       previous.y = Phaser.Math.Linear(previous.y, previous.targetY, playerInterpolationAlpha);
+      // Use smoothed rendered displacement for purely visual deformation.
+      // Reading target - rendered position here makes faces and contours jump
+      // every time Colyseus publishes a patch, despite smooth body movement.
+      const frameScale = Math.max(0.5, delta / (1_000 / 60));
+      previous.motionX = Phaser.Math.Linear(previous.motionX, (previous.x - oldX) / frameScale, 0.24);
+      previous.motionY = Phaser.Math.Linear(previous.motionY, (previous.y - oldY) / frameScale, 0.24);
     });
     for (const playerId of this.renderedPlayerPositions.keys()) {
       if (!presentPlayerIds.has(playerId)) {
@@ -615,8 +627,12 @@ export class BlobArenaScene extends Phaser.Scene {
     const { x, y } = position;
     const radius = Math.max(18, Math.sqrt(Math.max(0, player.mass)) * 3.2);
     const color = colorForPlayer(player.id);
-    const wobble = player.alive ? Math.sin((time + x + y) / 145) * Math.min(2.2, radius * 0.05) : 0;
-    const expression = this.getBlobExpression(player, position, motion, players, radius);
+    // Do not include position in the animation phase: a moving BLOB would
+    // otherwise visibly jump whenever its server-owned position changes.
+    const wobble = player.alive
+      ? Math.sin(time / 240 + stableHash(player.id) * 0.017) * Math.min(0.9, radius * 0.01)
+      : 0;
+    const expression = this.getBlobExpression(player, position, players, radius);
     const contour = this.getBlobContour(player, position, radius, time, motion, expression, worldWidth, worldHeight);
     this.graphics.fillStyle(0x000000, 0.18);
     this.graphics.fillEllipse(x + 5, y + radius * 0.3, radius * 2.04, radius * 1.58);
@@ -673,8 +689,8 @@ export class BlobArenaScene extends Phaser.Scene {
       return { x: 0, y: 0 };
     }
     return {
-      x: rendered.targetX - rendered.x,
-      y: rendered.targetY - rendered.y,
+      x: rendered.motionX,
+      y: rendered.motionY,
     };
   }
 
@@ -686,14 +702,9 @@ export class BlobArenaScene extends Phaser.Scene {
   private getBlobExpression(
     player: NetworkPlayer,
     position: ScreenPosition,
-    motion: ScreenPosition,
     players: PlayerRenderSnapshot[],
     radius: number,
   ): BlobExpression {
-    const fallbackFacingAngle = Math.atan2(motion.y, motion.x);
-    const facingAngle = Number.isFinite(fallbackFacingAngle) && Math.hypot(motion.x, motion.y) > 0.6
-      ? fallbackFacingAngle
-      : Math.PI / 2;
     let nearestThreat: { angle: number; strength: number } | undefined;
     let nearestPrey: { angle: number; strength: number } | undefined;
 
@@ -730,7 +741,7 @@ export class BlobArenaScene extends Phaser.Scene {
     if (nearestThreat && nearestThreat.strength >= 0.08) {
       return {
         mood: "PANIC",
-        facingAngle: nearestThreat.angle,
+        lookAngle: nearestThreat.angle,
         pullAngle: nearestThreat.angle,
         pullStrength: Phaser.Math.Clamp(nearestThreat.strength * 0.75, 0, 0.24),
       };
@@ -738,11 +749,11 @@ export class BlobArenaScene extends Phaser.Scene {
     if (nearestPrey && nearestPrey.strength >= 0.08) {
       return {
         mood: "HUNT",
-        facingAngle: nearestPrey.angle,
+        lookAngle: nearestPrey.angle,
         pullStrength: 0,
       };
     }
-    return { mood: "CALM", facingAngle, pullStrength: 0 };
+    return { mood: "CALM", pullStrength: 0 };
   }
 
   private getBlobContour(
@@ -756,7 +767,7 @@ export class BlobArenaScene extends Phaser.Scene {
     worldHeight: number,
   ): BlobContourPoint[] {
     const motionLength = Math.hypot(motion.x, motion.y);
-    const motionAngle = motionLength > 0.6 ? Math.atan2(motion.y, motion.x) : expression.facingAngle;
+    const motionAngle = motionLength > 0.6 ? Math.atan2(motion.y, motion.x) : Math.PI / 2;
     const motionStretch = Phaser.Math.Clamp(motionLength / Math.max(18, radius * 0.45), 0, 0.11);
     const edgeZone = Math.max(12, radius * 0.46);
     const left = Phaser.Math.Clamp(1 - (position.x - radius) / edgeZone, 0, 1);
@@ -769,15 +780,17 @@ export class BlobArenaScene extends Phaser.Scene {
     const wallAngle = wallPressure > 0.01 ? Math.atan2(normalY, normalX) : 0;
     const identityPhase = stableHash(player.id) % 628;
     const points: BlobContourPoint[] = [];
-    const segments = 26;
+    // More points remove the faceted look without creating enough geometry to
+    // matter for a small arena roster.
+    const segments = 52;
     for (let index = 0; index < segments; index += 1) {
       const angle = (Math.PI * 2 * index) / segments;
       const travelAlignment = Math.cos(angle - motionAngle);
       const wallAlignment = Math.cos(angle - wallAngle);
       const pullAlignment = expression.pullAngle === undefined ? 0 : Math.max(0, Math.cos(angle - expression.pullAngle));
       const livingWobble = player.alive
-        ? Math.sin(time / 170 + identityPhase + index * 1.71) * radius * 0.018
-          + Math.sin(time / 310 + identityPhase * 0.3 + index * 2.13) * radius * 0.012
+        ? Math.sin(time / 190 + identityPhase + index * 1.71) * radius * 0.007
+          + Math.sin(time / 370 + identityPhase * 0.3 + index * 2.13) * radius * 0.005
         : 0;
       const travelScale = 1 + motionStretch * (travelAlignment * travelAlignment * 2 - 0.65);
       const wallScale = 1 - wallPressure * 0.18 * (wallAlignment * wallAlignment)
@@ -793,80 +806,89 @@ export class BlobArenaScene extends Phaser.Scene {
   }
 
   private drawBlobFace(x: number, y: number, radius: number, expression: BlobExpression, time: number, id: string): void {
-    const forwardX = Math.cos(expression.facingAngle);
-    const forwardY = Math.sin(expression.facingAngle);
-    const sideX = -forwardY;
-    const sideY = forwardX;
-    const faceX = x + forwardX * radius * 0.1;
-    const faceY = y + forwardY * radius * 0.07;
+    // Keep facial features upright in screen space. Rotating axis-aligned
+    // ellipses around a changing movement vector is what previously detached
+    // eyes, teeth and brows from each other on network updates.
+    const faceX = x;
+    const faceY = y;
     const eyeSpread = radius * 0.22;
-    const eyeForward = radius * 0.02;
     const eyeWidth = Math.max(6, radius * (expression.mood === "PANIC" ? 0.19 : 0.16));
     const eyeHeight = Math.max(6, radius * (expression.mood === "PANIC" ? 0.22 : 0.17));
     const blink = ((time + stableHash(id) * 13) % 3_900) < 115;
+    const lookMagnitude = Math.max(2.2, radius * 0.045);
+    const lookX = expression.lookAngle === undefined ? 0 : Math.cos(expression.lookAngle) * lookMagnitude;
+    const lookY = expression.lookAngle === undefined ? 0 : Math.sin(expression.lookAngle) * lookMagnitude;
     const leftEye = {
-      x: faceX - sideX * eyeSpread + forwardX * eyeForward,
-      y: faceY - sideY * eyeSpread + forwardY * eyeForward,
+      x: faceX - eyeSpread,
+      y: faceY - radius * 0.12,
     };
     const rightEye = {
-      x: faceX + sideX * eyeSpread + forwardX * eyeForward,
-      y: faceY + sideY * eyeSpread + forwardY * eyeForward,
+      x: faceX + eyeSpread,
+      y: faceY - radius * 0.12,
     };
     this.graphics.fillStyle(0xfff7f2, 0.94);
     if (blink) {
       this.graphics.lineStyle(Math.max(2, radius * 0.045), 0x260719, 0.9);
-      this.graphics.lineBetween(leftEye.x - sideX * eyeWidth * 0.32, leftEye.y - sideY * eyeWidth * 0.32, leftEye.x + sideX * eyeWidth * 0.32, leftEye.y + sideY * eyeWidth * 0.32);
-      this.graphics.lineBetween(rightEye.x - sideX * eyeWidth * 0.32, rightEye.y - sideY * eyeWidth * 0.32, rightEye.x + sideX * eyeWidth * 0.32, rightEye.y + sideY * eyeWidth * 0.32);
+      this.graphics.lineBetween(leftEye.x - eyeWidth * 0.32, leftEye.y, leftEye.x + eyeWidth * 0.32, leftEye.y);
+      this.graphics.lineBetween(rightEye.x - eyeWidth * 0.32, rightEye.y, rightEye.x + eyeWidth * 0.32, rightEye.y);
     } else {
       this.graphics.fillEllipse(leftEye.x, leftEye.y, eyeWidth, eyeHeight);
       this.graphics.fillEllipse(rightEye.x, rightEye.y, eyeWidth, eyeHeight);
-      const pupilForward = expression.mood === "PANIC" ? radius * 0.035 : radius * 0.075;
       const pupilRadius = Math.max(2.8, radius * 0.07);
       this.graphics.fillStyle(0x260719, 1);
-      this.graphics.fillCircle(leftEye.x + forwardX * pupilForward, leftEye.y + forwardY * pupilForward, pupilRadius);
-      this.graphics.fillCircle(rightEye.x + forwardX * pupilForward, rightEye.y + forwardY * pupilForward, pupilRadius);
+      this.graphics.fillCircle(leftEye.x + lookX, leftEye.y + lookY, pupilRadius);
+      this.graphics.fillCircle(rightEye.x + lookX, rightEye.y + lookY, pupilRadius);
       this.graphics.fillStyle(0xffffff, 0.7);
-      this.graphics.fillCircle(leftEye.x + forwardX * pupilForward - sideX * pupilRadius * 0.24, leftEye.y + forwardY * pupilForward - sideY * pupilRadius * 0.24, Math.max(1, pupilRadius * 0.28));
-      this.graphics.fillCircle(rightEye.x + forwardX * pupilForward - sideX * pupilRadius * 0.24, rightEye.y + forwardY * pupilForward - sideY * pupilRadius * 0.24, Math.max(1, pupilRadius * 0.28));
+      this.graphics.fillCircle(leftEye.x + lookX - pupilRadius * 0.24, leftEye.y + lookY - pupilRadius * 0.24, Math.max(1, pupilRadius * 0.28));
+      this.graphics.fillCircle(rightEye.x + lookX - pupilRadius * 0.24, rightEye.y + lookY - pupilRadius * 0.24, Math.max(1, pupilRadius * 0.28));
     }
 
+    const browY = faceY - radius * 0.31;
+    this.graphics.lineStyle(Math.max(1.6, radius * 0.035), 0x260719, 0.95);
     if (expression.mood === "HUNT") {
-      this.graphics.lineStyle(Math.max(2, radius * 0.04), 0x260719, 0.95);
-      this.graphics.lineBetween(leftEye.x - sideX * eyeWidth * 0.5 - forwardX * eyeHeight * 0.22, leftEye.y - sideY * eyeWidth * 0.5 - forwardY * eyeHeight * 0.22, leftEye.x + sideX * eyeWidth * 0.4 + forwardX * eyeHeight * 0.16, leftEye.y + sideY * eyeWidth * 0.4 + forwardY * eyeHeight * 0.16);
-      this.graphics.lineBetween(rightEye.x + sideX * eyeWidth * 0.5 - forwardX * eyeHeight * 0.22, rightEye.y + sideY * eyeWidth * 0.5 - forwardY * eyeHeight * 0.22, rightEye.x - sideX * eyeWidth * 0.4 + forwardX * eyeHeight * 0.16, rightEye.y - sideY * eyeWidth * 0.4 + forwardY * eyeHeight * 0.16);
+      // Angry brows stay visibly above the eyes and slope toward the nose.
+      this.graphics.lineBetween(leftEye.x - eyeWidth * 0.56, browY - eyeHeight * 0.22, leftEye.x + eyeWidth * 0.48, browY + eyeHeight * 0.2);
+      this.graphics.lineBetween(rightEye.x - eyeWidth * 0.48, browY + eyeHeight * 0.2, rightEye.x + eyeWidth * 0.56, browY - eyeHeight * 0.22);
+    } else if (expression.mood === "PANIC") {
+      this.graphics.lineBetween(leftEye.x - eyeWidth * 0.46, browY + eyeHeight * 0.16, leftEye.x + eyeWidth * 0.46, browY - eyeHeight * 0.16);
+      this.graphics.lineBetween(rightEye.x - eyeWidth * 0.46, browY - eyeHeight * 0.16, rightEye.x + eyeWidth * 0.46, browY + eyeHeight * 0.16);
+    } else {
+      // A slight asymmetry keeps even relaxed BLOBs playfully unsettling.
+      this.graphics.lineBetween(leftEye.x - eyeWidth * 0.42, browY, leftEye.x + eyeWidth * 0.42, browY - eyeHeight * 0.1);
+      this.graphics.lineBetween(rightEye.x - eyeWidth * 0.4, browY - eyeHeight * 0.1, rightEye.x + eyeWidth * 0.4, browY + eyeHeight * 0.04);
     }
 
-    const mouthX = faceX + forwardX * radius * 0.32;
-    const mouthY = faceY + forwardY * radius * 0.32;
-    const mouthWidth = radius * (expression.mood === "HUNT" ? 0.54 : 0.46);
-    const mouthHeight = radius * (expression.mood === "PANIC" ? 0.3 : 0.21);
+    const mouthX = faceX + Math.sin(time / 520 + stableHash(id) * 0.11) * radius * 0.012;
+    const mouthY = faceY + radius * 0.28;
+    const mouthWidth = radius * (expression.mood === "HUNT" ? 0.58 : expression.mood === "PANIC" ? 0.5 : 0.48);
+    const mouthHeight = radius * (expression.mood === "PANIC" ? 0.31 : expression.mood === "HUNT" ? 0.25 : 0.2);
     this.graphics.fillStyle(0x260719, 0.98);
     this.graphics.fillEllipse(mouthX, mouthY, mouthWidth, mouthHeight);
     this.graphics.fillStyle(0xfff7f2, 0.96);
-    const toothWidth = Math.max(3, mouthWidth * 0.16);
-    const toothHeight = Math.max(3, mouthHeight * 0.42);
-    const toothCount = expression.mood === "HUNT" ? 4 : expression.mood === "PANIC" ? 3 : 3;
+    const toothWidth = Math.max(3, mouthWidth * 0.12);
+    const toothHeight = Math.max(3, mouthHeight * 0.68);
+    const toothCount = expression.mood === "HUNT" ? 4 : expression.mood === "PANIC" ? 3 : 2;
     for (let index = 0; index < toothCount; index += 1) {
       const spread = (index / (toothCount - 1) - 0.5) * mouthWidth * 0.62;
-      const toothX = mouthX + sideX * spread;
-      const toothY = mouthY + sideY * spread - forwardY * mouthHeight * 0.32;
+      const toothX = mouthX + spread;
+      const toothTop = mouthY - mouthHeight * 0.35;
       this.graphics.fillTriangle(
-        toothX - sideX * toothWidth / 2,
-        toothY - sideY * toothWidth / 2,
-        toothX + sideX * toothWidth / 2,
-        toothY + sideY * toothWidth / 2,
-        toothX + forwardX * toothHeight,
-        toothY + forwardY * toothHeight,
+        toothX - toothWidth / 2,
+        toothTop,
+        toothX + toothWidth / 2,
+        toothTop,
+        toothX,
+        toothTop + toothHeight,
       );
-      if (expression.mood === "HUNT" && index % 2 === 0) {
-        const lowerY = mouthY + sideY * spread + forwardY * mouthHeight * 0.22;
+      if ((expression.mood === "HUNT" && index % 2 === 0) || (expression.mood === "PANIC" && index === 1)) {
+        const toothBottom = mouthY + mouthHeight * 0.34;
         this.graphics.fillTriangle(
-          toothX - sideX * toothWidth * 0.4,
-          lowerY - sideY * toothWidth * 0.4,
-          toothX + sideX * toothWidth * 0.4,
-          lowerY + sideY * toothWidth * 0.4,
-          toothX - forwardX * toothHeight * 0.75,
-          lowerY - forwardY * toothHeight * 0.75,
+          toothX - toothWidth * 0.4,
+          toothBottom,
+          toothX + toothWidth * 0.4,
+          toothBottom,
+          toothX,
+          toothBottom - toothHeight * 0.68,
         );
       }
     }
