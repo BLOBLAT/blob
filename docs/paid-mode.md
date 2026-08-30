@@ -75,6 +75,14 @@ operational public keys are ineligible to enter the match, so neither a
 governance key, controller, result-attestation authority, nor fee-recipient
 owner can appear in the funded player or winner roster.
 
+Before any eventual controlled deployment, the server-only
+`escrow-instruction-plan.ts` converts persisted BLOB terms and resolved
+governance roles into the exact `create_match` fields. It domain-separates the
+opaque match and round hashes, requires whole-second timestamps (the chain's
+clock precision), then asks the matching hash module for the on-chain rules
+commitment. It has no Anchor client, wallet signer, browser export, or network
+side effect.
+
 The implemented instructions are deliberately narrow:
 
 - `enter_match` creates one PDA entry per wallet and transfers exactly the
