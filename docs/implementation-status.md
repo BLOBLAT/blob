@@ -276,8 +276,11 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   governance authority, controller, result authority, and treasury must now
   be distinct roles.
 - Ran `cargo test --manifest-path programs/blob-escrow/Cargo.toml --locked`:
-  15 escrow host-side tests passed. Build output was kept in and removed from
-  the Windows temporary directory.
+  16 escrow host-side tests passed. The suite includes an exhaustive
+  conservation regression across every disclosed stake tier, six-to-32 player
+  rosters, all valid one-per-player revive counts, and both permitted
+  payout-delivery-fee settings. Build output was kept in and removed from the
+  Windows temporary directory.
 - Added and passed `programs/blob-escrow/scripts/localnet-smoke.sh`: the
   program builds against Solana's SBF runtime and is deployed and queried on
   an ephemeral local validator. The checked-in `Cargo.lock` intentionally pins

@@ -1450,6 +1450,59 @@ mod tests {
     }
 
     #[test]
+    fn conserves_every_disclosed_pool_across_tiers_players_and_revives() {
+        // Exercise every supported stake, every permitted roster size, and
+        // every possible count of one-per-player revives. This mirrors the
+        // full contribution range reachable through the on-chain instructions
+        // without relying on browser or off-chain arithmetic.
+        for entry_amount in SUPPORTED_STAKE_TIERS_BASE_UNITS {
+            for participant_count in MINIMUM_PLAYERS..=MAX_PLAYERS {
+                for confirmed_revives in 0..=participant_count {
+                    let total_contributions = entry_amount
+                        .checked_mul(participant_count as u64)
+                        .unwrap()
+                        .checked_add(
+                            REBUY_AMOUNT_BASE_UNITS
+                                .checked_mul(confirmed_revives as u64)
+                                .unwrap(),
+                        )
+                        .unwrap();
+
+                    for delivery_fee_bps in [0, MAX_PAYOUT_DELIVERY_FEE_BPS] {
+                        let settlement = calculate_settlement(
+                            total_contributions,
+                            participant_count,
+                            entry_amount,
+                            PLATFORM_FEE_BPS,
+                            delivery_fee_bps,
+                            PARTICIPATION_REBATE_BPS,
+                            DEFAULT_PAYOUT_BPS,
+                        )
+                        .unwrap();
+
+                        let distributed = settlement
+                            .platform_fee
+                            .checked_add(settlement.payout_delivery_fee_total)
+                            .unwrap()
+                            .checked_add(settlement.participation_rebate_pool)
+                            .unwrap()
+                            .checked_add(settlement.payouts.iter().sum::<u64>())
+                            .unwrap();
+                        assert_eq!(distributed, total_contributions);
+                        assert_eq!(
+                            settlement.participation_rebate_pool,
+                            participation_rebate_amount(entry_amount, PARTICIPATION_REBATE_BPS,)
+                                .unwrap()
+                                .checked_mul((participant_count - WINNER_COUNT as u16) as u64)
+                                .unwrap()
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn rejects_invalid_fee_or_payout_splits() {
         assert!(calculate_settlement(
             100,
