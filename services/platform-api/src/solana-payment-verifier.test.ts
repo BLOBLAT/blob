@@ -110,6 +110,44 @@ describe("Solana USDC verification", () => {
     await expect(missingBlockTime.verifyFinalizedUsdcTransfer(input()))
       .rejects.toMatchObject({ code: "PAYMENT_NOT_FINALIZED" });
   });
+
+  it("bounds a stalled RPC request and fails closed", async () => {
+    const verifier = new SolanaPaymentVerifier({
+      rpcUrl: "https://rpc.example.test",
+      rpcTimeoutMs: 1,
+      fetch: async (_input, init) => new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          reject(new DOMException("RPC timeout", "AbortError"));
+        }, { once: true });
+      })
+    });
+
+    await expect(verifier.verifyFinalizedUsdcTransfer(input()))
+      .rejects.toMatchObject({ code: "RPC_UNAVAILABLE" });
+  });
+
+  it("keeps the RPC timeout active while a response body stalls", async () => {
+    const verifier = new SolanaPaymentVerifier({
+      rpcUrl: "https://rpc.example.test",
+      rpcTimeoutMs: 1,
+      fetch: async (_input, init) => new Response(new ReadableStream<Uint8Array>({
+        start(controller) {
+          init?.signal?.addEventListener("abort", () => {
+            controller.error(new DOMException("RPC timeout", "AbortError"));
+          }, { once: true });
+        }
+      }), { headers: { "Content-Type": "application/json" } })
+    });
+
+    await expect(verifier.verifyFinalizedUsdcTransfer(input()))
+      .rejects.toMatchObject({ code: "RPC_UNAVAILABLE" });
+  });
+
+  it("rejects a block time outside the valid JavaScript Date range", async () => {
+    const malformedTime = createVerifier({ ...createTransaction(), blockTime: 9_000_000_000_000 });
+    await expect(malformedTime.verifyFinalizedUsdcTransfer(input()))
+      .rejects.toMatchObject({ code: "PAYMENT_NOT_FINALIZED" });
+  });
 });
 
 function input() {

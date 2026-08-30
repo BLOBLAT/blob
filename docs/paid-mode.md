@@ -117,7 +117,9 @@ Base58-decodes public keys to exactly 32 bytes and transaction signatures to
 exactly 64 bytes; strings that merely resemble Solana references are rejected.
 It uses the finalized transaction's chain `blockTime`, never API wall-clock
 time, for funding-deadline decisions and rejects a transaction without a valid
-block time.
+block time. RPC requests are aborted after a private bounded timeout (eight
+seconds by default), and malformed timestamps outside JavaScript's valid date
+range fail closed.
 
 The internal `PrismaPaidEntryPaymentRepository` atomically records that
 verified receipt with the exact reserved entry. It permits funding only while

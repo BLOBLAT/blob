@@ -205,6 +205,10 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   metadata proves that the exact transfer source account belongs to the
   signed wallet. A delegated or otherwise unproven source account cannot
   create a BLOB paid-match admission credit.
+- The verifier now bounds each private Solana RPC request to eight seconds by
+  default and rejects malformed chain timestamps outside JavaScript's valid
+  date range. A stalled RPC can therefore only fail an inactive admission
+  attempt; it cannot hang a process worker or become a valid receipt.
 - Historical note: the initial 0.01 USDC minimum was later superseded by the
   immutable disclosed 0.10 / 1 / 5 / 10 USDC stake tiers. The six-player
   minimum and positive top-three payout basis points still prevent any

@@ -22,16 +22,24 @@ export interface VerifiedSolanaUsdcTransfer {
 export interface SolanaRpcVerifierOptions {
   rpcUrl: string;
   fetch?: typeof fetch;
+  /**
+   * A hostile or unavailable RPC must not hold a paid-entry verification
+   * request open indefinitely. This is private service configuration, never
+   * a browser-controlled value.
+   */
+  rpcTimeoutMs?: number;
 }
 
 export class SolanaPaymentVerifier {
   private readonly fetch: typeof fetch;
+  private readonly rpcTimeoutMs: number;
 
   constructor(private readonly options: SolanaRpcVerifierOptions) {
     if (!isHttpsUrl(options.rpcUrl)) {
       throw new Error("SOLANA_RPC_URL must be an HTTPS URL.");
     }
     this.fetch = options.fetch ?? fetch;
+    this.rpcTimeoutMs = normalizeRpcTimeout(options.rpcTimeoutMs);
   }
 
   async verifyFinalizedUsdcTransfer(input: VerifySolanaUsdcTransferInput): Promise<VerifiedSolanaUsdcTransfer> {
@@ -46,7 +54,8 @@ export class SolanaPaymentVerifier {
     const blockTime = transaction?.blockTime;
     const finalizedAtMs = typeof blockTime === "number" ? blockTime * 1_000 : NaN;
     if (!transaction || transaction.meta?.err !== null || typeof slot !== "number" || !Number.isSafeInteger(slot) || slot < 0
-      || typeof blockTime !== "number" || !Number.isSafeInteger(blockTime) || blockTime < 0 || !Number.isSafeInteger(finalizedAtMs)) {
+      || typeof blockTime !== "number" || !Number.isSafeInteger(blockTime) || blockTime < 0
+      || !Number.isSafeInteger(finalizedAtMs) || Math.abs(finalizedAtMs) > MAX_VALID_DATE_MS) {
       throw new SolanaPaymentVerificationError("PAYMENT_NOT_FINALIZED", "USDC payment is not finalized successfully.");
     }
     if (!hasSigner(transaction.transaction?.message?.accountKeys, input.senderWalletAddress)) {
@@ -65,11 +74,13 @@ export class SolanaPaymentVerifier {
   }
 
   private async getTransaction(signature: string): Promise<RpcTransaction | null> {
-    let response: Response;
+    const abortController = new AbortController();
+    const timeout = setTimeout(() => abortController.abort(), this.rpcTimeoutMs);
     try {
-      response = await this.fetch(this.options.rpcUrl, {
+      const response = await this.fetch(this.options.rpcUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: abortController.signal,
         body: JSON.stringify({
           jsonrpc: "2.0",
           id: "blob-payment-verification",
@@ -77,17 +88,32 @@ export class SolanaPaymentVerifier {
           params: [signature, { commitment: "finalized", encoding: "jsonParsed", maxSupportedTransactionVersion: 0 }]
         })
       });
-    } catch {
+      if (!response.ok) {
+        throw new SolanaPaymentVerificationError("RPC_UNAVAILABLE", "Could not reach the Solana verifier.");
+      }
+      // Keep the same abort signal alive while parsing the response body.
+      // A peer that sends only headers must not pin an API worker forever.
+      let payload: { result?: RpcTransaction | null; error?: unknown } | null;
+      try {
+        payload = await response.json() as { result?: RpcTransaction | null; error?: unknown } | null;
+      } catch (error) {
+        if (abortController.signal.aborted) {
+          throw error;
+        }
+        throw new SolanaPaymentVerificationError("RPC_INVALID_RESPONSE", "Solana verifier returned an invalid response.");
+      }
+      if (!payload || payload.error) {
+        throw new SolanaPaymentVerificationError("RPC_INVALID_RESPONSE", "Solana verifier returned an invalid response.");
+      }
+      return payload.result ?? null;
+    } catch (error) {
+      if (error instanceof SolanaPaymentVerificationError) {
+        throw error;
+      }
       throw new SolanaPaymentVerificationError("RPC_UNAVAILABLE", "Could not reach the Solana verifier.");
+    } finally {
+      clearTimeout(timeout);
     }
-    if (!response.ok) {
-      throw new SolanaPaymentVerificationError("RPC_UNAVAILABLE", "Could not reach the Solana verifier.");
-    }
-    const payload = await response.json().catch(() => null) as { result?: RpcTransaction | null; error?: unknown } | null;
-    if (!payload || payload.error) {
-      throw new SolanaPaymentVerificationError("RPC_INVALID_RESPONSE", "Solana verifier returned an invalid response.");
-    }
-    return payload.result ?? null;
   }
 }
 
@@ -172,6 +198,19 @@ function accountKeyAddress(account: unknown): string | undefined {
 }
 
 const MAX_SPL_TOKEN_AMOUNT = 18_446_744_073_709_551_615n;
+const MAX_VALID_DATE_MS = 8_640_000_000_000_000;
+const DEFAULT_RPC_TIMEOUT_MS = 8_000;
+const MAX_RPC_TIMEOUT_MS = 30_000;
+
+function normalizeRpcTimeout(value: number | undefined): number {
+  if (value === undefined) {
+    return DEFAULT_RPC_TIMEOUT_MS;
+  }
+  if (!Number.isSafeInteger(value) || value < 1 || value > MAX_RPC_TIMEOUT_MS) {
+    throw new Error("Solana RPC timeout must be an integer between 1 and 30000 milliseconds.");
+  }
+  return value;
+}
 
 function assertPositiveAmount(value: unknown): asserts value is bigint {
   if (typeof value !== "bigint" || value <= 0n || value > MAX_SPL_TOKEN_AMOUNT) {
