@@ -4,6 +4,7 @@ use anchor_spl::{
     token::ID as LEGACY_TOKEN_PROGRAM_ID,
     token_interface::{transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked},
 };
+use solana_sha256_hasher::hashv;
 
 declare_id!("11111111111111111111111111111111");
 
@@ -114,6 +115,34 @@ pub mod blob_escrow {
         require!(
             match_id_hash != [0; 32] && round_id_hash != [0; 32] && rules_hash != [0; 32],
             EscrowError::InvalidIdentifierHash
+        );
+        // The controller cannot attach an arbitrary opaque rules commitment.
+        // Bind the exact immutable creation inputs, fixed native-USDC mint,
+        // and all escrow role keys into a versioned canonical hash.
+        let expected_rules_hash = canonical_rules_hash(
+            match_id_hash,
+            round_id_hash,
+            ctx.accounts.native_usdc_mint.key(),
+            ctx.accounts.platform_config.authority,
+            ctx.accounts.controller.key(),
+            ctx.accounts.platform_config.result_authority,
+            ctx.accounts.platform_config.treasury,
+            entry_amount,
+            payout_delivery_fee_bps,
+            revive_enabled,
+            revive_amount,
+            participation_rebate_bps,
+            payout_bps,
+            minimum_players,
+            maximum_players,
+            funding_deadline_at,
+            round_duration_seconds,
+            revive_window_seconds,
+            revive_cutoff_seconds,
+        );
+        require!(
+            rules_hash == expected_rules_hash,
+            EscrowError::RulesHashMismatch
         );
         let escrow = &mut ctx.accounts.match_escrow;
         escrow.version = 3;
@@ -976,6 +1005,74 @@ fn validate_funding_deadline(now: i64, funding_deadline_at: i64) -> Result<()> {
     Ok(())
 }
 
+/// Versioned binary commitment for every immutable `create_match` input.
+/// Integers are little-endian. The matching server-only implementation is
+/// `services/platform-api/src/escrow-rules-hash.ts`.
+#[allow(clippy::too_many_arguments)]
+fn canonical_rules_hash(
+    match_id_hash: [u8; 32],
+    round_id_hash: [u8; 32],
+    native_usdc_mint: Pubkey,
+    platform_authority: Pubkey,
+    controller: Pubkey,
+    result_authority: Pubkey,
+    treasury: Pubkey,
+    entry_amount: u64,
+    payout_delivery_fee_bps: u16,
+    revive_enabled: bool,
+    revive_amount: u64,
+    participation_rebate_bps: u16,
+    payout_bps: [u16; 3],
+    minimum_players: u16,
+    maximum_players: u16,
+    funding_deadline_at: i64,
+    round_duration_seconds: i64,
+    revive_window_seconds: i64,
+    revive_cutoff_seconds: i64,
+) -> [u8; 32] {
+    let entry_amount_bytes = entry_amount.to_le_bytes();
+    let platform_fee_bps_bytes = PLATFORM_FEE_BPS.to_le_bytes();
+    let payout_delivery_fee_bps_bytes = payout_delivery_fee_bps.to_le_bytes();
+    let revive_enabled_byte = [u8::from(revive_enabled)];
+    let revive_amount_bytes = revive_amount.to_le_bytes();
+    let participation_rebate_bps_bytes = participation_rebate_bps.to_le_bytes();
+    let payout_one_bytes = payout_bps[0].to_le_bytes();
+    let payout_two_bytes = payout_bps[1].to_le_bytes();
+    let payout_three_bytes = payout_bps[2].to_le_bytes();
+    let minimum_players_bytes = minimum_players.to_le_bytes();
+    let maximum_players_bytes = maximum_players.to_le_bytes();
+    let funding_deadline_bytes = funding_deadline_at.to_le_bytes();
+    let round_duration_bytes = round_duration_seconds.to_le_bytes();
+    let revive_window_bytes = revive_window_seconds.to_le_bytes();
+    let revive_cutoff_bytes = revive_cutoff_seconds.to_le_bytes();
+    hashv(&[
+        b"blob-escrow-rules-v1",
+        &match_id_hash,
+        &round_id_hash,
+        native_usdc_mint.as_ref(),
+        platform_authority.as_ref(),
+        controller.as_ref(),
+        result_authority.as_ref(),
+        treasury.as_ref(),
+        &entry_amount_bytes,
+        &platform_fee_bps_bytes,
+        &payout_delivery_fee_bps_bytes,
+        &revive_enabled_byte,
+        &revive_amount_bytes,
+        &participation_rebate_bps_bytes,
+        &payout_one_bytes,
+        &payout_two_bytes,
+        &payout_three_bytes,
+        &minimum_players_bytes,
+        &maximum_players_bytes,
+        &funding_deadline_bytes,
+        &round_duration_bytes,
+        &revive_window_bytes,
+        &revive_cutoff_bytes,
+    ])
+    .to_bytes()
+}
+
 /// Entry and match start share the same strict deadline: a contribution at
 /// the exact funding deadline is too late. This prevents a stale funding
 /// escrow from accepting a new USDC transfer while it awaits its permissionless
@@ -1347,6 +1444,8 @@ pub enum EscrowError {
     ArithmeticOverflow,
     #[msg("The immutable on-chain fee or payout rules were altered.")]
     ImmutableRulesViolation,
+    #[msg("The supplied rules commitment does not match the immutable escrow configuration.")]
+    RulesHashMismatch,
     #[msg("The three-place payout split must use all 10000 basis points.")]
     InvalidPayoutDistribution,
     #[msg("The final authoritative result hash is required.")]
@@ -1802,6 +1901,76 @@ mod tests {
         .is_err());
         assert!(validate_native_usdc_decimals(NATIVE_USDC_DECIMALS).is_ok());
         assert!(validate_native_usdc_decimals(9).is_err());
+    }
+
+    #[test]
+    fn canonical_rules_hash_matches_the_platform_api_test_vector() {
+        let mint: Pubkey = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+            .parse()
+            .unwrap();
+        let platform_authority: Pubkey = "4Nd1m3sW3vJ3zN9WZ1xQ2u5d7i9K6p4YvTq8eR1sA2bC"
+            .parse()
+            .unwrap();
+        let controller: Pubkey = "7YttLkH3UQJfB73uExyGfEKvwR6LjhQmN6x2PRZKMrP2"
+            .parse()
+            .unwrap();
+        let result_authority: Pubkey = "B6xXoQkbXZp27DiNUZCr36N54xe69Bp5uzWUsWeLMYqV"
+            .parse()
+            .unwrap();
+        let treasury: Pubkey = "So11111111111111111111111111111111111111112"
+            .parse()
+            .unwrap();
+        let expected = [
+            0x0d, 0x48, 0x91, 0x60, 0x7f, 0xe2, 0x10, 0x7b, 0x94, 0x6a, 0xac, 0x57, 0x85, 0xa7,
+            0x3b, 0xb2, 0x0d, 0x4c, 0x20, 0x5a, 0xfa, 0x04, 0x84, 0xa3, 0xe5, 0xef, 0x74, 0x40,
+            0x82, 0x90, 0x8d, 0x1f,
+        ];
+        let hash = canonical_rules_hash(
+            [0x11; 32],
+            [0x22; 32],
+            mint,
+            platform_authority,
+            controller,
+            result_authority,
+            treasury,
+            1_000_000,
+            0,
+            false,
+            0,
+            PARTICIPATION_REBATE_BPS,
+            DEFAULT_PAYOUT_BPS,
+            MINIMUM_PLAYERS,
+            10,
+            1_787_000_000,
+            ROUND_DURATION_SECONDS,
+            0,
+            0,
+        );
+        assert_eq!(hash, expected);
+        assert_ne!(
+            canonical_rules_hash(
+                [0x11; 32],
+                [0x22; 32],
+                mint,
+                platform_authority,
+                controller,
+                result_authority,
+                treasury,
+                1_000_000,
+                100,
+                false,
+                0,
+                PARTICIPATION_REBATE_BPS,
+                DEFAULT_PAYOUT_BPS,
+                MINIMUM_PLAYERS,
+                10,
+                1_787_000_000,
+                ROUND_DURATION_SECONDS,
+                0,
+                0,
+            ),
+            expected
+        );
     }
 
     #[test]
