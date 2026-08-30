@@ -273,7 +273,8 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   and the escrow. It is included in the rules hash; the controller cannot
   start a paid round or accept a new entry after it, while anyone can
   transition a never-started escrow to individual refunds after expiry. The
-  controller, result authority, and treasury must now be distinct roles.
+  governance authority, controller, result authority, and treasury must now
+  be distinct roles.
 - Ran `cargo test --manifest-path programs/blob-escrow/Cargo.toml --locked`:
   15 escrow host-side tests passed. Build output was kept in and removed from
   the Windows temporary directory.
@@ -412,10 +413,11 @@ in-memory chat behaviour unless the audit bridge is configured.
   `@blob/validation`; issuer, Platform API verifier, and consumer therefore
   share one strict contract. The package has no browser entrypoint, deployment,
   configured key, or connection to Free Mode.
-- The escrow now rejects its controller, result authority, and treasury owner
-  as paid entrants. This on-chain invariant prevents platform operational
-  roles from appearing in the funded roster or final three winners before any
-  off-chain identity policy is considered.
+- The escrow now snapshots its governance authority and rejects it alongside
+  the controller, result authority, and treasury owner as a paid entrant. This
+  on-chain invariant prevents every configured platform role from appearing in
+  the funded roster or final three winners before any off-chain identity policy
+  is considered.
 - The durable entry-payment repository now independently Base58-decodes the
   wallet and finalized transaction signature to their exact Solana lengths
   before it opens a database transaction. This is a second fail-closed layer

@@ -37,7 +37,12 @@ pub mod blob_escrow {
         result_authority: Pubkey,
         treasury: Pubkey,
     ) -> Result<()> {
-        validate_platform_roles(match_controller, result_authority, treasury)?;
+        validate_platform_roles(
+            ctx.accounts.authority.key(),
+            match_controller,
+            result_authority,
+            treasury,
+        )?;
         validate_native_usdc_decimals(ctx.accounts.native_usdc_mint.decimals)?;
         let platform_config = &mut ctx.accounts.platform_config;
         platform_config.authority = ctx.accounts.authority.key();
@@ -57,7 +62,12 @@ pub mod blob_escrow {
         result_authority: Pubkey,
         treasury: Pubkey,
     ) -> Result<()> {
-        validate_platform_roles(match_controller, result_authority, treasury)?;
+        validate_platform_roles(
+            ctx.accounts.platform_config.authority,
+            match_controller,
+            result_authority,
+            treasury,
+        )?;
         let platform_config = &mut ctx.accounts.platform_config;
         platform_config.match_controller = match_controller;
         platform_config.result_authority = result_authority;
@@ -106,13 +116,17 @@ pub mod blob_escrow {
             EscrowError::InvalidIdentifierHash
         );
         let escrow = &mut ctx.accounts.match_escrow;
-        escrow.version = 2;
+        escrow.version = 3;
         escrow.lifecycle = MatchLifecycle::Funding;
         escrow.match_id_hash = match_id_hash;
         escrow.round_id_hash = round_id_hash;
         escrow.rules_hash = rules_hash;
         escrow.final_result_hash = [0; 32];
         escrow.mint = ctx.accounts.native_usdc_mint.key();
+        // Snapshot the governance authority alongside every other platform
+        // role. Configuration updates affect future matches only, and this
+        // key is ineligible to enter the immutable match it governs.
+        escrow.platform_authority = ctx.accounts.platform_config.authority;
         escrow.controller = ctx.accounts.controller.key();
         escrow.result_authority = ctx.accounts.platform_config.result_authority;
         escrow.treasury = ctx.accounts.platform_config.treasury;
@@ -770,6 +784,7 @@ pub struct MatchEscrow {
     pub rules_hash: [u8; 32],
     pub final_result_hash: [u8; 32],
     pub mint: Pubkey,
+    pub platform_authority: Pubkey,
     pub controller: Pubkey,
     pub result_authority: Pubkey,
     pub treasury: Pubkey,
@@ -817,7 +832,7 @@ impl MatchEscrow {
     pub const DATA_LEN: usize = 1 // version
         + 1 // lifecycle enum
         + (4 * 32) // match, round, rules, and final-result hashes
-        + (4 * 32) // mint, controller, result authority, and treasury
+        + (5 * 32) // mint, governance authority, controller, result authority, and treasury
         + 8 // entry amount
         + 1 // revive enabled
         + 8 // revive amount
@@ -974,18 +989,23 @@ fn validate_funding_open(now: i64, funding_deadline_at: i64) -> Result<()> {
 }
 
 fn validate_platform_roles(
+    authority: Pubkey,
     match_controller: Pubkey,
     result_authority: Pubkey,
     treasury: Pubkey,
 ) -> Result<()> {
     require!(
-        match_controller != Pubkey::default()
+        authority != Pubkey::default()
+            && match_controller != Pubkey::default()
             && result_authority != Pubkey::default()
             && treasury != Pubkey::default(),
         EscrowError::InvalidAuthority
     );
     require!(
-        match_controller != result_authority
+        authority != match_controller
+            && authority != result_authority
+            && authority != treasury
+            && match_controller != result_authority
             && match_controller != treasury
             && result_authority != treasury,
         EscrowError::AuthoritySeparationRequired
@@ -994,12 +1014,13 @@ fn validate_platform_roles(
 }
 
 /// Operational escrow roles are deliberately ineligible to play. This keeps
-/// the controller, the result-attestation key, and the fee-recipient owner
-/// outside the funded participant and winner sets even before off-chain
-/// identity policy is applied.
+/// the governance authority, controller, result-attestation key, and
+/// fee-recipient owner outside the funded participant and winner sets even
+/// before off-chain identity policy is applied.
 fn validate_player_is_not_platform_role(player: Pubkey, escrow: &MatchEscrow) -> Result<()> {
     require!(
         player != Pubkey::default()
+            && player != escrow.platform_authority
             && player != escrow.controller
             && player != escrow.result_authority
             && player != escrow.treasury,
@@ -1250,9 +1271,13 @@ pub enum EscrowError {
     InvalidPayoutDeliveryFee,
     #[msg("The immutable match, round, or rules hash is required.")]
     InvalidIdentifierHash,
-    #[msg("The match controller and result authority must be distinct.")]
+    #[msg(
+        "The governance authority, controller, result authority, and treasury must be distinct."
+    )]
     AuthoritySeparationRequired,
-    #[msg("The platform controller, result authority, and treasury must be configured.")]
+    #[msg(
+        "The governance authority, controller, result authority, and treasury must be configured."
+    )]
     InvalidAuthority,
     #[msg("Platform operational accounts cannot enter a paid match.")]
     PlatformRoleIneligible,
@@ -1697,23 +1722,41 @@ mod tests {
 
     #[test]
     fn requires_configured_distinct_roles_and_six_decimal_native_usdc() {
-        let controller = Pubkey::new_from_array([1; 32]);
-        let result_authority = Pubkey::new_from_array([2; 32]);
-        let treasury = Pubkey::new_from_array([3; 32]);
-        assert!(validate_platform_roles(controller, result_authority, treasury).is_ok());
-        assert!(validate_platform_roles(controller, controller, treasury).is_err());
-        assert!(validate_platform_roles(controller, result_authority, controller).is_err());
-        assert!(validate_platform_roles(controller, result_authority, result_authority).is_err());
-        assert!(validate_platform_roles(controller, result_authority, Pubkey::default()).is_err());
+        let authority = Pubkey::new_from_array([1; 32]);
+        let controller = Pubkey::new_from_array([2; 32]);
+        let result_authority = Pubkey::new_from_array([3; 32]);
+        let treasury = Pubkey::new_from_array([4; 32]);
+        assert!(validate_platform_roles(authority, controller, result_authority, treasury).is_ok());
+        assert!(validate_platform_roles(authority, authority, result_authority, treasury).is_err());
+        assert!(validate_platform_roles(authority, controller, authority, treasury).is_err());
+        assert!(
+            validate_platform_roles(authority, controller, result_authority, authority).is_err()
+        );
+        assert!(validate_platform_roles(authority, controller, controller, treasury).is_err());
+        assert!(
+            validate_platform_roles(authority, controller, result_authority, controller).is_err()
+        );
+        assert!(
+            validate_platform_roles(authority, controller, result_authority, result_authority)
+                .is_err()
+        );
+        assert!(validate_platform_roles(
+            authority,
+            controller,
+            result_authority,
+            Pubkey::default()
+        )
+        .is_err());
         assert!(validate_native_usdc_decimals(NATIVE_USDC_DECIMALS).is_ok());
         assert!(validate_native_usdc_decimals(9).is_err());
     }
 
     #[test]
     fn keeps_platform_operational_roles_out_of_the_player_roster() {
-        let controller = Pubkey::new_from_array([1; 32]);
-        let result_authority = Pubkey::new_from_array([2; 32]);
-        let treasury = Pubkey::new_from_array([3; 32]);
+        let platform_authority = Pubkey::new_from_array([1; 32]);
+        let controller = Pubkey::new_from_array([2; 32]);
+        let result_authority = Pubkey::new_from_array([3; 32]);
+        let treasury = Pubkey::new_from_array([4; 32]);
         let escrow = MatchEscrow {
             version: 1,
             lifecycle: MatchLifecycle::Funding,
@@ -1722,6 +1765,7 @@ mod tests {
             rules_hash: [6; 32],
             final_result_hash: [0; 32],
             mint: Pubkey::new_from_array([7; 32]),
+            platform_authority,
             controller,
             result_authority,
             treasury,
@@ -1750,6 +1794,7 @@ mod tests {
             validate_player_is_not_platform_role(Pubkey::new_from_array([8; 32]), &escrow).is_ok()
         );
         assert!(validate_player_is_not_platform_role(controller, &escrow).is_err());
+        assert!(validate_player_is_not_platform_role(platform_authority, &escrow).is_err());
         assert!(validate_player_is_not_platform_role(result_authority, &escrow).is_err());
         assert!(validate_player_is_not_platform_role(treasury, &escrow).is_err());
         assert!(validate_player_is_not_platform_role(Pubkey::default(), &escrow).is_err());
@@ -1765,9 +1810,10 @@ mod tests {
             rules_hash: [3; 32],
             final_result_hash: [0; 32],
             mint: Pubkey::new_from_array([4; 32]),
-            controller: Pubkey::new_from_array([5; 32]),
-            result_authority: Pubkey::new_from_array([6; 32]),
-            treasury: Pubkey::new_from_array([7; 32]),
+            platform_authority: Pubkey::new_from_array([5; 32]),
+            controller: Pubkey::new_from_array([6; 32]),
+            result_authority: Pubkey::new_from_array([7; 32]),
+            treasury: Pubkey::new_from_array([8; 32]),
             entry_amount: 1_000_000,
             revive_enabled: true,
             revive_amount: REBUY_AMOUNT_BASE_UNITS,
@@ -1792,7 +1838,7 @@ mod tests {
         let mut serialized = Vec::new();
         escrow.try_serialize(&mut serialized).unwrap();
 
-        assert_eq!(MatchEscrow::DATA_LEN, 360);
+        assert_eq!(MatchEscrow::DATA_LEN, 392);
         assert_eq!(serialized.len(), MatchEscrow::SPACE);
     }
 }
