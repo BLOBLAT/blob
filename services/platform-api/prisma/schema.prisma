@@ -166,6 +166,7 @@ model Match {
   reviveCutoffMs        Int               @default(0)
   reviveSpawnProtectionMs Int              @default(0)
   platformFeeBps        Int
+  payoutDeliveryFeeBps  Int               @default(0)
   participationRebateBps Int
   payoutBps             Int[]
   minimumPlayers        Int
@@ -329,6 +330,8 @@ model Payout {
   entry               MatchEntry   @relation(fields: [entryId], references: [id], onDelete: Restrict)
   kind                PayoutKind
   place               Int?
+  grossAmountBaseUnits BigInt
+  deliveryFeeBaseUnits BigInt             @default(0)
   amountBaseUnits     BigInt
   transactionId       String?
   transaction         ChainTransaction? @relation("PayoutTransaction", fields: [transactionId], references: [id], onDelete: SetNull)

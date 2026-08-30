@@ -213,7 +213,7 @@ interface TestState {
   entries: Array<{ id: string; playerId: string; status: string; amountBaseUnits: bigint; wallet: { address: string } }>;
   result?: { id: string; matchId: string; roundId: string; rulesHash: string; resultHash: string; resultPayload: unknown };
   attempt?: { resultId: string; resultHash: string; settlementId: string; idempotencyKey: string };
-  payouts: Array<{ resultId: string; entryId: string; kind: string; place: number | null; amountBaseUnits: bigint; idempotencyKey: string }>;
+  payouts: Array<{ resultId: string; entryId: string; kind: string; place: number | null; grossAmountBaseUnits: bigint; deliveryFeeBaseUnits: bigint; amountBaseUnits: bigint; idempotencyKey: string }>;
   auditEvents: unknown[];
   serializationFailures: number;
   transactionCalls: number;
@@ -240,6 +240,7 @@ function createState(terms: PaidMatchTerms): TestState {
       reviveCutoffMs: revive.reviveCutoffMs,
       reviveSpawnProtectionMs: revive.spawnProtectionMs,
       platformFeeBps: Number(configuration.platformFeeBps),
+      payoutDeliveryFeeBps: Number(configuration.payoutDeliveryFeeBps),
       participationRebateBps: Number(configuration.participationRebateBps),
       payoutBps: configuration.prizeDistribution.map((payout) => Number(payout.basisPoints)),
       minimumPlayers: configuration.minimumPlayers,
@@ -293,7 +294,7 @@ function createPrisma(state: TestState): PrismaClient {
       }
     },
     payout: {
-      createMany: async ({ data }: { data: Array<{ resultId: string; entryId: string; kind: string; place: number | null; amountBaseUnits: bigint; idempotencyKey: string }> }) => {
+      createMany: async ({ data }: { data: Array<{ resultId: string; entryId: string; kind: string; place: number | null; grossAmountBaseUnits: bigint; deliveryFeeBaseUnits: bigint; amountBaseUnits: bigint; idempotencyKey: string }> }) => {
         state.payouts.push(...data);
         return { count: data.length };
       },

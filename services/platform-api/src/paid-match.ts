@@ -115,7 +115,7 @@ export function createPaidMatchTerms(input: CreatePaidMatchTermsInput): PaidMatc
     settlementAsset: SettlementAsset.NATIVE_SOLANA_USDC,
     usdcMint: input.usdcMint,
     escrowAddress: input.escrowAddress,
-    rulesVersion: "paid-rules-v2",
+    rulesVersion: "paid-rules-v3",
     rulesHash,
     createdAt: now,
     fundingDeadline,
@@ -185,6 +185,7 @@ export function finalizePaidMatch(input: {
     entryAmountBaseUnits: input.terms.configuration.entryAmountBaseUnits,
     playerCount: input.verifiedParticipants.length,
     platformFeeBps: input.terms.configuration.platformFeeBps,
+    payoutDeliveryFeeBps: input.terms.configuration.payoutDeliveryFeeBps,
     participationRebateBps: input.terms.configuration.participationRebateBps,
     prizeDistribution: input.terms.configuration.prizeDistribution
   });
@@ -339,6 +340,7 @@ function hashTerms(input: {
     fundingDeadline: input.fundingDeadline.toISOString(),
     entryAmountBaseUnits: input.configuration.entryAmountBaseUnits.toString(),
     platformFeeBps: input.configuration.platformFeeBps.toString(),
+    payoutDeliveryFeeBps: input.configuration.payoutDeliveryFeeBps.toString(),
     participationRebateBps: input.configuration.participationRebateBps.toString(),
     prizeDistribution: input.configuration.prizeDistribution.map((payout) => [payout.place, payout.basisPoints.toString()]),
     minimumPlayers: input.configuration.minimumPlayers,
@@ -366,26 +368,30 @@ function buildSettlementPayoutPlan(
   result: AuthoritativeMatchResult,
   prizes: PrizeCalculation,
 ): SettlementPayout[] {
-  const prizeByPlace = new Map(prizes.payouts.map((payout) => [payout.place, payout.amountBaseUnits]));
+  const prizeByPlace = new Map(prizes.payouts.map((payout) => [payout.place, payout]));
   return [...result.players]
     .sort((left, right) => left.finalRank - right.finalRank)
     .map((player) => {
-      const prizeAmount = prizeByPlace.get(player.finalRank);
-      if (prizeAmount !== undefined) {
+      const prize = prizeByPlace.get(player.finalRank);
+      if (prize !== undefined) {
         return {
           playerId: player.playerId,
           finalRank: player.finalRank,
           kind: SettlementPayoutKind.PRIZE,
           place: player.finalRank,
-          amountBaseUnits: prizeAmount,
+          grossAmountBaseUnits: prize.grossAmountBaseUnits,
+          deliveryFeeBaseUnits: prize.deliveryFeeBaseUnits,
+          amountBaseUnits: prize.amountBaseUnits,
         };
       }
       return {
         playerId: player.playerId,
         finalRank: player.finalRank,
-        kind: SettlementPayoutKind.PARTICIPATION_REBATE,
-        place: null,
-        amountBaseUnits: prizes.participationRebatePerPlayerBaseUnits,
+          kind: SettlementPayoutKind.PARTICIPATION_REBATE,
+          place: null,
+          grossAmountBaseUnits: prizes.participationRebatePerPlayerBaseUnits,
+          deliveryFeeBaseUnits: 0n,
+          amountBaseUnits: prizes.participationRebatePerPlayerBaseUnits,
       };
     });
 }

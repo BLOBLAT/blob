@@ -38,12 +38,12 @@ describe("paid-match finalization", () => {
     expect(finalized.prizes.prizePoolBaseUnits).toBe(5_550_000n);
     expect(finalized.prizes.payouts.map((payout) => payout.amountBaseUnits)).toEqual([3_052_500n, 1_665_000n, 832_500n]);
     expect(finalized.settlementRequest.payoutPlan).toEqual([
-      { playerId: "player-1", finalRank: 1, kind: "PRIZE", place: 1, amountBaseUnits: 3_052_500n },
-      { playerId: "player-2", finalRank: 2, kind: "PRIZE", place: 2, amountBaseUnits: 1_665_000n },
-      { playerId: "player-3", finalRank: 3, kind: "PRIZE", place: 3, amountBaseUnits: 832_500n },
-      { playerId: "player-4", finalRank: 4, kind: "PARTICIPATION_REBATE", place: null, amountBaseUnits: 100_000n },
-      { playerId: "player-5", finalRank: 5, kind: "PARTICIPATION_REBATE", place: null, amountBaseUnits: 100_000n },
-      { playerId: "player-6", finalRank: 6, kind: "PARTICIPATION_REBATE", place: null, amountBaseUnits: 100_000n },
+      { playerId: "player-1", finalRank: 1, kind: "PRIZE", place: 1, grossAmountBaseUnits: 3_052_500n, deliveryFeeBaseUnits: 0n, amountBaseUnits: 3_052_500n },
+      { playerId: "player-2", finalRank: 2, kind: "PRIZE", place: 2, grossAmountBaseUnits: 1_665_000n, deliveryFeeBaseUnits: 0n, amountBaseUnits: 1_665_000n },
+      { playerId: "player-3", finalRank: 3, kind: "PRIZE", place: 3, grossAmountBaseUnits: 832_500n, deliveryFeeBaseUnits: 0n, amountBaseUnits: 832_500n },
+      { playerId: "player-4", finalRank: 4, kind: "PARTICIPATION_REBATE", place: null, grossAmountBaseUnits: 100_000n, deliveryFeeBaseUnits: 0n, amountBaseUnits: 100_000n },
+      { playerId: "player-5", finalRank: 5, kind: "PARTICIPATION_REBATE", place: null, grossAmountBaseUnits: 100_000n, deliveryFeeBaseUnits: 0n, amountBaseUnits: 100_000n },
+      { playerId: "player-6", finalRank: 6, kind: "PARTICIPATION_REBATE", place: null, grossAmountBaseUnits: 100_000n, deliveryFeeBaseUnits: 0n, amountBaseUnits: 100_000n },
     ]);
     expect(finalized.settlementRequest.idempotencyKey).toContain(terms.matchId);
     expect(finalized.immutableResultHash).toHaveLength(64);
@@ -182,7 +182,7 @@ describe("paid-match finalization", () => {
       escrowAddress: ESCROW,
       now: NOW,
       configuration: { ...DEFAULT_PAID_MATCH_CONFIGURATION, entryAmountBaseUnits: 9_999n }
-    })).toThrow("at least 0.01 USDC");
+    })).toThrow("supported stake tiers");
 
     expect(() => createPaidMatchTerms({
       usdcMint: USDC_MINT,
@@ -193,6 +193,29 @@ describe("paid-match finalization", () => {
         fundingTimeoutMs: PAID_MATCH_MAX_FUNDING_TIMEOUT_MS + 1
       }
     })).toThrow("funding window");
+  });
+
+  it("records an explicitly disclosed payout delivery charge separately from the fixed platform fee", () => {
+    const terms = createPaidMatchTerms({
+      usdcMint: USDC_MINT,
+      escrowAddress: ESCROW,
+      now: NOW,
+      configuration: { ...DEFAULT_PAID_MATCH_CONFIGURATION, payoutDeliveryFeeBps: 100n }
+    });
+    const finalized = finalizePaidMatch({
+      terms,
+      result: createPaidResult(terms.matchId, terms.roundId),
+      verifiedParticipants: participants(),
+      confirmedRevives: []
+    });
+
+    expect(finalized.prizes.platformFeeBaseUnits).toBe(600_000n);
+    expect(finalized.prizes.payoutDeliveryFeeTotalBaseUnits).toBe(51_000n);
+    expect(finalized.settlementRequest.payoutPlan.slice(0, 3)).toMatchObject([
+      { grossAmountBaseUnits: 2_805_000n, deliveryFeeBaseUnits: 28_050n, amountBaseUnits: 2_776_950n },
+      { grossAmountBaseUnits: 1_530_000n, deliveryFeeBaseUnits: 15_300n, amountBaseUnits: 1_514_700n },
+      { grossAmountBaseUnits: 765_000n, deliveryFeeBaseUnits: 7_650n, amountBaseUnits: 757_350n }
+    ]);
   });
 
   it("commits the pre-game funding deadline into immutable terms", () => {

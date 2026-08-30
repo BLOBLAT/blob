@@ -23,7 +23,9 @@ entry in the same serializable PostgreSQL transaction; the browser can never
 reuse a Solana signature to admit another player.
 `programs/blob-escrow` is an isolated Anchor 0.32.1 native-USDC escrow source
 with host-side Rust tests. It fixes platform configuration, entry/refund
-amounts, Rebuy timing, the 10% fee plus participation-rebate reserve and immutable per-match payout split, and the finalized
+amounts, immutable 0.10/1/5/10 USDC stake tiers, Rebuy timing, the 10% fee plus
+participation-rebate reserve, a bounded separately disclosed podium-only
+delivery fee, immutable per-match payout split, and the finalized
 result hash on-chain. It remains unexposed to paid play: there is no live paid
 room, deployed program, configured program ID, or token transfer. The service
 can consume an immutable result without giving payment code control of

@@ -15,8 +15,9 @@ rules before it requests a transaction.
 ## Rules fixed in code
 
 - Asset: native USDC on Solana, six decimal base units.
-- Entry amount: at least 0.01 USDC; this avoids a required top-three payout
-  rounding down to zero atomic USDC.
+- Entry amount: exactly one immutable native-USDC tier per match: **0.10, 1,
+  5, or 10 USDC**. Different tiers never share a pool, and the browser cannot
+  supply an arbitrary amount.
 - A paid arena needs at least six confirmed participants.
 - Standard **Skill** match: no paid revive.
 - **Rebuy Arena**: a separately disclosed ruleset, one 0.50 USDC revive per
@@ -28,6 +29,13 @@ rules before it requests a transaction.
   original entry; revives do not increase that rebate.
 - After reserving those rebates, the top-three prize pool uses a
   configuration-driven 55/30/15 default split.
+- A separately disclosed **payout delivery fee** may be deducted only from the
+  gross podium prizes. It is an immutable match term, defaults to **0%**, and
+  is capped at 1%; it is tracked as a separate amount and is not part of the
+  fixed 10% platform fee. Participation rebates are never charged this fee.
+- Solana network transaction fees are denominated in SOL and are separate from
+  every USDC pool calculation. Users must see the exact wallet transaction
+  before signing; BLOB never asks for a seed phrase or private key.
 - All arithmetic uses `bigint` atomic USDC units and basis points; no float is
   used for money.
 - Before any terms can be persisted, the platform domain rejects values that
@@ -77,11 +85,12 @@ The implemented instructions are deliberately narrow:
   records an unreusable authoritative death hash, accepts exactly one 0.50
   USDC contribution only for a disclosed Rebuy match, and enforces that the
   death occurred inside that escrow's live round, the 30-second death window,
-  and final-60-second cutoff.
+  and final-three-minute cutoff.
 - `settle_match` requires the independent result authority after the round
   ends, accepts only three distinct enrolled winners, records a non-empty
   immutable final-result hash, and derives the 10% fee, rank-4-and-lower 10%
-  entry-rebate reserve, and top-three payouts from immutable match rules
+  entry-rebate reserve, gross top-three split, any separately disclosed
+  podium-only delivery fee, and net winner payouts from immutable match rules
   (55/30/15 is the current default).
 - `claim_participation_rebate` is a post-settlement pull claim for an enrolled
   non-podium player. It cannot pay a podium entry or exceed the reserve fixed
@@ -153,7 +162,7 @@ Wallet -> signed BLOB login message -> platform API session
 Wallet -> user-approved USDC transaction -> Solana finality verification
 Verified entry -> paid-match admission token -> authoritative game server
 Authoritative result -> immutable result hash -> settlement request
-Audited escrow program / multisig -> fee + winner payout transactions
+Audited escrow program / multisig -> fixed fee + disclosed delivery fee + net winner payouts
 ```
 
 The browser cannot choose a match result, rank, entry confirmation, revive

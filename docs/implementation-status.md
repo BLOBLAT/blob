@@ -205,10 +205,11 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   metadata proves that the exact transfer source account belongs to the
   signed wallet. A delegated or otherwise unproven source account cannot
   create a BLOB paid-match admission credit.
-- Added the same 0.01 USDC minimum entry amount to shared paid terms and the
-  Anchor escrow. With the immutable six-player minimum and positive
-  top-three payout basis points, it prevents any required prize place from
-  rounding down to zero atomic USDC before a match can be funded.
+- Historical note: the initial 0.01 USDC minimum was later superseded by the
+  immutable disclosed 0.10 / 1 / 5 / 10 USDC stake tiers. The six-player
+  minimum and positive top-three payout basis points still prevent any
+  required prize place from rounding down to zero atomic USDC before a match
+  can be funded.
 - The shared simulation now requires a distinct server-assigned immutable
   `matchId` and `roundId` before it will run in `PAID` mode. It uses those
   exact values through finalization and will not auto-start another Paid round

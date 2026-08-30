@@ -3,6 +3,7 @@ import {
   DEFAULT_PAID_MATCH_CONFIGURATION,
   DEFAULT_REBUY_REVIVE_CONFIGURATION,
   PAID_MATCH_MIN_ENTRY_AMOUNT_BASE_UNITS,
+  PAID_MATCH_STAKE_TIERS_BASE_UNITS,
   PaidMatchState,
   PaidReviveBlockReason,
   PaidRuleset,
@@ -18,6 +19,7 @@ import {
 
 function totalDistributed(result: ReturnType<typeof calculatePrizeDistribution>): bigint {
   return result.platformFeeBaseUnits
+    + result.payoutDeliveryFeeTotalBaseUnits
     + result.participationRebatePoolBaseUnits
     + result.payouts.reduce((total, payout) => total + payout.amountBaseUnits, 0n);
 }
@@ -53,6 +55,23 @@ describe("integer prize calculation", () => {
     expect(result.participationRebatePoolBaseUnits).toBe(7_000_000n);
     expect(result.prizePoolBaseUnits).toBe(83_000_000n);
     expect(result.payouts.map((payout) => payout.amountBaseUnits)).toEqual([45_650_000n, 24_900_000n, 12_450_000n]);
+    expect(result.payoutDeliveryFeeTotalBaseUnits).toBe(0n);
+  });
+
+  it("deducts an explicitly disclosed delivery charge only from podium prizes", () => {
+    const result = calculatePrizeDistribution({
+      ...DEFAULT_PAID_MATCH_CONFIGURATION,
+      playerCount: 10,
+      entryAmountBaseUnits: 10_000_000n,
+      payoutDeliveryFeeBps: 100n,
+    });
+
+    expect(result.platformFeeBaseUnits).toBe(10_000_000n);
+    expect(result.payoutDeliveryFeeTotalBaseUnits).toBe(830_000n);
+    expect(result.payouts.map((payout) => payout.grossAmountBaseUnits)).toEqual([45_650_000n, 24_900_000n, 12_450_000n]);
+    expect(result.payouts.map((payout) => payout.deliveryFeeBaseUnits)).toEqual([456_500n, 249_000n, 124_500n]);
+    expect(result.payouts.map((payout) => payout.amountBaseUnits)).toEqual([45_193_500n, 24_651_000n, 12_325_500n]);
+    expect(totalDistributed(result)).toBe(result.grossPoolBaseUnits);
   });
 
   it("assigns rounding remainder to first place deterministically", () => {
@@ -170,7 +189,12 @@ describe("paid revive policy", () => {
     expect(() => assertPaidMatchConfiguration({
       ...DEFAULT_PAID_MATCH_CONFIGURATION,
       entryAmountBaseUnits: PAID_MATCH_MIN_ENTRY_AMOUNT_BASE_UNITS - 1n
-    })).toThrow("at least 0.01 USDC");
+    })).toThrow("supported stake tiers");
+    expect(PAID_MATCH_STAKE_TIERS_BASE_UNITS).toEqual([100_000n, 1_000_000n, 5_000_000n, 10_000_000n]);
+    expect(() => assertPaidMatchConfiguration({
+      ...DEFAULT_PAID_MATCH_CONFIGURATION,
+      entryAmountBaseUnits: 250_000n
+    })).toThrow("supported stake tiers");
   });
 });
 

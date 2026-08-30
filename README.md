@@ -60,12 +60,13 @@ redemption, gameplay benefit, token conversion, or promised value.
 Referral links never include wallet addresses. See [the referral guide](docs/referrals.md).
 
 The same isolated service contains an unexposed paid-match domain: bigint
-native-USDC pool accounting, 10% fee plus a disclosed rank-4-and-lower
-participation-rebate calculation, standard Skill vs disclosed
+native-USDC pool accounting across immutable 0.10/1/5/10 USDC stake tiers,
+a fixed 10% fee plus a disclosed rank-4-and-lower participation-rebate
+calculation, optional bounded podium-only delivery-fee accounting, standard Skill vs disclosed
 Rebuy Arena rules, and finalized-chain-transfer verification. The separate
 [`programs/blob-escrow`](programs/blob-escrow) Anchor source fixes native-USDC,
 match terms, result hash recording, entry/refund handling, authority-attested
-revives, and deterministic 10% fee/rebate-aware settlement with an immutable
+revives, and deterministic 10% fee/rebate-aware settlement with immutable
 per-match top-three payout split on-chain. It has host-side
 tests only: no program ID, keypair, devnet deployment, blockchain transaction,
 USDC custody, or paid match is enabled. See [paid-mode.md](docs/paid-mode.md)

@@ -84,6 +84,7 @@ export class PrismaPaidMatchFinalizationRepository {
           reviveCutoffMs: true,
           reviveSpawnProtectionMs: true,
           platformFeeBps: true,
+          payoutDeliveryFeeBps: true,
           participationRebateBps: true,
           payoutBps: true,
           minimumPlayers: true,
@@ -144,6 +145,8 @@ export class PrismaPaidMatchFinalizationRepository {
             entryId: entry.id,
             kind: payout.kind,
             place: payout.place,
+            grossAmountBaseUnits: payout.grossAmountBaseUnits,
+            deliveryFeeBaseUnits: payout.deliveryFeeBaseUnits,
             amountBaseUnits: payout.amountBaseUnits,
             idempotencyKey: "payout:" + input.terms.matchId + ":" + finalized.immutableResultHash + ":" + payout.kind + ":" + payout.finalRank,
           };
@@ -207,13 +210,15 @@ export class PrismaPaidMatchFinalizationRepository {
         entryId: entry.id,
         kind: payout.kind,
         place: payout.place,
+        grossAmountBaseUnits: payout.grossAmountBaseUnits,
+        deliveryFeeBaseUnits: payout.deliveryFeeBaseUnits,
         amountBaseUnits: payout.amountBaseUnits,
         idempotencyKey: "payout:" + terms.matchId + ":" + finalized.immutableResultHash + ":" + payout.kind + ":" + payout.finalRank,
       };
     });
     const storedPayouts = await transaction.payout.findMany({
       where: { resultId: existingResult.id },
-      select: { entryId: true, kind: true, place: true, amountBaseUnits: true, idempotencyKey: true }
+      select: { entryId: true, kind: true, place: true, grossAmountBaseUnits: true, deliveryFeeBaseUnits: true, amountBaseUnits: true, idempotencyKey: true }
     });
     const storedPayoutsByEntry = new Map(storedPayouts.map((payout) => [payout.entryId, payout]));
     if (storedPayouts.length !== expectedPayouts.length
@@ -224,6 +229,8 @@ export class PrismaPaidMatchFinalizationRepository {
           || expectedPayout.entryId !== storedPayout.entryId
           || expectedPayout.kind !== storedPayout.kind
           || expectedPayout.place !== storedPayout.place
+          || expectedPayout.grossAmountBaseUnits !== storedPayout.grossAmountBaseUnits
+          || expectedPayout.deliveryFeeBaseUnits !== storedPayout.deliveryFeeBaseUnits
           || expectedPayout.amountBaseUnits !== storedPayout.amountBaseUnits
           || expectedPayout.idempotencyKey !== storedPayout.idempotencyKey;
       })) {
@@ -254,6 +261,7 @@ function assertStoredTermsMatch(
     reviveCutoffMs: number;
     reviveSpawnProtectionMs: number;
     platformFeeBps: number;
+    payoutDeliveryFeeBps: number;
     participationRebateBps: number;
     payoutBps: number[];
     minimumPlayers: number;
@@ -280,6 +288,7 @@ function assertStoredTermsMatch(
     && match.reviveCutoffMs === revive.reviveCutoffMs
     && match.reviveSpawnProtectionMs === revive.spawnProtectionMs
     && match.platformFeeBps === Number(configuration.platformFeeBps)
+    && match.payoutDeliveryFeeBps === Number(configuration.payoutDeliveryFeeBps)
     && match.participationRebateBps === Number(configuration.participationRebateBps)
     && equalNumberArrays(match.payoutBps, expectedPayoutBps)
     && match.minimumPlayers === configuration.minimumPlayers
@@ -379,6 +388,7 @@ function toStoredResultPayload(finalized: FinalizedPaidMatch): Prisma.InputJsonV
       revivePoolBaseUnits: finalized.pool.revivePoolBaseUnits.toString(),
       grossPoolBaseUnits: finalized.pool.grossPoolBaseUnits.toString(),
       platformFeeBaseUnits: finalized.prizes.platformFeeBaseUnits.toString(),
+      payoutDeliveryFeeTotalBaseUnits: finalized.prizes.payoutDeliveryFeeTotalBaseUnits.toString(),
       participationRebatePerPlayerBaseUnits: finalized.prizes.participationRebatePerPlayerBaseUnits.toString(),
       participationRebatePoolBaseUnits: finalized.prizes.participationRebatePoolBaseUnits.toString(),
       prizePoolBaseUnits: finalized.prizes.prizePoolBaseUnits.toString(),
@@ -388,6 +398,8 @@ function toStoredResultPayload(finalized: FinalizedPaidMatch): Prisma.InputJsonV
       finalRank: payout.finalRank,
       kind: payout.kind,
       place: payout.place,
+      grossAmountBaseUnits: payout.grossAmountBaseUnits.toString(),
+      deliveryFeeBaseUnits: payout.deliveryFeeBaseUnits.toString(),
       amountBaseUnits: payout.amountBaseUnits.toString(),
     })),
   };

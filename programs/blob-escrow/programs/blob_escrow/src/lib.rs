@@ -11,7 +11,10 @@ const BASIS_POINTS: u64 = 10_000;
 const PLATFORM_FEE_BPS: u16 = 1_000;
 const PARTICIPATION_REBATE_BPS: u16 = 1_000;
 pub const DEFAULT_PAYOUT_BPS: [u16; 3] = [5_500, 3_000, 1_500];
-const MIN_ENTRY_AMOUNT_BASE_UNITS: u64 = 10_000;
+#[cfg(test)]
+const MIN_ENTRY_AMOUNT_BASE_UNITS: u64 = 100_000;
+const SUPPORTED_STAKE_TIERS_BASE_UNITS: [u64; 4] = [100_000, 1_000_000, 5_000_000, 10_000_000];
+const MAX_PAYOUT_DELIVERY_FEE_BPS: u16 = 100;
 const REBUY_AMOUNT_BASE_UNITS: u64 = 500_000;
 const NATIVE_USDC_DECIMALS: u8 = 6;
 const MAX_PLAYERS: u16 = 32;
@@ -71,6 +74,7 @@ pub mod blob_escrow {
         round_id_hash: [u8; 32],
         rules_hash: [u8; 32],
         entry_amount: u64,
+        payout_delivery_fee_bps: u16,
         revive_enabled: bool,
         revive_amount: u64,
         participation_rebate_bps: u16,
@@ -85,6 +89,7 @@ pub mod blob_escrow {
         validate_native_usdc_decimals(ctx.accounts.native_usdc_mint.decimals)?;
         validate_match_configuration(
             entry_amount,
+            payout_delivery_fee_bps,
             revive_enabled,
             revive_amount,
             participation_rebate_bps,
@@ -101,7 +106,7 @@ pub mod blob_escrow {
             EscrowError::InvalidIdentifierHash
         );
         let escrow = &mut ctx.accounts.match_escrow;
-        escrow.version = 1;
+        escrow.version = 2;
         escrow.lifecycle = MatchLifecycle::Funding;
         escrow.match_id_hash = match_id_hash;
         escrow.round_id_hash = round_id_hash;
@@ -115,6 +120,7 @@ pub mod blob_escrow {
         escrow.revive_enabled = revive_enabled;
         escrow.revive_amount = revive_amount;
         escrow.platform_fee_bps = PLATFORM_FEE_BPS;
+        escrow.payout_delivery_fee_bps = payout_delivery_fee_bps;
         escrow.participation_rebate_bps = participation_rebate_bps;
         escrow.payout_bps = payout_bps;
         escrow.minimum_players = minimum_players;
@@ -289,6 +295,7 @@ pub mod blob_escrow {
             escrow.participant_count,
             escrow.entry_amount,
             escrow.platform_fee_bps,
+            escrow.payout_delivery_fee_bps,
             escrow.participation_rebate_bps,
             escrow.payout_bps,
         )?;
@@ -310,7 +317,10 @@ pub mod blob_escrow {
             ctx.accounts.treasury_token_account.to_account_info(),
             escrow.to_account_info(),
             ctx.accounts.mint.to_account_info(),
-            settlement.platform_fee,
+            settlement
+                .platform_fee
+                .checked_add(settlement.payout_delivery_fee_total)
+                .ok_or(EscrowError::ArithmeticOverflow)?,
             ctx.accounts.mint.decimals,
             signer_seeds,
         )?;
@@ -432,7 +442,8 @@ pub mod blob_escrow {
             EscrowError::ParticipationRebateAlreadyClaimed
         );
 
-        let amount = participation_rebate_amount(escrow.entry_amount, escrow.participation_rebate_bps)?;
+        let amount =
+            participation_rebate_amount(escrow.entry_amount, escrow.participation_rebate_bps)?;
         let maximum_rebate_pool = amount
             .checked_mul(
                 escrow
@@ -766,6 +777,7 @@ pub struct MatchEscrow {
     pub revive_enabled: bool,
     pub revive_amount: u64,
     pub platform_fee_bps: u16,
+    pub payout_delivery_fee_bps: u16,
     pub participation_rebate_bps: u16,
     pub payout_bps: [u16; 3],
     pub minimum_players: u16,
@@ -810,6 +822,7 @@ impl MatchEscrow {
         + 1 // revive enabled
         + 8 // revive amount
         + 2 // platform fee basis points
+        + 2 // optional podium-payout delivery fee basis points
         + 2 // participation rebate basis points
         + (WINNER_COUNT * 2) // three payout basis-point values
         + (2 * 2) // minimum and maximum player counts
@@ -862,13 +875,21 @@ pub enum MatchLifecycle {
 
 struct SettlementAmounts {
     platform_fee: u64,
+    payout_delivery_fee_total: u64,
     participation_rebate_per_player: u64,
     participation_rebate_pool: u64,
+    // These values make the integer accounting directly regression-testable.
+    // The deployed program only needs the net payouts and aggregate fee.
+    #[cfg(test)]
+    gross_payouts: [u64; WINNER_COUNT],
+    #[cfg(test)]
+    payout_delivery_fees: [u64; WINNER_COUNT],
     payouts: [u64; WINNER_COUNT],
 }
 
 fn validate_match_configuration(
     entry_amount: u64,
+    payout_delivery_fee_bps: u16,
     revive_enabled: bool,
     revive_amount: u64,
     participation_rebate_bps: u16,
@@ -879,11 +900,15 @@ fn validate_match_configuration(
     revive_window_seconds: i64,
     revive_cutoff_seconds: i64,
 ) -> Result<()> {
-    // With at least three entrants, this prevents a permitted positive payout
-    // split from rounding a second or third place award to zero atomic USDC.
+    // Every paid round commits to one disclosed tier, avoiding accidental
+    // browser-selected entry amounts and isolated dust pools.
     require!(
-        entry_amount >= MIN_ENTRY_AMOUNT_BASE_UNITS,
-        EscrowError::EntryAmountTooSmall
+        is_supported_stake_tier(entry_amount),
+        EscrowError::UnsupportedEntryAmount
+    );
+    require!(
+        payout_delivery_fee_bps <= MAX_PAYOUT_DELIVERY_FEE_BPS,
+        EscrowError::InvalidPayoutDeliveryFee
     );
     require!(
         minimum_players >= MINIMUM_PLAYERS,
@@ -996,14 +1021,26 @@ fn calculate_settlement(
     participant_count: u16,
     entry_amount: u64,
     fee_bps: u16,
+    payout_delivery_fee_bps: u16,
     participation_rebate_bps: u16,
     payout_bps: [u16; 3],
 ) -> Result<SettlementAmounts> {
     require!(total_contributions > 0, EscrowError::InvalidSettlement);
-    require!(participant_count >= MINIMUM_PLAYERS, EscrowError::InvalidSettlement);
+    require!(
+        participant_count >= MINIMUM_PLAYERS,
+        EscrowError::InvalidSettlement
+    );
+    require!(
+        is_supported_stake_tier(entry_amount),
+        EscrowError::UnsupportedEntryAmount
+    );
     require!(
         fee_bps == PLATFORM_FEE_BPS,
         EscrowError::ImmutableRulesViolation
+    );
+    require!(
+        payout_delivery_fee_bps <= MAX_PAYOUT_DELIVERY_FEE_BPS,
+        EscrowError::InvalidPayoutDeliveryFee
     );
     require!(
         participation_rebate_bps == PARTICIPATION_REBATE_BPS,
@@ -1015,7 +1052,8 @@ fn calculate_settlement(
         .ok_or(EscrowError::ArithmeticOverflow)?
         .checked_div(BASIS_POINTS)
         .ok_or(EscrowError::ArithmeticOverflow)?;
-    let participation_rebate_per_player = participation_rebate_amount(entry_amount, participation_rebate_bps)?;
+    let participation_rebate_per_player =
+        participation_rebate_amount(entry_amount, participation_rebate_bps)?;
     let participation_rebate_pool = participation_rebate_per_player
         .checked_mul((participant_count - WINNER_COUNT as u16) as u64)
         .ok_or(EscrowError::ArithmeticOverflow)?;
@@ -1024,7 +1062,7 @@ fn calculate_settlement(
         .ok_or(EscrowError::ArithmeticOverflow)?
         .checked_sub(participation_rebate_pool)
         .ok_or(EscrowError::ArithmeticOverflow)?;
-    let mut payouts = [0u64; WINNER_COUNT];
+    let mut gross_payouts = [0u64; WINNER_COUNT];
     let mut distributed = 0u64;
     for (index, payout_bps) in payout_bps.iter().enumerate() {
         let amount = prize_pool
@@ -1032,7 +1070,7 @@ fn calculate_settlement(
             .ok_or(EscrowError::ArithmeticOverflow)?
             .checked_div(BASIS_POINTS)
             .ok_or(EscrowError::ArithmeticOverflow)?;
-        payouts[index] = amount;
+        gross_payouts[index] = amount;
         distributed = distributed
             .checked_add(amount)
             .ok_or(EscrowError::ArithmeticOverflow)?;
@@ -1040,13 +1078,39 @@ fn calculate_settlement(
     let remainder = prize_pool
         .checked_sub(distributed)
         .ok_or(EscrowError::ArithmeticOverflow)?;
-    payouts[0] = payouts[0]
+    gross_payouts[0] = gross_payouts[0]
         .checked_add(remainder)
         .ok_or(EscrowError::ArithmeticOverflow)?;
+    #[cfg(test)]
+    let mut payout_delivery_fees = [0u64; WINNER_COUNT];
+    let mut payouts = [0u64; WINNER_COUNT];
+    let mut payout_delivery_fee_total = 0u64;
+    for index in 0..WINNER_COUNT {
+        let delivery_fee = gross_payouts[index]
+            .checked_mul(payout_delivery_fee_bps as u64)
+            .ok_or(EscrowError::ArithmeticOverflow)?
+            .checked_div(BASIS_POINTS)
+            .ok_or(EscrowError::ArithmeticOverflow)?;
+        #[cfg(test)]
+        {
+            payout_delivery_fees[index] = delivery_fee;
+        }
+        payouts[index] = gross_payouts[index]
+            .checked_sub(delivery_fee)
+            .ok_or(EscrowError::ArithmeticOverflow)?;
+        payout_delivery_fee_total = payout_delivery_fee_total
+            .checked_add(delivery_fee)
+            .ok_or(EscrowError::ArithmeticOverflow)?;
+    }
     Ok(SettlementAmounts {
         platform_fee,
+        payout_delivery_fee_total,
         participation_rebate_per_player,
         participation_rebate_pool,
+        #[cfg(test)]
+        gross_payouts,
+        #[cfg(test)]
+        payout_delivery_fees,
         payouts,
     })
 }
@@ -1057,6 +1121,10 @@ fn participation_rebate_amount(entry_amount: u64, participation_rebate_bps: u16)
         .ok_or(EscrowError::ArithmeticOverflow)?
         .checked_div(BASIS_POINTS)
         .ok_or(EscrowError::ArithmeticOverflow.into())
+}
+
+fn is_supported_stake_tier(entry_amount: u64) -> bool {
+    SUPPORTED_STAKE_TIERS_BASE_UNITS.contains(&entry_amount)
 }
 
 fn validate_payout_bps(payout_bps: [u16; 3]) -> Result<()> {
@@ -1082,7 +1150,10 @@ fn validate_rebuy_window(
     let round_starts_at = round_ends_at
         .checked_sub(round_duration_seconds)
         .ok_or(EscrowError::ArithmeticOverflow)?;
-    require!(death_at >= round_starts_at, EscrowError::InvalidDeathTimestamp);
+    require!(
+        death_at >= round_starts_at,
+        EscrowError::InvalidDeathTimestamp
+    );
     require!(death_at <= now, EscrowError::InvalidDeathTimestamp);
     require!(death_at < round_ends_at, EscrowError::InvalidDeathTimestamp);
     let revive_expires_at = death_at
@@ -1173,8 +1244,10 @@ fn transfer_from_escrow<'info>(
 pub enum EscrowError {
     #[msg("The match configuration is invalid.")]
     InvalidConfiguration,
-    #[msg("The entry amount is too small for a top-three native-USDC payout.")]
-    EntryAmountTooSmall,
+    #[msg("The entry amount is not one of the disclosed native-USDC stake tiers.")]
+    UnsupportedEntryAmount,
+    #[msg("The disclosed podium-payout delivery fee exceeds the permitted maximum.")]
+    InvalidPayoutDeliveryFee,
     #[msg("The immutable match, round, or rules hash is required.")]
     InvalidIdentifierHash,
     #[msg("The match controller and result authority must be distinct.")]
@@ -1266,15 +1339,20 @@ mod tests {
             10,
             10_000_000,
             PLATFORM_FEE_BPS,
+            0,
             PARTICIPATION_REBATE_BPS,
             DEFAULT_PAYOUT_BPS,
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(settlement.platform_fee, 10_000_000);
         assert_eq!(settlement.participation_rebate_per_player, 1_000_000);
         assert_eq!(settlement.participation_rebate_pool, 7_000_000);
+        assert_eq!(settlement.payout_delivery_fee_total, 0);
+        assert_eq!(settlement.gross_payouts, settlement.payouts);
         assert_eq!(settlement.payouts, [45_650_000, 24_900_000, 12_450_000]);
         assert_eq!(
             settlement.platform_fee
+                + settlement.payout_delivery_fee_total
                 + settlement.participation_rebate_pool
                 + settlement.payouts.iter().sum::<u64>(),
             100_000_000
@@ -1288,11 +1366,14 @@ mod tests {
             MINIMUM_PLAYERS,
             MIN_ENTRY_AMOUNT_BASE_UNITS,
             PLATFORM_FEE_BPS,
+            0,
             PARTICIPATION_REBATE_BPS,
             DEFAULT_PAYOUT_BPS,
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(
             settlement.platform_fee
+                + settlement.payout_delivery_fee_total
                 + settlement.participation_rebate_pool
                 + settlement.payouts.iter().sum::<u64>(),
             1_000_003
@@ -1307,24 +1388,115 @@ mod tests {
             10,
             10_000_000,
             PLATFORM_FEE_BPS,
+            0,
             PARTICIPATION_REBATE_BPS,
             [5_000, 3_000, 2_000],
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(settlement.payouts, [41_500_000, 24_900_000, 16_600_000]);
     }
 
     #[test]
+    fn deducts_a_bounded_delivery_charge_from_podium_prizes_only() {
+        let settlement = calculate_settlement(
+            100_000_000,
+            10,
+            10_000_000,
+            PLATFORM_FEE_BPS,
+            100,
+            PARTICIPATION_REBATE_BPS,
+            DEFAULT_PAYOUT_BPS,
+        )
+        .unwrap();
+        assert_eq!(
+            settlement.gross_payouts,
+            [45_650_000, 24_900_000, 12_450_000]
+        );
+        assert_eq!(settlement.payout_delivery_fees, [456_500, 249_000, 124_500]);
+        assert_eq!(settlement.payout_delivery_fee_total, 830_000);
+        assert_eq!(settlement.payouts, [45_193_500, 24_651_000, 12_325_500]);
+        assert_eq!(
+            settlement.platform_fee
+                + settlement.payout_delivery_fee_total
+                + settlement.participation_rebate_pool
+                + settlement.payouts.iter().sum::<u64>(),
+            100_000_000
+        );
+    }
+
+    #[test]
     fn rejects_invalid_fee_or_payout_splits() {
-        assert!(calculate_settlement(100, MINIMUM_PLAYERS, 10, 499, PARTICIPATION_REBATE_BPS, DEFAULT_PAYOUT_BPS).is_err());
-        assert!(calculate_settlement(100, MINIMUM_PLAYERS, 10, PLATFORM_FEE_BPS, 999, DEFAULT_PAYOUT_BPS).is_err());
-        assert!(calculate_settlement(100, MINIMUM_PLAYERS, 10, PLATFORM_FEE_BPS, PARTICIPATION_REBATE_BPS, [5_000, 3_000, 1_000]).is_err());
-        assert!(calculate_settlement(100, MINIMUM_PLAYERS, 10, PLATFORM_FEE_BPS, PARTICIPATION_REBATE_BPS, [5_000, 5_000, 0]).is_err());
+        assert!(calculate_settlement(
+            100,
+            MINIMUM_PLAYERS,
+            10,
+            499,
+            0,
+            PARTICIPATION_REBATE_BPS,
+            DEFAULT_PAYOUT_BPS
+        )
+        .is_err());
+        assert!(calculate_settlement(
+            100,
+            MINIMUM_PLAYERS,
+            10,
+            PLATFORM_FEE_BPS,
+            101,
+            PARTICIPATION_REBATE_BPS,
+            DEFAULT_PAYOUT_BPS
+        )
+        .is_err());
+        assert!(calculate_settlement(
+            100,
+            MINIMUM_PLAYERS,
+            10,
+            PLATFORM_FEE_BPS,
+            0,
+            999,
+            DEFAULT_PAYOUT_BPS
+        )
+        .is_err());
+        assert!(calculate_settlement(
+            100,
+            MINIMUM_PLAYERS,
+            10,
+            PLATFORM_FEE_BPS,
+            0,
+            PARTICIPATION_REBATE_BPS,
+            [5_000, 3_000, 1_000]
+        )
+        .is_err());
+        assert!(calculate_settlement(
+            100,
+            MINIMUM_PLAYERS,
+            10,
+            PLATFORM_FEE_BPS,
+            0,
+            PARTICIPATION_REBATE_BPS,
+            [5_000, 5_000, 0]
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn rejects_settlement_for_an_undisclosed_stake_tier() {
+        assert!(calculate_settlement(
+            1_500_000,
+            MINIMUM_PLAYERS,
+            250_000,
+            PLATFORM_FEE_BPS,
+            0,
+            PARTICIPATION_REBATE_BPS,
+            DEFAULT_PAYOUT_BPS,
+        )
+        .is_err());
     }
 
     #[test]
     fn keeps_standard_and_rebuy_rules_separate() {
         assert!(validate_match_configuration(
             MIN_ENTRY_AMOUNT_BASE_UNITS - 1,
+            0,
             false,
             0,
             PARTICIPATION_REBATE_BPS,
@@ -1338,6 +1510,7 @@ mod tests {
         .is_err());
         assert!(validate_match_configuration(
             MIN_ENTRY_AMOUNT_BASE_UNITS,
+            0,
             false,
             0,
             PARTICIPATION_REBATE_BPS,
@@ -1350,7 +1523,36 @@ mod tests {
         )
         .is_ok());
         assert!(validate_match_configuration(
+            250_000,
+            0,
+            false,
+            0,
+            PARTICIPATION_REBATE_BPS,
+            DEFAULT_PAYOUT_BPS,
+            MINIMUM_PLAYERS,
+            10,
+            600,
+            0,
+            0
+        )
+        .is_err());
+        assert!(validate_match_configuration(
             1_000_000,
+            MAX_PAYOUT_DELIVERY_FEE_BPS + 1,
+            false,
+            0,
+            PARTICIPATION_REBATE_BPS,
+            DEFAULT_PAYOUT_BPS,
+            MINIMUM_PLAYERS,
+            10,
+            600,
+            0,
+            0
+        )
+        .is_err());
+        assert!(validate_match_configuration(
+            1_000_000,
+            0,
             false,
             500_000,
             PARTICIPATION_REBATE_BPS,
@@ -1364,6 +1566,7 @@ mod tests {
         .is_err());
         assert!(validate_match_configuration(
             1_000_000,
+            0,
             true,
             REBUY_AMOUNT_BASE_UNITS,
             PARTICIPATION_REBATE_BPS,
@@ -1381,6 +1584,7 @@ mod tests {
     fn keeps_round_and_rebuy_timers_immutable() {
         assert!(validate_match_configuration(
             1_000_000,
+            0,
             false,
             0,
             PARTICIPATION_REBATE_BPS,
@@ -1394,6 +1598,7 @@ mod tests {
         .is_err());
         assert!(validate_match_configuration(
             1_000_000,
+            0,
             true,
             REBUY_AMOUNT_BASE_UNITS,
             PARTICIPATION_REBATE_BPS,
@@ -1407,6 +1612,7 @@ mod tests {
         .is_err());
         assert!(validate_match_configuration(
             1_000_000,
+            0,
             true,
             REBUY_AMOUNT_BASE_UNITS,
             PARTICIPATION_REBATE_BPS,
@@ -1433,11 +1639,51 @@ mod tests {
 
     #[test]
     fn enforces_authoritative_rebuy_timing() {
-        assert!(validate_rebuy_window(130, 100, 600, ROUND_DURATION_SECONDS, REBUY_WINDOW_SECONDS, REBUY_CUTOFF_SECONDS).is_ok());
-        assert!(validate_rebuy_window(131, 100, 600, ROUND_DURATION_SECONDS, REBUY_WINDOW_SECONDS, REBUY_CUTOFF_SECONDS).is_err());
-        assert!(validate_rebuy_window(420, 410, 600, ROUND_DURATION_SECONDS, REBUY_WINDOW_SECONDS, REBUY_CUTOFF_SECONDS).is_err());
-        assert!(validate_rebuy_window(99, 100, 600, ROUND_DURATION_SECONDS, REBUY_WINDOW_SECONDS, REBUY_CUTOFF_SECONDS).is_err());
-        assert!(validate_rebuy_window(130, -1, 600, ROUND_DURATION_SECONDS, REBUY_WINDOW_SECONDS, REBUY_CUTOFF_SECONDS).is_err());
+        assert!(validate_rebuy_window(
+            130,
+            100,
+            600,
+            ROUND_DURATION_SECONDS,
+            REBUY_WINDOW_SECONDS,
+            REBUY_CUTOFF_SECONDS
+        )
+        .is_ok());
+        assert!(validate_rebuy_window(
+            131,
+            100,
+            600,
+            ROUND_DURATION_SECONDS,
+            REBUY_WINDOW_SECONDS,
+            REBUY_CUTOFF_SECONDS
+        )
+        .is_err());
+        assert!(validate_rebuy_window(
+            420,
+            410,
+            600,
+            ROUND_DURATION_SECONDS,
+            REBUY_WINDOW_SECONDS,
+            REBUY_CUTOFF_SECONDS
+        )
+        .is_err());
+        assert!(validate_rebuy_window(
+            99,
+            100,
+            600,
+            ROUND_DURATION_SECONDS,
+            REBUY_WINDOW_SECONDS,
+            REBUY_CUTOFF_SECONDS
+        )
+        .is_err());
+        assert!(validate_rebuy_window(
+            130,
+            -1,
+            600,
+            ROUND_DURATION_SECONDS,
+            REBUY_WINDOW_SECONDS,
+            REBUY_CUTOFF_SECONDS
+        )
+        .is_err());
     }
 
     #[test]
@@ -1483,6 +1729,7 @@ mod tests {
             revive_enabled: false,
             revive_amount: 0,
             platform_fee_bps: PLATFORM_FEE_BPS,
+            payout_delivery_fee_bps: 0,
             participation_rebate_bps: PARTICIPATION_REBATE_BPS,
             payout_bps: DEFAULT_PAYOUT_BPS,
             minimum_players: 3,
@@ -1499,7 +1746,9 @@ mod tests {
             total_participation_rebates_paid: 0,
             bump: 1,
         };
-        assert!(validate_player_is_not_platform_role(Pubkey::new_from_array([8; 32]), &escrow).is_ok());
+        assert!(
+            validate_player_is_not_platform_role(Pubkey::new_from_array([8; 32]), &escrow).is_ok()
+        );
         assert!(validate_player_is_not_platform_role(controller, &escrow).is_err());
         assert!(validate_player_is_not_platform_role(result_authority, &escrow).is_err());
         assert!(validate_player_is_not_platform_role(treasury, &escrow).is_err());
@@ -1523,6 +1772,7 @@ mod tests {
             revive_enabled: true,
             revive_amount: REBUY_AMOUNT_BASE_UNITS,
             platform_fee_bps: PLATFORM_FEE_BPS,
+            payout_delivery_fee_bps: 0,
             participation_rebate_bps: PARTICIPATION_REBATE_BPS,
             payout_bps: DEFAULT_PAYOUT_BPS,
             minimum_players: 3,
@@ -1542,7 +1792,7 @@ mod tests {
         let mut serialized = Vec::new();
         escrow.try_serialize(&mut serialized).unwrap();
 
-        assert_eq!(MatchEscrow::DATA_LEN, 358);
+        assert_eq!(MatchEscrow::DATA_LEN, 360);
         assert_eq!(serialized.len(), MatchEscrow::SPACE);
     }
 }

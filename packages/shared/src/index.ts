@@ -5,9 +5,17 @@ export const USDC_BASE_UNITS = 1_000_000n;
  * A paid round needs to be large enough for every configured top-three
  * placement to receive at least one atomic USDC unit after integer rounding.
  * With the immutable six-player minimum and positive basis-point
- * payouts, 0.01 USDC is sufficient and avoids unusable dust matches.
+ * payouts, the lowest supported 0.10 USDC tier is sufficient and avoids
+ * unusable dust matches. Paid matches never accept a browser-chosen amount.
  */
-export const PAID_MATCH_MIN_ENTRY_AMOUNT_BASE_UNITS = 10_000n;
+export const PAID_MATCH_MIN_ENTRY_AMOUNT_BASE_UNITS = 100_000n;
+/** The only designed entry amounts. Different stake tiers never share a pool. */
+export const PAID_MATCH_STAKE_TIERS_BASE_UNITS = [
+  100_000n,
+  1_000_000n,
+  5_000_000n,
+  10_000_000n
+] as const;
 /**
  * These values are the single future Paid Arena ruleset. They are domain
  * constants only while paid play is disabled; a match must commit every value
@@ -15,6 +23,14 @@ export const PAID_MATCH_MIN_ENTRY_AMOUNT_BASE_UNITS = 10_000n;
  */
 export const PAID_MATCH_PLATFORM_FEE_BPS = 1_000n;
 export const PAID_MATCH_PARTICIPATION_REBATE_BPS = 1_000n;
+/**
+ * Solana network fees are paid in SOL by each transaction's fee payer. This
+ * separate disclosed USDC delivery charge can only be deducted from a podium
+ * prize if an immutable match term enables it. It defaults to zero and is
+ * bounded at one percent; it is never part of the platform's fixed 10% fee.
+ */
+export const PAID_MATCH_DEFAULT_PAYOUT_DELIVERY_FEE_BPS = 0n;
+export const PAID_MATCH_MAX_PAYOUT_DELIVERY_FEE_BPS = 100n;
 export const PAID_MATCH_WINNER_COUNT = 3;
 /** Paid Arena only starts with a meaningful competitive field. */
 export const PAID_MATCH_MIN_PLAYERS = 6;
@@ -74,6 +90,7 @@ export interface PaidMatchConfiguration {
   settlementAsset: SettlementAsset;
   entryAmountBaseUnits: bigint;
   platformFeeBps: bigint;
+  payoutDeliveryFeeBps: bigint;
   /**
    * Returned to every verified participant outside the top three. This is a
    * partial participation rebate of the original entry only, never of a
@@ -93,6 +110,7 @@ export const DEFAULT_PAID_MATCH_CONFIGURATION: PaidMatchConfiguration = {
   settlementAsset: SettlementAsset.NATIVE_SOLANA_USDC,
   entryAmountBaseUnits: USDC_BASE_UNITS,
   platformFeeBps: PAID_MATCH_PLATFORM_FEE_BPS,
+  payoutDeliveryFeeBps: PAID_MATCH_DEFAULT_PAYOUT_DELIVERY_FEE_BPS,
   participationRebateBps: PAID_MATCH_PARTICIPATION_REBATE_BPS,
   prizeDistribution: [
     { place: 1, basisPoints: 5_500n },
@@ -131,6 +149,8 @@ export const DEFAULT_REBUY_REVIVE_CONFIGURATION: PaidReviveConfiguration = {
 
 export interface PrizePayout {
   place: number;
+  grossAmountBaseUnits: bigint;
+  deliveryFeeBaseUnits: bigint;
   amountBaseUnits: bigint;
 }
 
@@ -147,12 +167,15 @@ export interface SettlementPayout {
   finalRank: number;
   kind: SettlementPayoutKind;
   place: number | null;
+  grossAmountBaseUnits: bigint;
+  deliveryFeeBaseUnits: bigint;
   amountBaseUnits: bigint;
 }
 
 export interface PrizeCalculation {
   grossPoolBaseUnits: bigint;
   platformFeeBaseUnits: bigint;
+  payoutDeliveryFeeTotalBaseUnits: bigint;
   participationRebatePerPlayerBaseUnits: bigint;
   participationRebatePoolBaseUnits: bigint;
   prizePoolBaseUnits: bigint;
@@ -244,19 +267,20 @@ export function calculatePaidMatchPool(input: PaidPoolInput): PaidPoolCalculatio
  * Division remainders are deterministically assigned to first place so no
  * base units become unaccounted for.
  */
-export function calculatePrizeDistribution(input: Pick<PaidMatchConfiguration, "entryAmountBaseUnits" | "platformFeeBps" | "participationRebateBps" | "prizeDistribution"> & { playerCount: number }): PrizeCalculation {
+export function calculatePrizeDistribution(input: Pick<PaidMatchConfiguration, "entryAmountBaseUnits" | "platformFeeBps" | "payoutDeliveryFeeBps" | "participationRebateBps" | "prizeDistribution"> & { playerCount: number }): PrizeCalculation {
   assertPrizeInput(input);
   return calculatePrizeDistributionFromGrossPool({
     grossPoolBaseUnits: input.entryAmountBaseUnits * BigInt(input.playerCount),
     entryAmountBaseUnits: input.entryAmountBaseUnits,
     playerCount: input.playerCount,
     platformFeeBps: input.platformFeeBps,
+    payoutDeliveryFeeBps: input.payoutDeliveryFeeBps,
     participationRebateBps: input.participationRebateBps,
     prizeDistribution: input.prizeDistribution
   });
 }
 
-export function calculatePrizeDistributionFromGrossPool(input: Pick<PaidMatchConfiguration, "entryAmountBaseUnits" | "platformFeeBps" | "participationRebateBps" | "prizeDistribution"> & { grossPoolBaseUnits: bigint; playerCount: number }): PrizeCalculation {
+export function calculatePrizeDistributionFromGrossPool(input: Pick<PaidMatchConfiguration, "entryAmountBaseUnits" | "platformFeeBps" | "payoutDeliveryFeeBps" | "participationRebateBps" | "prizeDistribution"> & { grossPoolBaseUnits: bigint; playerCount: number }): PrizeCalculation {
   if (input.grossPoolBaseUnits <= 0n) {
     throw new RangeError("grossPoolBaseUnits must be positive.");
   }
@@ -264,6 +288,7 @@ export function calculatePrizeDistributionFromGrossPool(input: Pick<PaidMatchCon
     entryAmountBaseUnits: input.entryAmountBaseUnits,
     playerCount: input.playerCount,
     platformFeeBps: input.platformFeeBps,
+    payoutDeliveryFeeBps: input.payoutDeliveryFeeBps,
     participationRebateBps: input.participationRebateBps,
     prizeDistribution: input.prizeDistribution
   });
@@ -280,23 +305,35 @@ export function calculatePrizeDistributionFromGrossPool(input: Pick<PaidMatchCon
     .sort((left, right) => left.place - right.place)
     .map((distribution) => ({
       place: distribution.place,
-      amountBaseUnits: (prizePoolBaseUnits * distribution.basisPoints) / BASIS_POINTS
+      grossAmountBaseUnits: (prizePoolBaseUnits * distribution.basisPoints) / BASIS_POINTS
     }));
-  const distributedBaseUnits = payouts.reduce((total, payout) => total + payout.amountBaseUnits, 0n);
+  const distributedBaseUnits = payouts.reduce((total, payout) => total + payout.grossAmountBaseUnits, 0n);
   const roundingRemainderBaseUnits = prizePoolBaseUnits - distributedBaseUnits;
 
   if (payouts.length === 0) {
     throw new RangeError("At least one prize payout is required.");
   }
-  payouts[0]!.amountBaseUnits += roundingRemainderBaseUnits;
+  payouts[0]!.grossAmountBaseUnits += roundingRemainderBaseUnits;
+  const payoutsWithDelivery = payouts.map((payout) => {
+    const deliveryFeeBaseUnits = (payout.grossAmountBaseUnits * input.payoutDeliveryFeeBps) / BASIS_POINTS;
+    return {
+      place: payout.place,
+      grossAmountBaseUnits: payout.grossAmountBaseUnits,
+      deliveryFeeBaseUnits,
+      amountBaseUnits: payout.grossAmountBaseUnits - deliveryFeeBaseUnits
+    };
+  });
+  const payoutDeliveryFeeTotalBaseUnits = payoutsWithDelivery
+    .reduce((total, payout) => total + payout.deliveryFeeBaseUnits, 0n);
 
   return {
     grossPoolBaseUnits: input.grossPoolBaseUnits,
     platformFeeBaseUnits,
+    payoutDeliveryFeeTotalBaseUnits,
     participationRebatePerPlayerBaseUnits,
     participationRebatePoolBaseUnits,
     prizePoolBaseUnits,
-    payouts,
+    payouts: payoutsWithDelivery,
     roundingRemainderBaseUnits
   };
 }
@@ -314,8 +351,8 @@ export function assertPaidMatchConfiguration(configuration: PaidMatchConfigurati
   if (configuration.settlementAsset !== SettlementAsset.NATIVE_SOLANA_USDC) {
     throw new RangeError("Only native Solana USDC is supported.");
   }
-  if (configuration.entryAmountBaseUnits < PAID_MATCH_MIN_ENTRY_AMOUNT_BASE_UNITS) {
-    throw new RangeError("Paid match entryAmountBaseUnits must be at least 0.01 USDC.");
+  if (!isSupportedPaidStakeTier(configuration.entryAmountBaseUnits)) {
+    throw new RangeError("Paid match entryAmountBaseUnits must be one of the supported stake tiers.");
   }
   if (!Number.isSafeInteger(configuration.minimumPlayers)
     || !Number.isSafeInteger(configuration.maximumPlayers)
@@ -336,6 +373,7 @@ export function assertPaidMatchConfiguration(configuration: PaidMatchConfigurati
     entryAmountBaseUnits: configuration.entryAmountBaseUnits,
     playerCount: configuration.minimumPlayers,
     platformFeeBps: configuration.platformFeeBps,
+    payoutDeliveryFeeBps: configuration.payoutDeliveryFeeBps,
     participationRebateBps: configuration.participationRebateBps,
     prizeDistribution: configuration.prizeDistribution
   });
@@ -529,7 +567,11 @@ const PAID_MATCH_TRANSITIONS: Readonly<Record<PaidMatchState, readonly PaidMatch
   [PaidMatchState.REFUNDED]: []
 };
 
-function assertPrizeInput(input: Pick<PaidMatchConfiguration, "entryAmountBaseUnits" | "platformFeeBps" | "participationRebateBps" | "prizeDistribution"> & { playerCount: number }): void {
+export function isSupportedPaidStakeTier(entryAmountBaseUnits: bigint): boolean {
+  return PAID_MATCH_STAKE_TIERS_BASE_UNITS.includes(entryAmountBaseUnits as typeof PAID_MATCH_STAKE_TIERS_BASE_UNITS[number]);
+}
+
+function assertPrizeInput(input: Pick<PaidMatchConfiguration, "entryAmountBaseUnits" | "platformFeeBps" | "payoutDeliveryFeeBps" | "participationRebateBps" | "prizeDistribution"> & { playerCount: number }): void {
   if (!Number.isSafeInteger(input.playerCount) || input.playerCount < 1) {
     throw new RangeError("playerCount must be a positive safe integer.");
   }
@@ -538,6 +580,11 @@ function assertPrizeInput(input: Pick<PaidMatchConfiguration, "entryAmountBaseUn
   }
   if (input.platformFeeBps !== PAID_MATCH_PLATFORM_FEE_BPS) {
     throw new RangeError("platformFeeBps must be the fixed 10% platform fee.");
+  }
+  if (typeof input.payoutDeliveryFeeBps !== "bigint"
+    || input.payoutDeliveryFeeBps < 0n
+    || input.payoutDeliveryFeeBps > PAID_MATCH_MAX_PAYOUT_DELIVERY_FEE_BPS) {
+    throw new RangeError("payoutDeliveryFeeBps must be between 0 and the disclosed maximum.");
   }
   if (input.participationRebateBps !== PAID_MATCH_PARTICIPATION_REBATE_BPS) {
     throw new RangeError("participationRebateBps must be the fixed 10% non-winner participation rebate.");

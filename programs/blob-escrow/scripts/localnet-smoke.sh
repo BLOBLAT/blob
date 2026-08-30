@@ -37,7 +37,18 @@ for command in anchor solana solana-keygen solana-test-validator; do
   }
 done
 
-cp -a "${SOURCE_DIR}" "${WORKSPACE_DIR}"
+# Copy source only. Never copy Anchor/Cargo output from the Windows worktree:
+# that cache can be very large and makes an otherwise isolated smoke test look
+# hung before compilation even begins.
+mkdir -p "${WORKSPACE_DIR}"
+(
+  cd "${SOURCE_DIR}"
+  tar \
+    --exclude='./target' \
+    --exclude='./.anchor' \
+    --exclude='./node_modules' \
+    -cf - .
+) | tar -xf - -C "${WORKSPACE_DIR}"
 mkdir -p "${WORKSPACE_DIR}/target/deploy"
 
 # Both keypairs are local-test-only and are destroyed by cleanup. Suppress
