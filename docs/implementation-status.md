@@ -275,7 +275,7 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   transition a never-started escrow to individual refunds after expiry. The
   controller, result authority, and treasury must now be distinct roles.
 - Ran `cargo test --manifest-path programs/blob-escrow/Cargo.toml --locked`:
-  11 escrow host-side tests passed. Build output was kept in and removed from
+  15 escrow host-side tests passed. Build output was kept in and removed from
   the Windows temporary directory.
 - Added and passed `programs/blob-escrow/scripts/localnet-smoke.sh`: the
   program builds against Solana's SBF runtime and is deployed and queried on
@@ -291,15 +291,14 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
 
 ## Next safe steps
 
-1. Keep the `api` Cloudflare CNAME **DNS only**, then monitor
-   `https://api.blob.lat/health` until Railway presents a valid certificate.
-   Do not interrupt the working same-site bridge before that exact check
-   returns HTTP 200.
+1. The `api` Cloudflare CNAME is **DNS only** and Railway reports an active
+   custom-domain certificate. On 2026-08-30 the external
+   `https://api.blob.lat/health` check returned HTTP 200. Keep this origin
+   HTTPS-only and do not change its target without rechecking that endpoint.
 2. Test a Phantom Wallet Standard sign-in, profile rename, profile ticket,
-   and anonymous Free Mode fallback from a real browser. Once the direct
-   health endpoint is valid, replace the temporary Vercel values with
-   `VITE_PLATFORM_API_URL=https://api.blob.lat`, remove
-   `PLATFORM_API_PROXY_ORIGIN`, and redeploy.
+   and anonymous Free Mode fallback from a real browser. The browser endpoint
+   must remain the configured same-site API origin; do not expose Railway
+   service hostnames, private keys, or paid payment routes to Vite.
 3. Create a controlled deployment key outside the repository, then replace the
    placeholder program ID and test on devnet. Actual mint, program, multisig,
    and RPC values remain external.

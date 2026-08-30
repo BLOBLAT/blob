@@ -27,6 +27,15 @@ describe("Solana USDC verification", () => {
     await expect(wrongProgram.verifyFinalizedUsdcTransfer(input())).rejects.toMatchObject({ code: "PAYMENT_TRANSFER_INVALID" });
   });
 
+  it("rejects an ambiguous transaction containing the expected transfer more than once", async () => {
+    const duplicate = createTransaction();
+    const original = duplicate.transaction.message.instructions[0]!;
+    duplicate.transaction.message.instructions.push(structuredClone(original));
+
+    await expect(createVerifier(duplicate).verifyFinalizedUsdcTransfer(input()))
+      .rejects.toMatchObject({ code: "PAYMENT_TRANSFER_INVALID" });
+  });
+
   it("rejects a delegated or unproven source token account even when the claimed wallet signed", async () => {
     const delegatedAuthority = createTransaction();
     delegatedAuthority.meta.preTokenBalances = [{ accountIndex: 1, mint: USDC_MINT, owner: DESTINATION }];
