@@ -79,6 +79,11 @@ pub mod blob_escrow {
     /// Creates an immutable native-USDC match escrow. The controller and
     /// result authority are separate public keys so a game process cannot
     /// unilaterally pay itself or alter an in-progress game's rules.
+    // This public Anchor ABI deliberately exposes every immutable match term
+    // as a separate Borsh argument. It is pinned by the server-side ABI
+    // fixture, so wrapping it in an internal Rust struct would change the
+    // instruction format rather than improve the program.
+    #[allow(clippy::too_many_arguments)]
     pub fn create_match(
         ctx: Context<CreateMatch>,
         match_id_hash: [u8; 32],
@@ -928,6 +933,9 @@ struct SettlementAmounts {
     payouts: [u64; WINNER_COUNT],
 }
 
+// Keep this validator field-for-field with `create_match`: callers and the
+// canonical rules hash must inspect the exact same immutable values.
+#[allow(clippy::too_many_arguments)]
 fn validate_match_configuration(
     entry_amount: u64,
     payout_delivery_fee_bps: u16,
@@ -1345,6 +1353,10 @@ fn transfer_from_player<'info>(
     )
 }
 
+// Every escrow payout needs the six token-account inputs plus the amount,
+// decimals, and PDA signer. Keeping that mapping explicit makes the CPI
+// account order auditable; callers never supply a signer from the browser.
+#[allow(clippy::too_many_arguments)]
 fn transfer_from_escrow<'info>(
     token_program: AccountInfo<'info>,
     source: AccountInfo<'info>,

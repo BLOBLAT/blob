@@ -1,49 +1,68 @@
-# Solana programs
+# BLOB on-chain programs
 
-`blob-escrow` is the isolated Anchor program for the future paid-match
-settlement boundary. It is not used by Free Mode, Vercel, Railway game-server,
-or the browser build.
+This directory is deliberately isolated from the website, Colyseus game
+server, npm workspaces, and Free Mode. Its current source is an **unreleased
+Anchor escrow foundation**, not an enabled payment product.
 
-The source intentionally uses Solana's all-zero system address as a
-non-deployable placeholder program ID. Before any devnet deployment, a
-controlled deployment keypair must be created outside this repository, then
-the resulting public program ID must replace the placeholder in both
-`blob-escrow/Anchor.toml` and `blob-escrow/programs/blob_escrow/src/lib.rs`.
-Never commit the matching private key.
+## Current status
 
-The production deployment must also supply, outside source control:
+- `blob-escrow` compiles and has host-side accounting/ABI regression tests.
+- Its checked-in program ID is the all-zero system address on purpose. That
+  placeholder is non-deployable and must stay in source control until a
+  reviewed controlled deployment ceremony supplies a separate program keypair.
+- No deployment, wallet transaction construction, entry, revive, or payout
+  flow is enabled by this repository.
+- Never add a user wallet, seed phrase, deployer keypair, treasury value,
+  production mint, RPC credential, or other secret to this directory.
 
-- the native-Solana USDC mint;
-- an audited treasury token account;
-- a controller multisig for start/cancel actions;
-- a distinct result-authority multisig or signing service;
-- reviewed upgrade-authority policy and incident/refund runbook.
+Read [`../docs/paid-mode.md`](../docs/paid-mode.md) before changing the
+program. It defines the immutable rules and the boundary between gameplay,
+the Platform API, wallet transaction orchestration, and settlement.
 
-Each escrow also fixes a short funding deadline. If the match cannot start by
-that deadline, anyone can switch its still-pre-game escrow into individual
-refund claims; no controller key is needed to unlock those funds.
+## Safe verification
 
-## Localnet smoke test
+Host-side Rust tests do not start a validator or create a keypair. From the
+repository root on Windows:
 
-After installing the pinned WSL toolchain, run this only from a Linux/WSL
-terminal:
+```powershell
+$env:CARGO_TARGET_DIR = Join-Path $env:TEMP "blob-escrow-cargo-target"
+& "$env:USERPROFILE\.cargo\bin\cargo.exe" test --manifest-path programs\blob-escrow\programs\blob_escrow\Cargo.toml
+& "$env:USERPROFILE\.cargo\bin\cargo.exe" clippy --manifest-path programs\blob-escrow\programs\blob_escrow\Cargo.toml --all-targets -- -D warnings
+Remove-Item Env:CARGO_TARGET_DIR
+```
+
+Full Anchor/SBF validation is performed only through Ubuntu WSL. The smoke
+script copies source to an automatically removed temporary directory,
+generates throwaway local keypairs there, starts `solana-test-validator`, and
+deploys only to that validator:
 
 ```sh
 cd /mnt/c/Users/user/Desktop/BLOBsite/programs/blob-escrow
-bash scripts/localnet-smoke.sh
+./scripts/localnet-smoke.sh
 ```
 
-The script copies the program to a temporary directory, replaces the
-checked-in all-zero placeholder ID there with a throwaway local key, builds
-SBF, starts an ephemeral `solana-test-validator`, airdrops only local test
-SOL, deploys the program, verifies it, and removes the workspace, ledger, and
-all generated keypairs. It refuses to use the caller's Solana configuration
-or a non-local RPC endpoint.
+The script never reads the caller's Solana configuration, persistent keypair,
+or RPC endpoint. It replaces the placeholder program ID only in the copied
+`Anchor.toml` declaration and `declare_id!` source declaration. It also fails
+before compiling if either replacement did not occur or if known public-key
+test fixtures were altered. A successful local smoke run is **not** a devnet
+or mainnet deployment and does not make Paid Mode available.
 
-`blob-escrow/Cargo.lock` is intentionally committed. Solana/Agave 2.3.0's SBF
-toolchain embeds Rust/Cargo 1.84, so refresh it only together with a successful
-SBF/localnet smoke test; current registry releases can otherwise select
-unsupported Rust 2024 or Rust 1.85 dependencies.
+## Before any controlled deployment
 
-See `docs/paid-mode.md` for the enablement gates. No program from this folder
-has been deployed to devnet or mainnet.
+Do not skip these gates:
+
+1. Complete instruction-level localnet integration tests, including funding,
+   failed-funding refunds, revive authorization, settlement, and non-podium
+   participation rebates.
+2. Obtain an independent security review of the exact program binary and
+   deployment configuration.
+3. Use separate governance, controller, result-authority, and treasury roles;
+   the game server must not hold any signing key.
+4. Decide the native-USDC mint, audited program ID, RPC/reconciliation
+   operation, incident procedure, and legal requirements outside this
+   repository.
+5. Run a controlled devnet ceremony before considering any mainnet action.
+
+The checked-in code must never be treated as authorization to collect or
+custody real funds.

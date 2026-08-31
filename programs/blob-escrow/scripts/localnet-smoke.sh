@@ -71,13 +71,40 @@ solana config set --url http://127.0.0.1:8899 --keypair "${PAYER_KEYPAIR}" >/dev
 PROGRAM_ID="$(solana address --keypair "${WORKSPACE_DIR}/target/deploy/blob_escrow-keypair.json")"
 PAYER_ADDRESS="$(solana address --keypair "${PAYER_KEYPAIR}")"
 
-# The checked-in all-zero ID is intentionally non-deployable. Substitute a
-# random throwaway public key only in the copied local-test workspace.
-sed -i "s/${PLACEHOLDER_PROGRAM_ID}/${PROGRAM_ID}/g" \
-  "${WORKSPACE_DIR}/Anchor.toml" \
+# The checked-in all-zero ID is intentionally non-deployable. Replace only
+# the two program-declaration fields in the copied workspace. A broad text
+# replacement would corrupt valid test fixture keys such as So111... that
+# happen to contain a run of `1` characters.
+sed -Ei "s#(blob_escrow = \")${PLACEHOLDER_PROGRAM_ID}(\")#\\1${PROGRAM_ID}\\2#" \
+  "${WORKSPACE_DIR}/Anchor.toml"
+sed -Ei "s#(declare_id!\(\")${PLACEHOLDER_PROGRAM_ID}(\"\);)#\\1${PROGRAM_ID}\\2#" \
   "${WORKSPACE_DIR}/programs/blob_escrow/src/lib.rs"
 sed -i "s|~/.config/solana/id.json|${PAYER_KEYPAIR}|" \
   "${WORKSPACE_DIR}/Anchor.toml"
+
+# Fail before an expensive SBF build if a future edit makes either precise
+# substitution stop matching. The fixture checks ensure this guard cannot be
+# weakened back into a broad placeholder replacement that mutates real public
+# keys embedded in the program's deterministic test vectors.
+grep -Fqx "blob_escrow = \"${PROGRAM_ID}\"" "${WORKSPACE_DIR}/Anchor.toml" || {
+  echo "Temporary localnet program ID was not written to Anchor.toml." >&2
+  exit 1
+}
+grep -Fqx "declare_id!(\"${PROGRAM_ID}\");" \
+  "${WORKSPACE_DIR}/programs/blob_escrow/src/lib.rs" || {
+  echo "Temporary localnet program ID was not written to lib.rs." >&2
+  exit 1
+}
+grep -Fq "Stake11111111111111111111111111111111111111" \
+  "${WORKSPACE_DIR}/programs/blob_escrow/src/lib.rs" || {
+  echo "Localnet setup unexpectedly changed the PDA test fixture." >&2
+  exit 1
+}
+grep -Fq "So11111111111111111111111111111111111111112" \
+  "${WORKSPACE_DIR}/programs/blob_escrow/src/lib.rs" || {
+  echo "Localnet setup unexpectedly changed the native-token test fixture." >&2
+  exit 1
+}
 
 # Run the program's pure Rust regression tests before compiling/deploying the
 # temporary local copy. In particular this catches account-space mistakes that
