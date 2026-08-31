@@ -11,6 +11,8 @@ readonly CONFIG_FILE="${TEMP_ROOT}/solana-config.yml"
 readonly PAYER_KEYPAIR="${TEMP_ROOT}/payer.json"
 readonly VALIDATOR_LOG="${TEMP_ROOT}/validator.log"
 readonly PLACEHOLDER_PROGRAM_ID="11111111111111111111111111111111"
+readonly BUILD_TIMEOUT_SECONDS="${BLOB_ESCROW_LOCALNET_BUILD_TIMEOUT_SECONDS:-900}"
+readonly DEPLOY_TIMEOUT_SECONDS="${BLOB_ESCROW_LOCALNET_DEPLOY_TIMEOUT_SECONDS:-300}"
 validator_pid=""
 
 cleanup() {
@@ -21,6 +23,15 @@ cleanup() {
   rm -rf "${TEMP_ROOT}"
 }
 trap cleanup EXIT
+
+# A local smoke run must never leave a compiler, validator, ledger, or
+# throwaway keypair running forever. `timeout --foreground` preserves normal
+# Ctrl-C/TERM handling so the EXIT trap still removes the temporary directory.
+run_with_timeout() {
+  local seconds="$1"
+  shift
+  timeout --foreground "${seconds}" "$@"
+}
 
 if [[ -x "${HOME}/.local/share/solana/install/active_release/bin/solana" ]]; then
   SOLANA_BIN_DIR="${HOME}/.local/share/solana/install/active_release/bin"
@@ -73,12 +84,12 @@ sed -i "s|~/.config/solana/id.json|${PAYER_KEYPAIR}|" \
 # a successful program deployment alone would not exercise.
 (
   cd "${WORKSPACE_DIR}/programs/blob_escrow"
-  cargo test
+  run_with_timeout "${BUILD_TIMEOUT_SECONDS}" cargo test
 )
 
 (
   cd "${WORKSPACE_DIR}"
-  anchor build
+  run_with_timeout "${BUILD_TIMEOUT_SECONDS}" anchor build
 )
 
 solana-test-validator --reset --quiet --ledger "${LEDGER_DIR}" >"${VALIDATOR_LOG}" 2>&1 &
@@ -97,11 +108,11 @@ if ! solana --url http://127.0.0.1:8899 cluster-version >/dev/null 2>&1; then
   exit 1
 fi
 
-solana --url http://127.0.0.1:8899 airdrop 100 "${PAYER_ADDRESS}" >/dev/null
-solana --url http://127.0.0.1:8899 program deploy \
+run_with_timeout "${DEPLOY_TIMEOUT_SECONDS}" solana --url http://127.0.0.1:8899 airdrop 100 "${PAYER_ADDRESS}" >/dev/null
+run_with_timeout "${DEPLOY_TIMEOUT_SECONDS}" solana --url http://127.0.0.1:8899 program deploy \
   --keypair "${PAYER_KEYPAIR}" \
   --program-id "${WORKSPACE_DIR}/target/deploy/blob_escrow-keypair.json" \
   "${WORKSPACE_DIR}/target/deploy/blob_escrow.so" >/dev/null
-solana --url http://127.0.0.1:8899 program show "${PROGRAM_ID}" >/dev/null
+run_with_timeout "${DEPLOY_TIMEOUT_SECONDS}" solana --url http://127.0.0.1:8899 program show "${PROGRAM_ID}" >/dev/null
 
 echo "Localnet escrow build and deployment passed: ${PROGRAM_ID}"
