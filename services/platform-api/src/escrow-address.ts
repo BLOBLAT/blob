@@ -28,6 +28,18 @@ export interface EscrowEntryAddressPlan {
   entryBump: number;
 }
 
+/** Addresses required for one authority-attested Rebuy receipt PDA. */
+export interface EscrowReviveAddressPlan {
+  programId: string;
+  matchEscrowAddress: string;
+  entryAddress: string;
+  playerTokenAccountAddress: string;
+  reviveReceiptAddress: string;
+  entryBump: number;
+  reviveReceiptBump: number;
+  deathIdHash: string;
+}
+
 /** Derives a standard legacy-token associated account with no RPC lookup. */
 export function deriveAssociatedTokenAccountAddress(input: {
   ownerAddress: string;
@@ -108,6 +120,34 @@ export function deriveEscrowEntryAddressPlan(input: {
       nativeUsdcMint: base58.encode(nativeUsdcMint),
     }),
     entryBump,
+  };
+}
+
+/**
+ * Derives the unique Rebuy receipt PDA from a domain-separated authoritative
+ * death ID. This is public account planning only; it cannot authorize a
+ * revive, create a transaction, or send USDC.
+ */
+export function deriveEscrowReviveAddressPlan(input: {
+  programId: string;
+  matchEscrowAddress: string;
+  playerAddress: string;
+  nativeUsdcMint: string;
+  deathId: string;
+}): EscrowReviveAddressPlan {
+  const entry = deriveEscrowEntryAddressPlan(input);
+  const programId = decodeDeployedEscrowProgramId(input.programId);
+  const matchEscrow = decodePublicKey(input.matchEscrowAddress, "match escrow PDA");
+  const deathIdHash = hashEscrowIdentifier("death", input.deathId);
+  const [reviveReceipt, reviveReceiptBump] = findProgramAddress(
+    [Buffer.from("revive", "utf8"), matchEscrow, Buffer.from(deathIdHash, "hex")],
+    programId
+  );
+  return {
+    ...entry,
+    reviveReceiptAddress: base58.encode(reviveReceipt),
+    reviveReceiptBump,
+    deathIdHash,
   };
 }
 

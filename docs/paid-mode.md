@@ -119,6 +119,16 @@ terms and refuses a stored escrow mismatch. Start and cancel contain only the
 configured controller signer plus the match PDA; expiry contains no signer so
 anyone can unlock a failed funding round after its on-chain deadline. Like the
 other plans, it contains no transaction, RPC, wallet, or token-transfer code.
+For the separate Rebuy ruleset,
+`escrow-purchase-revive-invocation-plan.ts` accepts only a matching
+server-authoritative death event with whole-second time precision. It
+domain-separates the opaque death ID, derives the one-time revive-receipt PDA,
+and locks the player **and** independent result-authority signer, the enrolled
+entry, canonical native-USDC accounts, and exact `purchase_revive` bytes. It
+rejects standard matches and cross-player/cross-round/cross-match deaths
+before any future transaction orchestrator could consider the plan. It is
+data-only: no browser-visible authority key, wallet request, transaction, RPC,
+or transfer exists here.
 
 The implemented instructions are deliberately narrow:
 

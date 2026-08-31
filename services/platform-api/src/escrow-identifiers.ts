@@ -3,10 +3,11 @@ import { createHash } from "node:crypto";
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 
 /**
- * Domain-separated hash for opaque 32-byte escrow PDA seeds. Match and round
- * identifiers never cross the HTTP boundary as raw PDA seeds.
+ * Domain-separated hash for opaque 32-byte escrow PDA seeds and canonical
+ * authority-attested death identifiers. Those values never cross an escrow
+ * instruction as browser-controlled raw text.
  */
-export function hashEscrowIdentifier(kind: "match" | "round", identifier: string): string {
+export function hashEscrowIdentifier(kind: "match" | "round" | "death", identifier: string): string {
   if (!IDENTIFIER_PATTERN.test(identifier)) {
     throw new EscrowIdentifierError("IDENTIFIER_INVALID", "The " + kind + " identifier is invalid.");
   }

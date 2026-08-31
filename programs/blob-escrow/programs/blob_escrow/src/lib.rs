@@ -2096,6 +2096,26 @@ mod tests {
     }
 
     #[test]
+    fn purchase_revive_instruction_abi_matches_the_platform_api_layout() {
+        use anchor_lang::InstructionData;
+
+        let instruction = crate::instruction::PurchaseRevive {
+            death_id_hash: [0x44; 32],
+            death_at: 1_788_144_120,
+        };
+
+        // This is the same zero-side-effect Anchor/Borsh layout emitted by
+        // the server-only Platform API revive plan. It deliberately contains
+        // no accounts, transaction, signer, wallet, or transfer capability.
+        let mut expected = vec![0xd6, 0x4b, 0x98, 0x5d, 0xc4, 0x10, 0xab, 0x9c];
+        expected.extend_from_slice(&[0x44; 32]);
+        expected.extend_from_slice(&1_788_144_120i64.to_le_bytes());
+
+        assert_eq!(instruction.data(), expected);
+        assert_eq!(expected.len(), 48);
+    }
+
+    #[test]
     fn requires_distinct_nonzero_match_and_round_hashes() {
         assert!(validate_identifier_hashes([1; 32], [2; 32], [3; 32]).is_ok());
         assert!(validate_identifier_hashes([0; 32], [2; 32], [3; 32]).is_err());
