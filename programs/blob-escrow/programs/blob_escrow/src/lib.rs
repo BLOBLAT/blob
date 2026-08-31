@@ -2116,6 +2116,26 @@ mod tests {
     }
 
     #[test]
+    fn player_claim_instruction_abis_match_the_platform_api_layout() {
+        use anchor_lang::InstructionData;
+
+        let refund = crate::instruction::ClaimRefund {};
+        let participation_rebate = crate::instruction::ClaimParticipationRebate {};
+
+        // Both player claims are zero-argument, pull-only instructions. The
+        // Platform API plans these eight-byte discriminators but never creates
+        // a transaction, asks a wallet to sign, or transfers tokens itself.
+        assert_eq!(
+            refund.data(),
+            vec![0x0f, 0x10, 0x1e, 0xa1, 0xff, 0xe4, 0x61, 0x3c]
+        );
+        assert_eq!(
+            participation_rebate.data(),
+            vec![0xc2, 0x97, 0x69, 0xbc, 0xc5, 0x7c, 0xbc, 0x82]
+        );
+    }
+
+    #[test]
     fn requires_distinct_nonzero_match_and_round_hashes() {
         assert!(validate_identifier_hashes([1; 32], [2; 32], [3; 32]).is_ok());
         assert!(validate_identifier_hashes([0; 32], [2; 32], [3; 32]).is_err());

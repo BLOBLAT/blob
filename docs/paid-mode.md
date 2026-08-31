@@ -129,6 +129,13 @@ rejects standard matches and cross-player/cross-round/cross-match deaths
 before any future transaction orchestrator could consider the plan. It is
 data-only: no browser-visible authority key, wallet request, transaction, RPC,
 or transfer exists here.
+`escrow-player-claim-invocation-plan.ts` covers the two player-owned,
+zero-argument pull claims with the same immutable-address check: a pre-live
+`claim_refund` and a post-settlement non-podium
+`claim_participation_rebate`. The program, not a page or API caller, checks
+the lifecycle, recipient ownership, prior claims, podium status, and exact
+calculation. These helpers expose only public account plans and discriminator
+bytes; their use in browser wallet flows remains disabled.
 
 The implemented instructions are deliberately narrow:
 
