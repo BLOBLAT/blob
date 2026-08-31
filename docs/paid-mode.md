@@ -112,6 +112,13 @@ PDA and standard native-USDC ATA, derives the treasury ATA, and binds the
 non-zero immutable result hash into the exact `settle_match` data bytes. It
 cannot sign or submit that plan; the separate result authority remains the
 only settlement signer after a controlled deployment and external review.
+`escrow-control-match-invocation-plan.ts` locks the exact zero-argument
+`start_match`, `cancel_match`, and permissionless `expire_funding` instruction
+bytes and account order. It re-derives the match/escrow accounts from immutable
+terms and refuses a stored escrow mismatch. Start and cancel contain only the
+configured controller signer plus the match PDA; expiry contains no signer so
+anyone can unlock a failed funding round after its on-chain deadline. Like the
+other plans, it contains no transaction, RPC, wallet, or token-transfer code.
 
 The implemented instructions are deliberately narrow:
 

@@ -128,7 +128,10 @@ function findProgramAddress(seeds: readonly Uint8Array[], programId: Uint8Array)
   if (seeds.length >= MAX_PDA_SEEDS) {
     throw new EscrowAddressError("PDA_SEEDS_INVALID", "Too many PDA seeds were supplied.");
   }
-  for (let bump = 255; bump > 0; bump -= 1) {
+  // Solana searches the complete u8 bump range, including zero. Omitting
+  // zero would make a small subset of valid PDA seed combinations fail only
+  // in production, so keep this loop byte-for-byte equivalent to the runtime.
+  for (let bump = 255; bump >= 0; bump -= 1) {
     const candidate = createProgramAddress([...seeds, Uint8Array.of(bump)], programId);
     if (candidate) {
       return [candidate, bump];
