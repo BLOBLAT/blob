@@ -112,10 +112,7 @@ pub mod blob_escrow {
             revive_cutoff_seconds,
         )?;
         validate_funding_deadline(Clock::get()?.unix_timestamp, funding_deadline_at)?;
-        require!(
-            match_id_hash != [0; 32] && round_id_hash != [0; 32] && rules_hash != [0; 32],
-            EscrowError::InvalidIdentifierHash
-        );
+        validate_identifier_hashes(match_id_hash, round_id_hash, rules_hash)?;
         // The controller cannot attach an arbitrary opaque rules commitment.
         // Bind the exact immutable creation inputs, fixed native-USDC mint,
         // and all escrow role keys into a versioned canonical hash.
@@ -990,6 +987,22 @@ fn validate_match_configuration(
     Ok(())
 }
 
+fn validate_identifier_hashes(
+    match_id_hash: [u8; 32],
+    round_id_hash: [u8; 32],
+    rules_hash: [u8; 32],
+) -> Result<()> {
+    require!(
+        match_id_hash != [0; 32] && round_id_hash != [0; 32] && rules_hash != [0; 32],
+        EscrowError::InvalidIdentifierHash
+    );
+    require!(
+        match_id_hash != round_id_hash,
+        EscrowError::IdentifierHashesMustDiffer
+    );
+    Ok(())
+}
+
 fn validate_funding_deadline(now: i64, funding_deadline_at: i64) -> Result<()> {
     require!(
         funding_deadline_at > now,
@@ -1368,6 +1381,8 @@ pub enum EscrowError {
     InvalidPayoutDeliveryFee,
     #[msg("The immutable match, round, or rules hash is required.")]
     InvalidIdentifierHash,
+    #[msg("The immutable match and round hashes must be distinct.")]
+    IdentifierHashesMustDiffer,
     #[msg(
         "The governance authority, controller, result authority, and treasury must be distinct."
     )]
@@ -2019,6 +2034,14 @@ mod tests {
 
         assert_eq!(instruction.data(), expected);
         assert_eq!(expected.len(), 167);
+    }
+
+    #[test]
+    fn requires_distinct_nonzero_match_and_round_hashes() {
+        assert!(validate_identifier_hashes([1; 32], [2; 32], [3; 32]).is_ok());
+        assert!(validate_identifier_hashes([0; 32], [2; 32], [3; 32]).is_err());
+        assert!(validate_identifier_hashes([1; 32], [0; 32], [3; 32]).is_err());
+        assert!(validate_identifier_hashes([1; 32], [1; 32], [3; 32]).is_err());
     }
 
     #[test]

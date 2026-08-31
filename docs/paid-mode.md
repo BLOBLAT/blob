@@ -79,7 +79,7 @@ Before any eventual controlled deployment, the server-only
 `escrow-instruction-plan.ts` converts persisted BLOB terms and resolved
 governance roles into the exact `create_match` fields. It domain-separates the
 opaque match and round hashes, requires whole-second timestamps (the chain's
-clock precision), then asks the matching hash module for the on-chain rules
+clock precision), requires distinct non-zero match and round hashes, then asks the matching hash module for the on-chain rules
 commitment. It has no Anchor client, wallet signer, browser export, or network
 side effect. `escrow-create-match-abi.ts` separately serializes only those
 immutable arguments into Anchor/Borsh instruction data; a shared Rust/TypeScript

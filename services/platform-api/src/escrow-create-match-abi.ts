@@ -15,10 +15,13 @@ const CREATE_MATCH_DISCRIMINATOR = createHash("sha256")
  * deployment and audit gates in docs/paid-mode.md are complete.
  */
 export function serializeCreateMatchInstructionData(plan: EscrowCreateMatchPlan): Buffer {
+  const matchIdHash = hash32(plan.matchIdHash, "match ID hash");
+  const roundIdHash = hash32(plan.roundIdHash, "round ID hash");
+  assertDistinctMatchAndRoundHashes(matchIdHash, roundIdHash);
   return Buffer.concat([
     CREATE_MATCH_DISCRIMINATOR,
-    hash32(plan.matchIdHash, "match ID hash"),
-    hash32(plan.roundIdHash, "round ID hash"),
+    matchIdHash,
+    roundIdHash,
     hash32(plan.onchainRulesHash, "rules hash"),
     u64(plan.entryAmountBaseUnits, "entry amount"),
     u16(plan.payoutDeliveryFeeBps, "payout delivery fee"),
@@ -46,6 +49,15 @@ function hash32(value: string, label: string): Buffer {
     throw new EscrowCreateMatchAbiError("INVALID_HASH", "The " + label + " must be 32-byte SHA-256 hex.");
   }
   return Buffer.from(value, "hex");
+}
+
+function assertDistinctMatchAndRoundHashes(matchIdHash: Buffer, roundIdHash: Buffer): void {
+  if (matchIdHash.equals(roundIdHash)) {
+    throw new EscrowCreateMatchAbiError(
+      "IDENTIFIERS_NOT_DISTINCT",
+      "The match ID hash and round ID hash must be distinct."
+    );
+  }
 }
 
 function u16(value: number, label: string): Buffer {

@@ -55,5 +55,7 @@ describe("create_match Anchor ABI", () => {
       .toThrow("must fit in u16");
     expect(() => serializeCreateMatchInstructionData({ ...PLAN, entryAmountBaseUnits: -1n }))
       .toThrow("must fit in u64");
+    expect(() => serializeCreateMatchInstructionData({ ...PLAN, roundIdHash: PLAN.matchIdHash }))
+      .toThrow("must be distinct");
   });
 });
