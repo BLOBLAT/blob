@@ -13,8 +13,10 @@ describe("escrow account derivation", () => {
     });
     expect(first).toEqual({
       programId: PROGRAM_ID,
+      platformConfigAddress: "CPLTjtdjKyezoriNgtpT1XcXjNwmAnV1Vv6s3t9qygVg",
       matchEscrowAddress: "778Fi51M9ZapG4PHmNPNKYsgMRns5wReaNwrZtkhifu9",
       escrowTokenAccountAddress: "JDt2fCTVYuY85oK7ARHc4pGP4R72p75PdXcRrVJiZGeq",
+      platformConfigBump: 254,
       matchEscrowBump: 254,
     });
     expect(deriveEscrowAddressPlan({

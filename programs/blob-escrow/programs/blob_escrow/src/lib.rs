@@ -1470,6 +1470,42 @@ pub enum EscrowError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::str::FromStr;
+
+    #[test]
+    fn platform_api_pda_vector_matches_anchor_derivation() {
+        let program_id = Pubkey::from_str("Stake11111111111111111111111111111111111111").unwrap();
+        let mint = Pubkey::from_str("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v").unwrap();
+        let match_hash = hashv(&[b"blob-escrow-match-id-v1\0", b"paid-match-test-01"]).to_bytes();
+
+        let (platform_config, platform_config_bump) =
+            Pubkey::find_program_address(&[b"platform-config"], &program_id);
+        let (match_escrow, match_bump) =
+            Pubkey::find_program_address(&[b"match", match_hash.as_ref()], &program_id);
+        let (escrow_ata, _) = Pubkey::find_program_address(
+            &[
+                match_escrow.as_ref(),
+                LEGACY_TOKEN_PROGRAM_ID.as_ref(),
+                mint.as_ref(),
+            ],
+            &anchor_spl::associated_token::ID,
+        );
+
+        assert_eq!(
+            platform_config.to_string(),
+            "CPLTjtdjKyezoriNgtpT1XcXjNwmAnV1Vv6s3t9qygVg"
+        );
+        assert_eq!(platform_config_bump, 254);
+        assert_eq!(
+            match_escrow.to_string(),
+            "778Fi51M9ZapG4PHmNPNKYsgMRns5wReaNwrZtkhifu9"
+        );
+        assert_eq!(match_bump, 254);
+        assert_eq!(
+            escrow_ata.to_string(),
+            "JDt2fCTVYuY85oK7ARHc4pGP4R72p75PdXcRrVJiZGeq"
+        );
+    }
 
     #[test]
     fn applies_the_fixed_fee_and_default_prize_split() {

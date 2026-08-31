@@ -12,8 +12,10 @@ const MAX_PDA_SEEDS = 16;
 
 export interface EscrowAddressPlan {
   programId: string;
+  platformConfigAddress: string;
   matchEscrowAddress: string;
   escrowTokenAccountAddress: string;
+  platformConfigBump: number;
   matchEscrowBump: number;
 }
 
@@ -36,6 +38,10 @@ export function deriveEscrowAddressPlan(input: {
   }
   const nativeUsdcMint = decodePublicKey(input.nativeUsdcMint, "native USDC mint");
   const matchIdHash = Buffer.from(hashEscrowIdentifier("match", input.matchId), "hex");
+  const [platformConfig, platformConfigBump] = findProgramAddress(
+    [Buffer.from("platform-config", "utf8")],
+    programId
+  );
   const [matchEscrow, matchEscrowBump] = findProgramAddress(
     [Buffer.from("match", "utf8"), matchIdHash],
     programId
@@ -46,10 +52,17 @@ export function deriveEscrowAddressPlan(input: {
   );
   return {
     programId: base58.encode(programId),
+    platformConfigAddress: base58.encode(platformConfig),
     matchEscrowAddress: base58.encode(matchEscrow),
     escrowTokenAccountAddress: base58.encode(escrowTokenAccount),
+    platformConfigBump,
     matchEscrowBump
   };
+}
+
+/** Validates and canonically re-encodes a 32-byte Solana public key. */
+export function canonicalSolanaPublicKey(value: string, label = "Solana public key"): string {
+  return base58.encode(decodePublicKey(value, label));
 }
 
 function findProgramAddress(seeds: readonly Uint8Array[], programId: Uint8Array): [Uint8Array, number] {

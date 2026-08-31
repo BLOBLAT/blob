@@ -97,6 +97,10 @@ string; it rejects the checked-in all-zero undeployed placeholder and stores
 the derived token-account address in the immutable terms. This code has no RPC
 or signing side effect. A future transaction orchestrator must re-derive and
 compare those accounts before it can build `create_match` or `enter_match`.
+`escrow-create-match-invocation-plan.ts` additionally locks the checked-in
+Anchor account order (controller, platform config PDA, match PDA, mint, escrow
+ATA, system, associated-token, legacy-token program) alongside those bytes.
+It remains data-only and has no transaction, wallet, signing, or RPC code.
 
 The implemented instructions are deliberately narrow:
 
