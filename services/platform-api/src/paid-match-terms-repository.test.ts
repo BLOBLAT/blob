@@ -9,7 +9,7 @@ import {
 
 const NOW = new Date("2026-08-24T12:00:00.000Z");
 const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
-const ESCROW = "9xQeWvG816bUx9EPfEZgC3Jk6zR9aM2Qq8F4JZ2xAazC";
+const ESCROW_PROGRAM_ID = "Stake11111111111111111111111111111111111111";
 
 describe("durable immutable paid-match terms", () => {
   it("persists controlled terms as DRAFT before any entry can be funded", async () => {
@@ -62,7 +62,7 @@ describe("durable immutable paid-match terms", () => {
 function createTerms(): PaidMatchTerms {
   return createPaidMatchTerms({
     usdcMint: USDC_MINT,
-    escrowAddress: ESCROW,
+    escrowProgramId: ESCROW_PROGRAM_ID,
     ruleset: PaidRuleset.SKILL,
     now: NOW,
   });

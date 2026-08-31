@@ -4,7 +4,7 @@ import { createEscrowCreateMatchPlan, hashEscrowIdentifier } from "./escrow-inst
 import { createPaidMatchTerms } from "./paid-match.js";
 
 const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
-const ESCROW = "9xQeWvG816bUx9EPfEZgC3Jk6zR9aM2Qq8F4JZ2xAazC";
+const ESCROW_PROGRAM_ID = "Stake11111111111111111111111111111111111111";
 const ROLES = {
   platformAuthority: "4Nd1m3sW3vJ3zN9WZ1xQ2u5d7i9K6p4YvTq8eR1sA2bC",
   matchController: "7YttLkH3UQJfB73uExyGfEKvwR6LjhQmN6x2PRZKMrP2",
@@ -17,7 +17,7 @@ describe("escrow create-match plan", () => {
   it("maps durable server terms into exactly the on-chain creation fields", () => {
     const terms = createPaidMatchTerms({
       usdcMint: USDC_MINT,
-      escrowAddress: ESCROW,
+      escrowProgramId: ESCROW_PROGRAM_ID,
       now: NOW,
       fundingDeadline: new Date("2026-08-31T02:35:00.000Z")
     });
@@ -33,7 +33,7 @@ describe("escrow create-match plan", () => {
   });
 
   it("changes the on-chain commitment for a changed role or immutable term", () => {
-    const terms = createPaidMatchTerms({ usdcMint: USDC_MINT, escrowAddress: ESCROW, now: NOW });
+    const terms = createPaidMatchTerms({ usdcMint: USDC_MINT, escrowProgramId: ESCROW_PROGRAM_ID, now: NOW });
     const base = createEscrowCreateMatchPlan(terms, ROLES);
     expect(createEscrowCreateMatchPlan(terms, { ...ROLES, treasury: "Stake11111111111111111111111111111111111111" }).onchainRulesHash)
       .not.toBe(base.onchainRulesHash);
@@ -42,7 +42,7 @@ describe("escrow create-match plan", () => {
   });
 
   it("rejects fractional timestamps, malformed IDs, and mismatched ruleset policy", () => {
-    const terms = createPaidMatchTerms({ usdcMint: USDC_MINT, escrowAddress: ESCROW, now: NOW });
+    const terms = createPaidMatchTerms({ usdcMint: USDC_MINT, escrowProgramId: ESCROW_PROGRAM_ID, now: NOW });
     expect(() => createEscrowCreateMatchPlan({ ...terms, fundingDeadline: new Date("2026-08-31T02:35:00.123Z") }, ROLES))
       .toThrow("whole-second precision");
     expect(() => hashEscrowIdentifier("match", "match id with spaces")).toThrow("identifier is invalid");

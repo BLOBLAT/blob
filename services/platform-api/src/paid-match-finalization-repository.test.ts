@@ -9,7 +9,7 @@ import { Prisma, type PrismaClient } from "./generated/prisma/client.js";
 
 const NOW = new Date("2026-08-24T10:00:00.000Z");
 const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
-const ESCROW = "9xQeWvG816bUx9EPfEZgC3Jk6zR9aM2Qq8F4JZ2xAazC";
+const ESCROW_PROGRAM_ID = "Stake11111111111111111111111111111111111111";
 const WALLETS = [
   "4Nd1m3sW3vJ3zN9WZ1xQ2u5d7i9K6p4YvTq8eR1sA2bC",
   "7YttLkH3UQJfB73uExyGfEKvwR6LjhQmN6x2PRZKMrP2",
@@ -172,7 +172,7 @@ describe("durable paid-match finalization", () => {
 function createTerms(): PaidMatchTerms {
   return createPaidMatchTerms({
     usdcMint: USDC_MINT,
-    escrowAddress: ESCROW,
+    escrowProgramId: ESCROW_PROGRAM_ID,
     ruleset: PaidRuleset.SKILL,
     now: NOW,
   });

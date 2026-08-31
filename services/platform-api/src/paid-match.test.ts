@@ -7,10 +7,11 @@ import {
   type AuthoritativeMatchResult
 } from "@blob/shared";
 import { createPaidMatchTerms, finalizePaidMatch, getRebuyOffer } from "./paid-match.js";
+import { deriveEscrowAddressPlan } from "./escrow-address.js";
 
 const NOW = new Date("2026-08-19T12:00:00.000Z");
 const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
-const ESCROW = "9xQeWvG816bUx9EPfEZgC3Jk6zR9aM2Qq8F4JZ2xAazC";
+const ESCROW_PROGRAM_ID = "Stake11111111111111111111111111111111111111";
 const WALLETS = [
   "4Nd1m3sW3vJ3zN9WZ1xQ2u5d7i9K6p4YvTq8eR1sA2bC",
   "7YttLkH3UQJfB73uExyGfEKvwR6LjhQmN6x2PRZKMrP2",
@@ -22,7 +23,7 @@ const WALLETS = [
 
 describe("paid-match finalization", () => {
   it("uses a 10% fee, a 10% non-podium participation rebate, and includes confirmed Rebuy Arena revives", () => {
-    const terms = createPaidMatchTerms({ usdcMint: USDC_MINT, escrowAddress: ESCROW, ruleset: PaidRuleset.REBUY, now: NOW });
+    const terms = createPaidMatchTerms({ usdcMint: USDC_MINT, escrowProgramId: ESCROW_PROGRAM_ID, ruleset: PaidRuleset.REBUY, now: NOW });
     const result = createPaidResult(terms.matchId, terms.roundId);
     const finalized = finalizePaidMatch({
       terms,
@@ -50,7 +51,7 @@ describe("paid-match finalization", () => {
   });
 
   it("does not allow paid revives for a standard Skill match", () => {
-    const terms = createPaidMatchTerms({ usdcMint: USDC_MINT, escrowAddress: ESCROW, ruleset: PaidRuleset.SKILL, now: NOW });
+    const terms = createPaidMatchTerms({ usdcMint: USDC_MINT, escrowProgramId: ESCROW_PROGRAM_ID, ruleset: PaidRuleset.SKILL, now: NOW });
     expect(terms.reviveConfiguration).toEqual({
       enabled: false,
       reviveAmountBaseUnits: 0n,
@@ -78,7 +79,7 @@ describe("paid-match finalization", () => {
   });
 
   it("rejects a result that omits or duplicates a funded participant", () => {
-    const terms = createPaidMatchTerms({ usdcMint: USDC_MINT, escrowAddress: ESCROW, now: NOW });
+    const terms = createPaidMatchTerms({ usdcMint: USDC_MINT, escrowProgramId: ESCROW_PROGRAM_ID, now: NOW });
     const result = createPaidResult(terms.matchId, terms.roundId);
     const malformed: AuthoritativeMatchResult = { ...result, players: result.players.slice(0, 2) };
     expect(() => finalizePaidMatch({ terms, result: malformed, verifiedParticipants: participants(), confirmedRevives: [] }))
@@ -86,7 +87,7 @@ describe("paid-match finalization", () => {
   });
 
   it("rejects malformed authoritative statistics, result timestamps, and revive IDs before settlement", () => {
-    const terms = createPaidMatchTerms({ usdcMint: USDC_MINT, escrowAddress: ESCROW, ruleset: PaidRuleset.REBUY, now: NOW });
+    const terms = createPaidMatchTerms({ usdcMint: USDC_MINT, escrowProgramId: ESCROW_PROGRAM_ID, ruleset: PaidRuleset.REBUY, now: NOW });
     const result = createPaidResult(terms.matchId, terms.roundId);
     const invalidMass: AuthoritativeMatchResult = {
       ...result,
@@ -106,7 +107,7 @@ describe("paid-match finalization", () => {
   });
 
   it("rejects an invalid caller-supplied settlement ID", () => {
-    const terms = createPaidMatchTerms({ usdcMint: USDC_MINT, escrowAddress: ESCROW, now: NOW });
+    const terms = createPaidMatchTerms({ usdcMint: USDC_MINT, escrowProgramId: ESCROW_PROGRAM_ID, now: NOW });
     expect(() => finalizePaidMatch({
       terms,
       result: createPaidResult(terms.matchId, terms.roundId),
@@ -125,7 +126,7 @@ describe("paid-match finalization", () => {
   });
 
   it("rejects control characters in authoritative player and revive identifiers", () => {
-    const terms = createPaidMatchTerms({ usdcMint: USDC_MINT, escrowAddress: ESCROW, now: NOW, ruleset: PaidRuleset.REBUY });
+    const terms = createPaidMatchTerms({ usdcMint: USDC_MINT, escrowProgramId: ESCROW_PROGRAM_ID, now: NOW, ruleset: PaidRuleset.REBUY });
     expect(() => finalizePaidMatch({
       terms,
       result: createPaidResult(terms.matchId, terms.roundId),
@@ -141,7 +142,7 @@ describe("paid-match finalization", () => {
   });
 
   it("uses a stable settlement identifier when immutable finalization is retried", () => {
-    const terms = createPaidMatchTerms({ usdcMint: USDC_MINT, escrowAddress: ESCROW, now: NOW });
+    const terms = createPaidMatchTerms({ usdcMint: USDC_MINT, escrowProgramId: ESCROW_PROGRAM_ID, now: NOW });
     const input = {
       terms,
       result: createPaidResult(terms.matchId, terms.roundId),
@@ -159,7 +160,7 @@ describe("paid-match finalization", () => {
   it("rejects off-chain rules that the native-USDC escrow would reject before entries are accepted", () => {
     expect(() => createPaidMatchTerms({
       usdcMint: USDC_MINT,
-      escrowAddress: ESCROW,
+      escrowProgramId: ESCROW_PROGRAM_ID,
       now: NOW,
       configuration: {
         ...DEFAULT_PAID_MATCH_CONFIGURATION,
@@ -172,21 +173,21 @@ describe("paid-match finalization", () => {
 
     expect(() => createPaidMatchTerms({
       usdcMint: USDC_MINT,
-      escrowAddress: ESCROW,
+      escrowProgramId: ESCROW_PROGRAM_ID,
       now: NOW,
       configuration: { ...DEFAULT_PAID_MATCH_CONFIGURATION, maximumPlayers: 33 }
     })).toThrow("player limits");
 
     expect(() => createPaidMatchTerms({
       usdcMint: USDC_MINT,
-      escrowAddress: ESCROW,
+      escrowProgramId: ESCROW_PROGRAM_ID,
       now: NOW,
       configuration: { ...DEFAULT_PAID_MATCH_CONFIGURATION, entryAmountBaseUnits: 9_999n }
     })).toThrow("supported stake tiers");
 
     expect(() => createPaidMatchTerms({
       usdcMint: USDC_MINT,
-      escrowAddress: ESCROW,
+      escrowProgramId: ESCROW_PROGRAM_ID,
       now: NOW,
       configuration: {
         ...DEFAULT_PAID_MATCH_CONFIGURATION,
@@ -198,7 +199,7 @@ describe("paid-match finalization", () => {
   it("records an explicitly disclosed payout delivery charge separately from the fixed platform fee", () => {
     const terms = createPaidMatchTerms({
       usdcMint: USDC_MINT,
-      escrowAddress: ESCROW,
+      escrowProgramId: ESCROW_PROGRAM_ID,
       now: NOW,
       configuration: { ...DEFAULT_PAID_MATCH_CONFIGURATION, payoutDeliveryFeeBps: 100n }
     });
@@ -221,13 +222,13 @@ describe("paid-match finalization", () => {
   it("commits the pre-game funding deadline into immutable terms", () => {
     const early = createPaidMatchTerms({
       usdcMint: USDC_MINT,
-      escrowAddress: ESCROW,
+      escrowProgramId: ESCROW_PROGRAM_ID,
       now: NOW,
       fundingDeadline: new Date("2026-08-19T12:05:00.000Z")
     });
     const late = createPaidMatchTerms({
       usdcMint: USDC_MINT,
-      escrowAddress: ESCROW,
+      escrowProgramId: ESCROW_PROGRAM_ID,
       now: NOW,
       fundingDeadline: new Date("2026-08-19T12:04:00.000Z")
     });
@@ -238,14 +239,14 @@ describe("paid-match finalization", () => {
   it("does not allow an explicit funding deadline to outlive the immutable funding window", () => {
     expect(() => createPaidMatchTerms({
       usdcMint: USDC_MINT,
-      escrowAddress: ESCROW,
+      escrowProgramId: ESCROW_PROGRAM_ID,
       now: NOW,
       fundingDeadline: new Date(NOW.getTime() + DEFAULT_PAID_MATCH_CONFIGURATION.fundingTimeoutMs + 1)
     })).toThrow("Funding deadline exceeds the immutable funding window");
 
     expect(() => createPaidMatchTerms({
       usdcMint: USDC_MINT,
-      escrowAddress: ESCROW,
+      escrowProgramId: ESCROW_PROGRAM_ID,
       now: NOW,
       fundingDeadline: new Date("invalid")
     })).toThrow("Funding deadline must be in the future");
@@ -254,17 +255,34 @@ describe("paid-match finalization", () => {
   it("rejects base58-shaped values that are not 32-byte Solana public keys", () => {
     expect(() => createPaidMatchTerms({
       usdcMint: "1".repeat(33),
-      escrowAddress: ESCROW,
+      escrowProgramId: ESCROW_PROGRAM_ID,
       now: NOW
     })).toThrow("USDC mint is invalid");
 
-    const terms = createPaidMatchTerms({ usdcMint: USDC_MINT, escrowAddress: ESCROW, now: NOW });
+    const terms = createPaidMatchTerms({ usdcMint: USDC_MINT, escrowProgramId: ESCROW_PROGRAM_ID, now: NOW });
     expect(() => finalizePaidMatch({
       terms,
       result: createPaidResult(terms.matchId, terms.roundId),
       verifiedParticipants: [{ playerId: "player-1", walletAddress: "1".repeat(33) }, ...participants().slice(1)],
       confirmedRevives: []
     })).toThrow("participant wallet address is invalid");
+  });
+
+  it("derives the immutable escrow token account instead of accepting an operator-supplied address", () => {
+    const terms = createPaidMatchTerms({ usdcMint: USDC_MINT, escrowProgramId: ESCROW_PROGRAM_ID, now: NOW });
+    expect(terms.escrowAddress).toBe(deriveEscrowAddressPlan({
+      programId: ESCROW_PROGRAM_ID,
+      matchId: terms.matchId,
+      nativeUsdcMint: USDC_MINT,
+    }).escrowTokenAccountAddress);
+  });
+
+  it("refuses the non-deployable placeholder program ID before terms can be stored", () => {
+    expect(() => createPaidMatchTerms({
+      usdcMint: USDC_MINT,
+      escrowProgramId: "11111111111111111111111111111111",
+      now: NOW,
+    })).toThrow("has not been configured for deployment");
   });
 });
 

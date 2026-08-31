@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import {
   PaidRuleset,
   assertPaidMatchConfiguration,
@@ -7,9 +6,10 @@ import {
   type PaidReviveConfiguration
 } from "@blob/shared";
 import { createEscrowRulesHash } from "./escrow-rules-hash.js";
+import { hashEscrowIdentifier } from "./escrow-identifiers.js";
 import type { PaidMatchTerms } from "./paid-match.js";
 
-const IDENTIFIER_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+export { hashEscrowIdentifier } from "./escrow-identifiers.js";
 
 /** Resolved only inside the future controlled escrow orchestration service. */
 export interface EscrowAuthorityRoles {
@@ -100,17 +100,6 @@ export function createEscrowCreateMatchPlan(
     reviveWindowSeconds,
     reviveCutoffSeconds
   };
-}
-
-/** Domain-separated hash for the program's opaque 32-byte match/round PDA seeds. */
-export function hashEscrowIdentifier(kind: "match" | "round", identifier: string): string {
-  if (!IDENTIFIER_PATTERN.test(identifier)) {
-    throw new EscrowInstructionPlanError("IDENTIFIER_INVALID", "The " + kind + " identifier is invalid.");
-  }
-  return createHash("sha256")
-    .update("blob-escrow-" + kind + "-id-v1\0", "utf8")
-    .update(identifier, "utf8")
-    .digest("hex");
 }
 
 function assertTermsCanBeCommitted(terms: PaidMatchTerms): void {

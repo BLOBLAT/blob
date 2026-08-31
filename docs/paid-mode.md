@@ -87,6 +87,17 @@ fixture fixes the discriminator, integer widths, field order, and byte length.
 It does not select accounts, derive a PDA, create a transaction, ask a wallet
 to sign, or submit anything to Solana.
 
+The Platform API also derives the actual account addresses before match terms
+are persisted. `escrow-address.ts` implements Solana's public, deterministic
+PDA algorithm to derive the match PDA from the domain-separated match ID hash
+and the native-USDC associated token account from that PDA. The checked
+Solana SDK test vector fixes the resulting addresses and bump. `createPaidMatchTerms` accepts the
+server-configured escrow **program ID**, never an arbitrary escrow-address
+string; it rejects the checked-in all-zero undeployed placeholder and stores
+the derived token-account address in the immutable terms. This code has no RPC
+or signing side effect. A future transaction orchestrator must re-derive and
+compare those accounts before it can build `create_match` or `enter_match`.
+
 The implemented instructions are deliberately narrow:
 
 - `enter_match` creates one PDA entry per wallet and transfers exactly the

@@ -20,6 +20,7 @@ import {
   type SettlementPayout,
   type SettlementRequest
 } from "@blob/shared";
+import { deriveEscrowAddressPlan } from "./escrow-address.js";
 
 export interface PaidMatchTerms {
   matchId: string;
@@ -38,7 +39,8 @@ export interface PaidMatchTerms {
 
 export interface CreatePaidMatchTermsInput {
   usdcMint: string;
-  escrowAddress: string;
+  /** Server-configured deployed program. Browser input is never accepted. */
+  escrowProgramId: string;
   ruleset?: PaidRuleset;
   configuration?: PaidMatchConfiguration;
   reviveConfiguration?: PaidReviveConfiguration;
@@ -75,7 +77,6 @@ export interface ReviveOffer {
  */
 export function createPaidMatchTerms(input: CreatePaidMatchTermsInput): PaidMatchTerms {
   assertSolanaAddress(input.usdcMint, "USDC mint");
-  assertSolanaAddress(input.escrowAddress, "escrow address");
   const now = input.now ?? new Date();
   if (!Number.isFinite(now.getTime())) {
     throw new PaidMatchDomainError("FUNDING_DEADLINE_INVALID", "Funding time is invalid.");
@@ -100,10 +101,15 @@ export function createPaidMatchTerms(input: CreatePaidMatchTermsInput): PaidMatc
   assertEscrowCompatibleTerms(configuration, reviveConfiguration);
   const matchId = "paid-match-" + randomUUID();
   const roundId = "paid-round-" + randomUUID();
+  const escrowAddress = deriveEscrowAddressPlan({
+    programId: input.escrowProgramId,
+    matchId,
+    nativeUsdcMint: input.usdcMint
+  }).escrowTokenAccountAddress;
   const rulesHash = hashTerms({
     ruleset,
     usdcMint: input.usdcMint,
-    escrowAddress: input.escrowAddress,
+    escrowAddress,
     fundingDeadline,
     configuration,
     reviveConfiguration
@@ -114,7 +120,7 @@ export function createPaidMatchTerms(input: CreatePaidMatchTermsInput): PaidMatc
     ruleset,
     settlementAsset: SettlementAsset.NATIVE_SOLANA_USDC,
     usdcMint: input.usdcMint,
-    escrowAddress: input.escrowAddress,
+    escrowAddress,
     rulesVersion: "paid-rules-v3",
     rulesHash,
     createdAt: now,
