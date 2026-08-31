@@ -19,6 +19,29 @@ export interface EscrowAddressPlan {
   matchEscrowBump: number;
 }
 
+/** Addresses required for one enrolled player's immutable MatchEntry PDA. */
+export interface EscrowEntryAddressPlan {
+  programId: string;
+  matchEscrowAddress: string;
+  entryAddress: string;
+  playerTokenAccountAddress: string;
+  entryBump: number;
+}
+
+/** Derives a standard legacy-token associated account with no RPC lookup. */
+export function deriveAssociatedTokenAccountAddress(input: {
+  ownerAddress: string;
+  nativeUsdcMint: string;
+}): string {
+  const owner = decodePublicKey(input.ownerAddress, "token account owner");
+  const nativeUsdcMint = decodePublicKey(input.nativeUsdcMint, "native USDC mint");
+  const [tokenAccount] = findProgramAddress(
+    [owner, LEGACY_TOKEN_PROGRAM_ID, nativeUsdcMint],
+    ASSOCIATED_TOKEN_PROGRAM_ID
+  );
+  return base58.encode(tokenAccount);
+}
+
 /**
  * Derives the exact program-owned accounts which the checked-in Anchor program
  * creates for a match. This is deterministic account planning only. The
@@ -32,10 +55,7 @@ export function deriveEscrowAddressPlan(input: {
   matchId: string;
   nativeUsdcMint: string;
 }): EscrowAddressPlan {
-  const programId = decodePublicKey(input.programId, "escrow program ID");
-  if (input.programId === UNDEPLOYED_PROGRAM_ID) {
-    throw new EscrowAddressError("PROGRAM_ID_UNDEPLOYED", "The escrow program ID has not been configured for deployment.");
-  }
+  const programId = decodeDeployedEscrowProgramId(input.programId);
   const nativeUsdcMint = decodePublicKey(input.nativeUsdcMint, "native USDC mint");
   const matchIdHash = Buffer.from(hashEscrowIdentifier("match", input.matchId), "hex");
   const [platformConfig, platformConfigBump] = findProgramAddress(
@@ -60,9 +80,48 @@ export function deriveEscrowAddressPlan(input: {
   };
 }
 
+/**
+ * Derives the only MatchEntry PDA and standard native-USDC ATA accepted by
+ * the browser-facing entry flow. It is account planning only: no instruction,
+ * signature, RPC request, or token transfer is created here.
+ */
+export function deriveEscrowEntryAddressPlan(input: {
+  programId: string;
+  matchEscrowAddress: string;
+  playerAddress: string;
+  nativeUsdcMint: string;
+}): EscrowEntryAddressPlan {
+  const programId = decodeDeployedEscrowProgramId(input.programId);
+  const matchEscrow = decodePublicKey(input.matchEscrowAddress, "match escrow PDA");
+  const player = decodePublicKey(input.playerAddress, "player wallet address");
+  const nativeUsdcMint = decodePublicKey(input.nativeUsdcMint, "native USDC mint");
+  const [entry, entryBump] = findProgramAddress(
+    [Buffer.from("entry", "utf8"), matchEscrow, player],
+    programId
+  );
+  return {
+    programId: base58.encode(programId),
+    matchEscrowAddress: base58.encode(matchEscrow),
+    entryAddress: base58.encode(entry),
+    playerTokenAccountAddress: deriveAssociatedTokenAccountAddress({
+      ownerAddress: base58.encode(player),
+      nativeUsdcMint: base58.encode(nativeUsdcMint),
+    }),
+    entryBump,
+  };
+}
+
 /** Validates and canonically re-encodes a 32-byte Solana public key. */
 export function canonicalSolanaPublicKey(value: string, label = "Solana public key"): string {
   return base58.encode(decodePublicKey(value, label));
+}
+
+function decodeDeployedEscrowProgramId(value: string): Uint8Array {
+  const programId = decodePublicKey(value, "escrow program ID");
+  if (base58.encode(programId) === UNDEPLOYED_PROGRAM_ID) {
+    throw new EscrowAddressError("PROGRAM_ID_UNDEPLOYED", "The escrow program ID has not been configured for deployment.");
+  }
+  return programId;
 }
 
 function findProgramAddress(seeds: readonly Uint8Array[], programId: Uint8Array): [Uint8Array, number] {

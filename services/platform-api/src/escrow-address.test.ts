@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deriveEscrowAddressPlan } from "./escrow-address.js";
+import { deriveEscrowAddressPlan, deriveEscrowEntryAddressPlan } from "./escrow-address.js";
 
 const PROGRAM_ID = "Stake11111111111111111111111111111111111111";
 const NATIVE_USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
@@ -42,5 +42,20 @@ describe("escrow account derivation", () => {
       matchId: "paid-match-test-01",
       nativeUsdcMint: NATIVE_USDC_MINT,
     })).toThrow("has not been configured for deployment");
+  });
+
+  it("derives the only entry PDA and standard USDC account for an enrolled wallet", () => {
+    expect(deriveEscrowEntryAddressPlan({
+      programId: PROGRAM_ID,
+      matchEscrowAddress: "778Fi51M9ZapG4PHmNPNKYsgMRns5wReaNwrZtkhifu9",
+      playerAddress: "7YttLkH3UQJfB73uExyGfEKvwR6LjhQmN6x2PRZKMrP2",
+      nativeUsdcMint: NATIVE_USDC_MINT,
+    })).toEqual({
+      programId: PROGRAM_ID,
+      matchEscrowAddress: "778Fi51M9ZapG4PHmNPNKYsgMRns5wReaNwrZtkhifu9",
+      entryAddress: "6BaVZmas64fipk4Ps7PzFz4Mr4wDGjsrrwP3RmMZtgu9",
+      playerTokenAccountAddress: "HfsN2VG4cqwiA7rYNzgR7EgE4bjrqYaBfmqJLgEaMEnM",
+      entryBump: 255,
+    });
   });
 });

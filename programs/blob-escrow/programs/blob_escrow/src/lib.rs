@@ -1505,6 +1505,29 @@ mod tests {
             escrow_ata.to_string(),
             "JDt2fCTVYuY85oK7ARHc4pGP4R72p75PdXcRrVJiZGeq"
         );
+
+        let player = Pubkey::from_str("7YttLkH3UQJfB73uExyGfEKvwR6LjhQmN6x2PRZKMrP2").unwrap();
+        let (entry, entry_bump) = Pubkey::find_program_address(
+            &[b"entry", match_escrow.as_ref(), player.as_ref()],
+            &program_id,
+        );
+        let (player_ata, _) = Pubkey::find_program_address(
+            &[
+                player.as_ref(),
+                LEGACY_TOKEN_PROGRAM_ID.as_ref(),
+                mint.as_ref(),
+            ],
+            &anchor_spl::associated_token::ID,
+        );
+        assert_eq!(
+            entry.to_string(),
+            "6BaVZmas64fipk4Ps7PzFz4Mr4wDGjsrrwP3RmMZtgu9"
+        );
+        assert_eq!(entry_bump, 255);
+        assert_eq!(
+            player_ata.to_string(),
+            "HfsN2VG4cqwiA7rYNzgR7EgE4bjrqYaBfmqJLgEaMEnM"
+        );
     }
 
     #[test]

@@ -91,7 +91,7 @@ The Platform API also derives the actual account addresses before match terms
 are persisted. `escrow-address.ts` implements Solana's public, deterministic
 PDA algorithm to derive the match PDA from the domain-separated match ID hash
 and the native-USDC associated token account from that PDA. The checked
-Solana SDK test vector fixes the resulting addresses and bump. `createPaidMatchTerms` accepts the
+Solana PDA test vector fixes the resulting addresses and bump. `createPaidMatchTerms` accepts the
 server-configured escrow **program ID**, never an arbitrary escrow-address
 string; it rejects the checked-in all-zero undeployed placeholder and stores
 the derived token-account address in the immutable terms. This code has no RPC
@@ -101,6 +101,17 @@ compare those accounts before it can build `create_match` or `enter_match`.
 Anchor account order (controller, platform config PDA, match PDA, mint, escrow
 ATA, system, associated-token, legacy-token program) alongside those bytes.
 It remains data-only and has no transaction, wallet, signing, or RPC code.
+The corresponding `enter_match` plan derives the MatchEntry PDA and the
+player's standard native-USDC ATA from a wallet public key, then locks the
+exact Anchor account order. A fixed Rust/TypeScript PDA vector covers both
+match creation and participant entry accounts. It deliberately creates no
+wallet request or transfer; browser transaction construction remains disabled.
+`escrow-settle-match-invocation-plan.ts` re-finalizes the server authoritative
+result before selecting ranks one through three, derives each winner's entry
+PDA and standard native-USDC ATA, derives the treasury ATA, and binds the
+non-zero immutable result hash into the exact `settle_match` data bytes. It
+cannot sign or submit that plan; the separate result authority remains the
+only settlement signer after a controlled deployment and external review.
 
 The implemented instructions are deliberately narrow:
 
