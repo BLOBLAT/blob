@@ -1974,6 +1974,54 @@ mod tests {
     }
 
     #[test]
+    fn create_match_instruction_abi_matches_the_platform_api_layout() {
+        use anchor_lang::InstructionData;
+
+        let instruction = crate::instruction::CreateMatch {
+            match_id_hash: [0x11; 32],
+            round_id_hash: [0x22; 32],
+            rules_hash: [0x33; 32],
+            entry_amount: 1_000_000,
+            payout_delivery_fee_bps: 100,
+            revive_enabled: true,
+            revive_amount: 500_000,
+            participation_rebate_bps: 1_000,
+            payout_bps: [5_500, 3_000, 1_500],
+            minimum_players: MINIMUM_PLAYERS,
+            maximum_players: MAX_PLAYERS,
+            funding_deadline_at: 1_787_000_000,
+            round_duration_seconds: ROUND_DURATION_SECONDS,
+            revive_window_seconds: REBUY_WINDOW_SECONDS,
+            revive_cutoff_seconds: REBUY_CUTOFF_SECONDS,
+        };
+
+        // This is the fixed Anchor/Borsh fixture emitted by the server-only
+        // Platform API serializer. It contains no account addresses, signer,
+        // transaction, wallet, or network request.
+        let mut expected = vec![0x6b, 0x02, 0xb8, 0x91, 0x46, 0x8e, 0x11, 0xa5];
+        expected.extend_from_slice(&[0x11; 32]);
+        expected.extend_from_slice(&[0x22; 32]);
+        expected.extend_from_slice(&[0x33; 32]);
+        expected.extend_from_slice(&1_000_000u64.to_le_bytes());
+        expected.extend_from_slice(&100u16.to_le_bytes());
+        expected.push(1);
+        expected.extend_from_slice(&500_000u64.to_le_bytes());
+        expected.extend_from_slice(&1_000u16.to_le_bytes());
+        expected.extend_from_slice(&5_500u16.to_le_bytes());
+        expected.extend_from_slice(&3_000u16.to_le_bytes());
+        expected.extend_from_slice(&1_500u16.to_le_bytes());
+        expected.extend_from_slice(&MINIMUM_PLAYERS.to_le_bytes());
+        expected.extend_from_slice(&MAX_PLAYERS.to_le_bytes());
+        expected.extend_from_slice(&1_787_000_000i64.to_le_bytes());
+        expected.extend_from_slice(&ROUND_DURATION_SECONDS.to_le_bytes());
+        expected.extend_from_slice(&REBUY_WINDOW_SECONDS.to_le_bytes());
+        expected.extend_from_slice(&REBUY_CUTOFF_SECONDS.to_le_bytes());
+
+        assert_eq!(instruction.data(), expected);
+        assert_eq!(expected.len(), 167);
+    }
+
+    #[test]
     fn keeps_platform_operational_roles_out_of_the_player_roster() {
         let platform_authority = Pubkey::new_from_array([1; 32]);
         let controller = Pubkey::new_from_array([2; 32]);

@@ -81,7 +81,11 @@ governance roles into the exact `create_match` fields. It domain-separates the
 opaque match and round hashes, requires whole-second timestamps (the chain's
 clock precision), then asks the matching hash module for the on-chain rules
 commitment. It has no Anchor client, wallet signer, browser export, or network
-side effect.
+side effect. `escrow-create-match-abi.ts` separately serializes only those
+immutable arguments into Anchor/Borsh instruction data; a shared Rust/TypeScript
+fixture fixes the discriminator, integer widths, field order, and byte length.
+It does not select accounts, derive a PDA, create a transaction, ask a wallet
+to sign, or submit anything to Solana.
 
 The implemented instructions are deliberately narrow:
 
