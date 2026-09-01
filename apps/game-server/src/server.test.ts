@@ -3,7 +3,7 @@ import { Encoder } from "@colyseus/schema";
 import type { ArenaChatAuditRecord } from "@blob/validation";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ARENA_ROOM_NAME } from "./BlobArenaRoom.js";
-import { ARENA_STATE_ENCODER_BUFFER_BYTES, createGameServer, resolveAllowedOrigins, type GameServerHandle } from "./server.js";
+import { ARENA_STATE_ENCODER_BUFFER_BYTES, createGameServer, resolveAllowedOrigins, resolveWebSocketSourceAddress, type GameServerHandle } from "./server.js";
 import { PresenceRateLimiter, WebSocketUpgradeRateLimiter } from "./liveMetrics.js";
 import { ClientMessage, ServerEvent, type ArenaChatMessage } from "@blob/protocol";
 
@@ -116,6 +116,17 @@ describe("BLOB arena room", () => {
     expect(limiter.consume("203.0.113.9", 1_001)).toBe(true);
     expect(limiter.consume("203.0.113.9", 1_002)).toBe(false);
     expect(limiter.consume("203.0.113.9", 2_000)).toBe(true);
+  });
+
+  it("keys a proxied WebSocket upgrade by the forwarded browser address instead of the shared Railway socket", () => {
+    expect(resolveWebSocketSourceAddress({
+      headers: { "x-forwarded-for": "203.0.113.12, 10.1.0.10" },
+      socket: { remoteAddress: "10.1.0.10" },
+    } as never)).toBe("203.0.113.12");
+    expect(resolveWebSocketSourceAddress({
+      headers: { "x-forwarded-for": "not-an-ip" },
+      socket: { remoteAddress: "127.0.0.1" },
+    } as never)).toBe("127.0.0.1");
   });
 
   it("starts a room where two clients receive authoritative state and input-driven movement", async () => {

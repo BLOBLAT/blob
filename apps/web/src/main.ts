@@ -721,7 +721,7 @@ async function refreshReferralExperience(): Promise<void> {
       const outcome = await platformApi.captureReferralAttribution(candidate);
       window.sessionStorage.removeItem(REFERRAL_CANDIDATE_STORAGE_KEY);
       referralNotice = outcome === "CAPTURED"
-        ? "Referral saved. Points unlock only after an eligible server-confirmed Free Mode round."
+        ? "Referral saved. Points unlock automatically when the server confirms eligible Free Mode activity."
         : "Your referral is already linked and cannot be changed.";
     } catch (error) {
       if (error instanceof PlatformApiError && (error.code === "REFERRAL_CODE_INVALID" || error.code === "REFERRAL_SELF_NOT_ALLOWED" || error.code === "REFERRAL_ATTRIBUTION_WINDOW_CLOSED")) {
@@ -779,7 +779,7 @@ function renderReferralProgram(container: HTMLElement): void {
   const referralCode = dashboard.code;
   const inviteUrl = dashboard.inviteUrl;
   const rules = dashboard.qualificationRules;
-  copy.textContent = `Invite a new player. Their link must be attached within ${formatReferralWindow(rules.attributionWindowHours)} of creating a BLOB profile; points count after a server-confirmed Free Mode round with ${rules.minFoodCollected} food eaten and ${formatReferralDuration(rules.minSurvivalSeconds)} alive.`;
+  copy.textContent = `Invite a new player. Their link must be attached within ${formatReferralWindow(rules.attributionWindowHours)} of creating a BLOB profile; points count automatically when the server confirms ${rules.minFoodCollected} food eaten and ${formatReferralDuration(rules.minSurvivalSeconds)} alive in Free Mode.`;
   const codeBox = document.createElement("section");
   codeBox.className = "referral-code-box";
   const codeLabel = document.createElement("span");
@@ -798,8 +798,8 @@ function renderReferralProgram(container: HTMLElement): void {
   stats.className = "referral-stats";
   const referralStats: ReadonlyArray<readonly [string, string]> = [
     ["BLOB Points", dashboard.totalPoints ?? "0"],
-    ["Invited", String(dashboard.invitedCount ?? 0)],
-    ["Active", String(dashboard.qualifiedCount ?? 0)],
+    ["Players invited", String(dashboard.invitedCount ?? 0)],
+    ["Qualified", String(dashboard.qualifiedCount ?? 0)],
   ];
   for (const [term, value] of referralStats) {
     const row = document.createElement("div");

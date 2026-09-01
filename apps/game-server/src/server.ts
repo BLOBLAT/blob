@@ -5,6 +5,7 @@ import { WebSocketTransport } from "@colyseus/ws-transport";
 import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { createServer, type IncomingMessage, type Server as HttpServer } from "node:http";
+import { isIP } from "node:net";
 import { BlobArenaRoom, type BlobArenaRoomOptions } from "./BlobArenaRoom.js";
 import { isValidVisitorId, LiveMetrics, PresenceRateLimiter, WebSocketUpgradeRateLimiter } from "./liveMetrics.js";
 
@@ -114,7 +115,24 @@ export function createGameServer(
         const originAllowed = info.origin
           ? allowedOrigins.has(info.origin)
           : !production;
-        return originAllowed && webSocketUpgradeRateLimiter.consume(info.req.socket.remoteAddress);
+        // The process sits behind Railway's HTTP proxy in production. Keying
+        // every browser upgrade by the proxy socket would place unrelated
+        // players in one shared 60-upgrade bucket and can reject a healthy
+        // reservation during a traffic burst. Railway supplies the forwarded
+        // source on browser upgrades; keep a socket-address fallback for local
+        // development and direct hosts.
+        const sourceAddress = resolveWebSocketSourceAddress(info.req);
+        const admitted = originAllowed && webSocketUpgradeRateLimiter.consume(sourceAddress);
+        if (!admitted) {
+          // Do not log the origin or source address: neither is necessary for
+          // operating this public ingress and retaining either harms privacy.
+          console.warn(JSON.stringify({
+            service: "blob-game-server",
+            event: "websocket_upgrade_rejected",
+            reason: originAllowed ? "RATE_LIMIT" : "ORIGIN",
+          }));
+        }
+        return admitted;
       }
     }),
     gracefullyShutdown: false,
@@ -157,6 +175,22 @@ export function resolveAllowedOrigins(environment: NodeJS.ProcessEnv = process.e
     throw new Error("BLOB_WEB_ORIGIN is required in production.");
   }
   return new Set(["http://127.0.0.1:5173", "http://localhost:5173"]);
+}
+
+/**
+ * Resolves the client address used solely for the short-lived, salted upgrade
+ * limiter. Railway's browser-facing proxy supplies X-Forwarded-For. Validate
+ * the forwarded value before using it so a malformed proxy header cannot turn
+ * into an unlimited bucket.
+ */
+export function resolveWebSocketSourceAddress(request: Pick<IncomingMessage, "headers" | "socket">): string | undefined {
+  const forwarded = request.headers["x-forwarded-for"];
+  const forwardedValue = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+  const candidate = forwardedValue?.split(",")[0]?.trim();
+  if (candidate && isIP(candidate) !== 0) {
+    return candidate;
+  }
+  return request.socket.remoteAddress;
 }
 
 function normalizeOrigin(value: string): string | undefined {

@@ -1,5 +1,5 @@
 import { ArenaSimulation, DEFAULT_ARENA_CONFIG, type ArenaConfig, type ArenaInputRejectionReason } from "@blob/game-core";
-import { ARENA_ROOM_NAME, ClientMessage, ServerEvent } from "@blob/protocol";
+import { ArenaPhase, ARENA_ROOM_NAME, ClientMessage, ServerEvent, type ArenaSnapshot } from "@blob/protocol";
 import { movementIntentSchema, playerJoinOptionsSchema, type ArenaChatAuditRecord, type ValidatedPlayerJoinOptions } from "@blob/validation";
 import { MapSchema, Schema } from "@colyseus/schema";
 import { type Client, Room } from "@colyseus/core";
@@ -19,8 +19,11 @@ import { ProfileTicketVerifier, type ResolvedPlayerIdentity } from "./profileIde
 import {
   createReferralQualificationEventId,
   createReferralQualificationPersistence,
+  type ReferralQualificationRecord,
   type ReferralQualificationPersistence,
 } from "./referralQualification.js";
+
+const REFERRAL_QUALIFICATION_RETRY_MS = 30_000;
 
 export interface BlobArenaRoomOptions {
   arenaConfig?: Partial<ArenaConfig>;
@@ -55,6 +58,12 @@ export class BlobArenaRoom extends Room<{ state: BlobArenaState }> {
   private readonly arenaChat = new ArenaChat();
   private readonly profileUserIds = new Map<string, string>();
   private readonly inputAbuseGuard = new InputAbuseGuard();
+  /** A durable endpoint is idempotent, but avoid posting the same earned
+   * activity fact every simulation tick while preserving a bounded retry when
+   * the private API is temporarily unavailable. */
+  private readonly persistedReferralQualificationEvents = new Set<string>();
+  private readonly referralQualificationInFlight = new Set<string>();
+  private readonly referralQualificationRetryAt = new Map<string, number>();
 
   override onCreate(options: BlobArenaRoomOptions = {}): void {
     this.liveMetrics = options.liveMetrics;
@@ -267,6 +276,8 @@ export class BlobArenaRoom extends Room<{ state: BlobArenaState }> {
     this.state.worldHeight = snapshot.world.height;
     this.state.foodTarget = snapshot.world.foodTarget;
 
+    this.scheduleReferralQualifications(createEligibleReferralQualificationRecords(snapshot, this.profileUserIds));
+
     const result = snapshot.result;
     this.state.result.available = result !== null;
     this.state.result.matchId = result?.matchId ?? "";
@@ -291,7 +302,7 @@ export class BlobArenaRoom extends Room<{ state: BlobArenaState }> {
     for (const event of this.simulation.drainEvents()) {
       this.broadcast(event.type, event);
       if (event.type === ServerEvent.MATCH_FINALIZED) {
-        void this.persistReferralQualifications(snapshot);
+        this.scheduleReferralQualifications(this.createFinalReferralQualificationRecords(snapshot));
       }
       if (event.type !== ServerEvent.FOOD_EATEN) {
         this.log(event.type.toLowerCase(), event);
@@ -299,11 +310,11 @@ export class BlobArenaRoom extends Room<{ state: BlobArenaState }> {
     }
   }
 
-  private async persistReferralQualifications(snapshot: ReturnType<ArenaSimulation["snapshot"]>): Promise<void> {
+  private createFinalReferralQualificationRecords(snapshot: ReturnType<ArenaSimulation["snapshot"]>): ReferralQualificationRecord[] {
     if (!this.referralQualificationPersistence.enabled || snapshot.mode !== "FREE" || !snapshot.result) {
-      return;
+      return [];
     }
-    const records = snapshot.result.rankings
+    return snapshot.result.rankings
       .filter((ranking) => !ranking.isBot)
       .flatMap((ranking) => {
         const profileUserId = this.profileUserIds.get(ranking.playerId);
@@ -320,12 +331,43 @@ export class BlobArenaRoom extends Room<{ state: BlobArenaState }> {
           survivalTimeMs: ranking.survivalTimeMs,
         }];
       });
+  }
+
+  private scheduleReferralQualifications(records: readonly ReferralQualificationRecord[]): void {
     for (const record of records) {
-      const persisted = await this.referralQualificationPersistence.persist(record);
-      if (persisted) {
-        this.log("referral_qualification_sent", { matchId: record.matchId, roundId: record.roundId });
-      }
+      this.scheduleReferralQualification(record);
     }
+  }
+
+  private scheduleReferralQualification(record: ReferralQualificationRecord): void {
+    if (!this.referralQualificationPersistence.enabled
+      || this.persistedReferralQualificationEvents.has(record.eventId)
+      || this.referralQualificationInFlight.has(record.eventId)) {
+      return;
+    }
+    const retryAt = this.referralQualificationRetryAt.get(record.eventId);
+    if (retryAt !== undefined && record.completedAt < retryAt) {
+      return;
+    }
+    this.referralQualificationInFlight.add(record.eventId);
+    void this.referralQualificationPersistence.persist(record)
+      .then((persisted) => {
+        if (persisted) {
+          this.persistedReferralQualificationEvents.add(record.eventId);
+          this.referralQualificationRetryAt.delete(record.eventId);
+          this.log("referral_qualification_sent", { matchId: record.matchId, roundId: record.roundId });
+          return;
+        }
+        this.referralQualificationRetryAt.set(record.eventId, record.completedAt + REFERRAL_QUALIFICATION_RETRY_MS);
+        this.log("referral_qualification_retry_scheduled", { matchId: record.matchId, roundId: record.roundId });
+      })
+      .catch(() => {
+        this.referralQualificationRetryAt.set(record.eventId, record.completedAt + REFERRAL_QUALIFICATION_RETRY_MS);
+        this.log("referral_qualification_retry_scheduled", { matchId: record.matchId, roundId: record.roundId });
+      })
+      .finally(() => {
+        this.referralQualificationInFlight.delete(record.eventId);
+      });
   }
 
   private log(event: string, details: object): void {
@@ -363,6 +405,38 @@ function syncCollection<TState extends Schema, TView>(
 }
 
 export { ARENA_ROOM_NAME };
+
+/**
+ * A referral becomes eligible as soon as the game server—not the browser—has
+ * observed the published Free Mode activity threshold. Previously this
+ * happened only at the end of a full ten-minute round, which made legitimate
+ * referrals disappear whenever a player left after already meeting the rule.
+ */
+export function createEligibleReferralQualificationRecords(
+  snapshot: Pick<ArenaSnapshot, "mode" | "phase" | "matchId" | "roundId" | "serverTime" | "players">,
+  profileUserIds: ReadonlyMap<string, string>,
+): ReferralQualificationRecord[] {
+  if (snapshot.mode !== "FREE" || snapshot.phase !== ArenaPhase.ACTIVE || !snapshot.matchId || !snapshot.roundId) {
+    return [];
+  }
+  return snapshot.players
+    .filter((player) => !player.isBot && player.inRound)
+    .flatMap((player) => {
+      const profileUserId = profileUserIds.get(player.id);
+      if (!profileUserId) {
+        return [];
+      }
+      return [{
+        eventId: createReferralQualificationEventId(snapshot.matchId, snapshot.roundId, profileUserId),
+        profileUserId,
+        matchId: snapshot.matchId,
+        roundId: snapshot.roundId,
+        completedAt: snapshot.serverTime,
+        foodCollected: player.foodCollected,
+        survivalTimeMs: player.survivalTimeMs,
+      }];
+    });
+}
 
 function createAnonymousChatAuthorKey(roomId: string, sessionId: string): string {
   return createHash("sha256")

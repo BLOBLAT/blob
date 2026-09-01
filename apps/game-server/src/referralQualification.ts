@@ -44,7 +44,15 @@ export class SignedReferralQualificationClient implements ReferralQualificationP
         body,
         signal: controller.signal,
       });
-      return response.status === 201;
+      if (response.status !== 201) {
+        return false;
+      }
+      const payload = await response.json().catch(() => undefined) as { status?: unknown } | undefined;
+      // Eligibility can be reached later in the same authoritative Free Mode
+      // round. Keep the fact retryable until the platform confirms a durable
+      // terminal outcome, rather than treating an early progress check as a
+      // lost referral.
+      return payload?.status !== "INSUFFICIENT_GAMEPLAY" && payload?.status !== "EMAIL_NOT_VERIFIED";
     } catch (error) {
       const cause = error instanceof Error && error.cause instanceof Error ? error.cause.message : undefined;
       console.warn("[BLOB game server] referral qualification persistence unavailable", {

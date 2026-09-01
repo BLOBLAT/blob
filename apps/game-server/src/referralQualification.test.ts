@@ -47,6 +47,14 @@ describe("referral qualification handoff", () => {
     }).enabled).toBe(false);
   });
 
+  it("keeps an early in-progress activity fact retryable until its server-owned thresholds are met", async () => {
+    const privateKey = ed25519.utils.randomSecretKey();
+    const send: typeof fetch = async () => new Response(JSON.stringify({ status: "INSUFFICIENT_GAMEPLAY" }), { status: 201 });
+    const client = new SignedReferralQualificationClient("https://platform.internal", privateKey, send);
+
+    await expect(client.persist({ ...RECORD, foodCollected: 4, survivalTimeMs: 10_000 })).resolves.toBe(false);
+  });
+
   it("uses a stable per-user, match, and round idempotency key", () => {
     expect(createReferralQualificationEventId(
       "free-match-1",
