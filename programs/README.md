@@ -27,19 +27,26 @@ repository root on Windows:
 ```powershell
 $env:CARGO_TARGET_DIR = Join-Path $env:TEMP "blob-escrow-cargo-target"
 & "$env:USERPROFILE\.cargo\bin\cargo.exe" test --manifest-path programs\blob-escrow\programs\blob_escrow\Cargo.toml
-& "$env:USERPROFILE\.cargo\bin\cargo.exe" clippy --manifest-path programs\blob-escrow\programs\blob_escrow\Cargo.toml --all-targets -- -D warnings
 Remove-Item Env:CARGO_TARGET_DIR
 ```
 
-Full Anchor/SBF validation is performed only through Ubuntu WSL. The smoke
+Do not substitute host `cargo clippy` for SBF validation: the pinned
+Anchor/Solana macro graph is tested through Anchor's SBF build, and its native
+Windows clippy path is not a supported release gate for this program.
+
+Full Anchor/SBF validation and formatting are performed through Ubuntu WSL. The smoke
 script copies source to an automatically removed temporary directory,
 generates throwaway local keypairs there, starts `solana-test-validator`, and
 deploys only to that validator:
 
 ```sh
 cd /mnt/c/Users/user/Desktop/BLOBsite/programs/blob-escrow
+npm ci --ignore-scripts
 ./scripts/localnet-smoke.sh
 ```
+
+Run `cargo fmt --check` from the copied WSL workspace or the escrow source
+before a change is committed.
 
 The script never reads the caller's Solana configuration, persistent keypair,
 or RPC endpoint. It replaces the placeholder program ID only in the copied
@@ -48,13 +55,25 @@ before compiling if either replacement did not occur or if known public-key
 test fixtures were altered. A successful local smoke run is **not** a devnet
 or mainnet deployment and does not make Paid Mode available.
 
+The instruction run uses six generated players and a generated 6-decimal SPL
+test mint. It proves platform initialization, rejection of a non-canonical
+rules hash, six exact entry contributions, pre-game cancellation, exact
+pull-only refunds, rejected refund replay, minimum-player start admission,
+authority-attested revive purchase, exact revive-pool accounting, and the
+ban on live refunds, cancellation, rebates, or settlement before the
+authoritative result window. It does not use a real
+wallet, native USDC, a public RPC, or a production program address. The
+current run does **not** time-warp a 10-minute live match, so final
+attestation, completed podium settlement, rebates, and payouts remain explicit
+required localnet coverage before a controlled deployment.
+
 ## Before any controlled deployment
 
 Do not skip these gates:
 
-1. Complete instruction-level localnet integration tests, including funding,
-   failed-funding refunds, revive authorization, settlement, and non-podium
-   participation rebates.
+1. Extend the instruction-level localnet integration tests to cover the
+   remaining time-gated live-match paths: final attestation, podium settlement,
+   and non-podium participation rebates.
 2. Obtain an independent security review of the exact program binary and
    deployment configuration.
 3. Use separate governance, controller, result-authority, and treasury roles;

@@ -13,6 +13,7 @@ readonly VALIDATOR_LOG="${TEMP_ROOT}/validator.log"
 readonly PLACEHOLDER_PROGRAM_ID="11111111111111111111111111111111"
 readonly BUILD_TIMEOUT_SECONDS="${BLOB_ESCROW_LOCALNET_BUILD_TIMEOUT_SECONDS:-900}"
 readonly DEPLOY_TIMEOUT_SECONDS="${BLOB_ESCROW_LOCALNET_DEPLOY_TIMEOUT_SECONDS:-300}"
+readonly INSTRUCTION_TEST_TIMEOUT_SECONDS="${BLOB_ESCROW_LOCALNET_TEST_TIMEOUT_SECONDS:-300}"
 validator_pid=""
 
 cleanup() {
@@ -47,6 +48,29 @@ for command in anchor solana solana-keygen solana-test-validator; do
     exit 1
   }
 done
+
+# The Anchor/SPL instruction client is intentionally installed only in the
+# escrow directory, outside the root web/game workspaces. Prefer the Windows
+# Node runtime when this shell runs under WSL, which avoids installing a second
+# Node toolchain in the developer's Linux distribution. Native Linux Node is
+# still supported for CI or a Linux-only contributor environment.
+if command -v node.exe >/dev/null 2>&1; then
+  TEST_NODE=(node.exe)
+  TEST_SCRIPT_PATH="$(wslpath -w "${SOURCE_DIR}/tests/localnet-instructions.mjs")"
+  TEST_IDL_PATH="$(wslpath -w "${WORKSPACE_DIR}/target/idl/blob_escrow.json")"
+elif command -v node >/dev/null 2>&1; then
+  TEST_NODE=(node)
+  TEST_SCRIPT_PATH="${SOURCE_DIR}/tests/localnet-instructions.mjs"
+  TEST_IDL_PATH="${WORKSPACE_DIR}/target/idl/blob_escrow.json"
+else
+  echo "Missing Node.js required for localnet instruction tests." >&2
+  exit 1
+fi
+
+if [[ ! -d "${SOURCE_DIR}/node_modules/@coral-xyz/anchor" || ! -d "${SOURCE_DIR}/node_modules/@solana/spl-token" ]]; then
+  echo "Missing escrow localnet Node dependencies. Run npm ci in programs/blob-escrow." >&2
+  exit 1
+fi
 
 # Copy source only. Never copy Anchor/Cargo output from the Windows worktree:
 # that cache can be very large and makes an otherwise isolated smoke test look
@@ -142,4 +166,12 @@ run_with_timeout "${DEPLOY_TIMEOUT_SECONDS}" solana --url http://127.0.0.1:8899 
   "${WORKSPACE_DIR}/target/deploy/blob_escrow.so" >/dev/null
 run_with_timeout "${DEPLOY_TIMEOUT_SECONDS}" solana --url http://127.0.0.1:8899 program show "${PROGRAM_ID}" >/dev/null
 
-echo "Localnet escrow build and deployment passed: ${PROGRAM_ID}"
+# This is the first boundary that proves more than build/deploy: each call uses
+# a temporary test mint and temporary keypairs against the local validator. It
+# does not read a real wallet, use a public RPC, or submit a devnet/mainnet
+# transaction. The trap removes the validator, ledger, IDL copy, and all test
+# key material whether this test passes or fails.
+run_with_timeout "${INSTRUCTION_TEST_TIMEOUT_SECONDS}" \
+  "${TEST_NODE[@]}" "${TEST_SCRIPT_PATH}" "${TEST_IDL_PATH}" "${PROGRAM_ID}" "http://127.0.0.1:8899"
+
+echo "Localnet escrow build, deployment, and instruction test passed: ${PROGRAM_ID}"

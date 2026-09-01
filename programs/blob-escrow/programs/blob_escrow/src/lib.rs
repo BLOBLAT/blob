@@ -636,7 +636,11 @@ pub struct PurchaseRevive<'info> {
     #[account(address = match_escrow.result_authority @ EscrowError::Unauthorized)]
     pub result_authority: Signer<'info>,
     #[account(mut, seeds = [b"match", match_escrow.match_id_hash.as_ref()], bump = match_escrow.bump)]
-    pub match_escrow: Account<'info, MatchEscrow>,
+    // Keep this high-account-count context under Solana's 4 KiB BPF stack
+    // limit. `Box` only moves Anchor's deserialized account data to heap; it
+    // does not change account order, PDA seeds, instruction bytes,
+    // authorities, or transfer semantics.
+    pub match_escrow: Box<Account<'info, MatchEscrow>>,
     #[account(
         mut,
         seeds = [b"entry", match_escrow.key().as_ref(), player.key().as_ref()],
@@ -644,7 +648,7 @@ pub struct PurchaseRevive<'info> {
         constraint = entry.match_escrow == match_escrow.key() @ EscrowError::InvalidEntry,
         constraint = entry.player == player.key() @ EscrowError::InvalidEntry
     )]
-    pub entry: Account<'info, MatchEntry>,
+    pub entry: Box<Account<'info, MatchEntry>>,
     #[account(
         init,
         payer = player,
@@ -652,22 +656,22 @@ pub struct PurchaseRevive<'info> {
         seeds = [b"revive", match_escrow.key().as_ref(), death_id_hash.as_ref()],
         bump
     )]
-    pub revive_receipt: Account<'info, ReviveReceipt>,
+    pub revive_receipt: Box<Account<'info, ReviveReceipt>>,
     #[account(address = match_escrow.mint @ EscrowError::IncorrectMint)]
-    pub mint: InterfaceAccount<'info, Mint>,
+    pub mint: Box<InterfaceAccount<'info, Mint>>,
     #[account(
         mut,
         constraint = player_token_account.owner == player.key() @ EscrowError::InvalidPlayerTokenAccount,
         constraint = player_token_account.mint == match_escrow.mint @ EscrowError::IncorrectMint
     )]
-    pub player_token_account: InterfaceAccount<'info, TokenAccount>,
+    pub player_token_account: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(
         mut,
         associated_token::mint = mint,
         associated_token::authority = match_escrow,
         associated_token::token_program = token_program
     )]
-    pub escrow_token_account: InterfaceAccount<'info, TokenAccount>,
+    pub escrow_token_account: Box<InterfaceAccount<'info, TokenAccount>>,
     pub system_program: Program<'info, System>,
     #[account(address = LEGACY_TOKEN_PROGRAM_ID)]
     pub token_program: Interface<'info, TokenInterface>,
