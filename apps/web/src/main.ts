@@ -274,12 +274,12 @@ async function openUsdcMode(): Promise<void> {
     <section class="usdc-mode-preview" aria-labelledby="usdc-mode-title">
       <div class="usdc-mode-heading">
         <div>
-          <p class="eyebrow">USDC MODE · PRIVATE PREVIEW</p>
-          <h3 id="usdc-mode-title">COMPETE.<br /><em>WHEN READY.</em></h3>
+          <p class="eyebrow">USDC MODE · PRIVATE BUILD</p>
+          <h3 id="usdc-mode-title">THE PAID ARENA.<br /><em>IN THE OPEN.</em></h3>
         </div>
-        <span class="usdc-mode-locked">ENTRIES DISABLED</span>
+        <span class="usdc-mode-locked">NO MONEY MOVES</span>
       </div>
-      <p class="usdc-mode-copy">USDC Mode will use the same server-authoritative arena as Free Mode. These are the intended disclosed rules; this private preview has no entry form, pool, transfer, or payout request.</p>
+      <p class="usdc-mode-copy">This is the private build surface for the future paid arena. It uses the same server-authoritative game rules as Free Mode. There is no entry form, match reservation, pool, transfer, revive purchase, or payout request in this build.</p>
       <div class="usdc-mode-grid">
         <section class="usdc-wallet-card" aria-labelledby="usdc-wallet-title">
           <p class="token-label" id="usdc-wallet-title">Wallet profile</p>
@@ -288,7 +288,7 @@ async function openUsdcMode(): Promise<void> {
           <button class="play-button" id="usdc-wallet-action" type="button">Connect wallet <span>→</span></button>
         </section>
         <section class="usdc-rules-card" aria-labelledby="usdc-rules-title">
-          <p class="token-label" id="usdc-rules-title">Locked competitive rules</p>
+          <p class="token-label" id="usdc-rules-title">Disclosed competitive rules</p>
           <dl>
             <div><dt>Asset</dt><dd>Native USDC · Solana</dd></div>
             <div><dt>Players</dt><dd>Minimum 6 confirmed</dd></div>
@@ -298,6 +298,38 @@ async function openUsdcMode(): Promise<void> {
             <div><dt>Rebate</dt><dd>Ranks 4+ · 10% of entry</dd></div>
             <div><dt>Revive</dt><dd>0.50 USDC · unavailable at 03:00</dd></div>
           </dl>
+        </section>
+      </div>
+      <div class="usdc-build-grid">
+        <section class="usdc-config-card" aria-labelledby="usdc-config-title">
+          <p class="token-label" id="usdc-config-title">Future match configuration</p>
+          <p class="usdc-card-copy">Review one exact stake tier and ruleset. This only changes the private preview on this page; it is never a reservation or a request to your wallet.</p>
+          <div class="usdc-option-group" role="group" aria-label="Future entry stake">
+            <span>Entry tier</span>
+            <div class="usdc-option-row">
+              <button class="usdc-option is-selected" type="button" data-usdc-tier="0.10" aria-pressed="true">0.10 USDC</button>
+              <button class="usdc-option" type="button" data-usdc-tier="1" aria-pressed="false">1 USDC</button>
+              <button class="usdc-option" type="button" data-usdc-tier="5" aria-pressed="false">5 USDC</button>
+              <button class="usdc-option" type="button" data-usdc-tier="10" aria-pressed="false">10 USDC</button>
+            </div>
+          </div>
+          <div class="usdc-option-group" role="group" aria-label="Future arena type">
+            <span>Arena type</span>
+            <div class="usdc-option-row">
+              <button class="usdc-option is-selected" type="button" data-usdc-ruleset="skill" aria-pressed="true">Skill · no revive</button>
+              <button class="usdc-option" type="button" data-usdc-ruleset="rebuy" aria-pressed="false">Rebuy · one revive</button>
+            </div>
+          </div>
+          <p class="usdc-preview-selection" id="usdc-preview-selection" aria-live="polite">Preview: 0.10 USDC Skill Arena. No match is being created.</p>
+        </section>
+        <section class="usdc-build-card" aria-labelledby="usdc-build-title">
+          <p class="token-label" id="usdc-build-title">What exists in this build</p>
+          <ul class="usdc-build-list">
+            <li><span class="usdc-status-built">BUILT</span><div><strong>Wallet identity</strong><small>Wallet-standard connection and a signed BLOB login profile.</small></div></li>
+            <li><span class="usdc-status-built">BUILT</span><div><strong>Rules domain</strong><small>Fixed tiers, bigint pool math, fees, rebates, and result records are server-side code.</small></div></li>
+            <li><span class="usdc-status-built">BUILT</span><div><strong>Escrow source</strong><small>Separate Anchor source and immutable instruction plans are isolated from Free Mode.</small></div></li>
+            <li><span class="usdc-status-pending">OFF</span><div><strong>Entry &amp; settlement</strong><small>No production contract, wallet transaction builder, deposit, revive charge, or payout is enabled.</small></div></li>
+          </ul>
         </section>
       </div>
       <div class="usdc-mode-footer">
@@ -311,7 +343,7 @@ async function openUsdcMode(): Promise<void> {
             </ul>
           </aside>
           <label class="usdc-risk-ack"><input id="usdc-risk-ack" type="checkbox" /> <span>I understand that crypto assets can lose all value, participation is voluntary, I should use a separate wallet, and I must review the <a href="/terms.html" target="_blank" rel="noreferrer">BLOB Terms &amp; Risk Disclosure</a>.</span></label>
-          <p id="usdc-risk-ack-status"><strong>NOT OPEN FOR PAYMENT.</strong> This preview acknowledgement is not an entry acceptance. Any future paid action must request its own dated acceptance.</p>
+          <p id="usdc-risk-ack-status"><strong>PAYMENTS ARE OFF.</strong> This preview acknowledgement is not an entry acceptance. Any future paid action must request its own dated acceptance.</p>
         </div>
         <button class="leave-game" id="return-to-free-mode" type="button">Return to Free Mode</button>
       </div>
@@ -319,14 +351,49 @@ async function openUsdcMode(): Promise<void> {
   `;
   requiredElement<HTMLButtonElement>("#usdc-wallet-action").addEventListener("click", () => openProfileDialog());
   requiredElement<HTMLButtonElement>("#return-to-free-mode").addEventListener("click", () => renderFreeArenaLanding());
+  bindUsdcPreviewOptions();
   requiredElement<HTMLInputElement>("#usdc-risk-ack").addEventListener("change", (event) => {
     const checked = (event.currentTarget as HTMLInputElement).checked;
     requiredElement<HTMLElement>("#usdc-risk-ack-status").textContent = checked
       ? "Preview acknowledgement recorded only in this browser. No payment, entry, or transfer has been authorized."
-      : "NOT OPEN FOR PAYMENT. This preview acknowledgement is not an entry acceptance. Any future paid action must request its own dated acceptance.";
+      : "PAYMENTS ARE OFF. This preview acknowledgement is not an entry acceptance. Any future paid action must request its own dated acceptance.";
   });
   renderUsdcProfileState();
   setArenaModeTabs("usdc");
+}
+
+function bindUsdcPreviewOptions(): void {
+  let tier = "0.10";
+  let ruleset: "skill" | "rebuy" = "skill";
+
+  const renderSelection = (): void => {
+    const label = ruleset === "skill" ? "Skill Arena" : "Rebuy Arena · one 0.50 USDC revive before 03:00";
+    requiredElement<HTMLElement>("#usdc-preview-selection").textContent = `Preview: ${tier} USDC ${label}. No match is being created.`;
+  };
+
+  for (const button of document.querySelectorAll<HTMLButtonElement>("[data-usdc-tier]")) {
+    button.addEventListener("click", () => {
+      tier = button.dataset.usdcTier ?? tier;
+      for (const option of document.querySelectorAll<HTMLButtonElement>("[data-usdc-tier]")) {
+        const selected = option === button;
+        option.classList.toggle("is-selected", selected);
+        option.setAttribute("aria-pressed", String(selected));
+      }
+      renderSelection();
+    });
+  }
+
+  for (const button of document.querySelectorAll<HTMLButtonElement>("[data-usdc-ruleset]")) {
+    button.addEventListener("click", () => {
+      ruleset = button.dataset.usdcRuleset === "rebuy" ? "rebuy" : "skill";
+      for (const option of document.querySelectorAll<HTMLButtonElement>("[data-usdc-ruleset]")) {
+        const selected = option === button;
+        option.classList.toggle("is-selected", selected);
+        option.setAttribute("aria-pressed", String(selected));
+      }
+      renderSelection();
+    });
+  }
 }
 
 function setArenaModeTabs(mode: "free" | "usdc"): void {

@@ -6,6 +6,11 @@ profile and the intended competitive rules can be reviewed without presenting
 a transfer, pool, entry, revive, or payout action. Its browser-only gate is
 not authentication and must never be treated as a security boundary.
 
+The private screen also has a local tier and ruleset selector (0.10, 1, 5, or
+10 USDC; Skill or Rebuy). It is only a configuration viewer: changing it does
+not create a match, reserve a place, contact a wallet, or change any
+server-side state.
+
 The preview clearly states that entries are disabled. It may link to the
 Terms & Risk Disclosure and collect a browser-only preview acknowledgement,
 but that is not a paid-match acceptance record. Any future paid entry must
