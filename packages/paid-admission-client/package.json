@@ -11,8 +11,8 @@
     "@noble/ed25519": "3.1.0"
   },
   "devDependencies": {
-    "@types/node": "22.10.2",
-    "typescript": "5.7.2"
+    "@types/node": "26.4.0",
+    "typescript": "7.0.2"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json"

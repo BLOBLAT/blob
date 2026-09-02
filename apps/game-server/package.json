@@ -7,11 +7,11 @@
     "@blob/game-core": "file:../../packages/game-core",
     "@blob/protocol": "file:../../packages/protocol",
     "@blob/validation": "file:../../packages/validation",
-    "@noble/ed25519": "3.1.0",
-    "@scure/base": "2.3.0",
     "@colyseus/core": "0.17.50",
     "@colyseus/schema": "4.0.30",
     "@colyseus/ws-transport": "0.17.13",
+    "@noble/ed25519": "3.1.0",
+    "@scure/base": "2.3.0",
     "cors": "2.8.6",
     "express": "5.2.1",
     "tsx": "4.23.12"
@@ -19,9 +19,9 @@
   "devDependencies": {
     "@colyseus/sdk": "0.17.43",
     "@types/cors": "2.8.19",
-    "@types/express": "5.0.6",
-    "@types/node": "22.10.2",
-    "typescript": "5.7.2"
+    "@types/express": "^5.0.6",
+    "@types/node": "26.4.0",
+    "typescript": "7.0.2"
   },
   "scripts": {
     "build": "tsc --noEmit -p tsconfig.json",
