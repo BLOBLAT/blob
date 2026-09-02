@@ -65,11 +65,12 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   local tooling.
 - Confirmed Node 22.12.0 and npm 11.8.0 for the JavaScript workspaces.
 - The escrow source passed host-side Rust tests and the committed isolated
-  localnet smoke test before `b59e4c5`. The smoke script discovers the installed
-  Solana CLI and uses only temporary validator state and throwaway keys. The
-  current Windows WSL distribution registration must be restored before another
-  local SBF smoke run; do not remove its existing WSL virtual disk. No controlled
-  deployer key, wallet, devnet deployment, or public-chain transaction exists.
+  localnet smoke test. The latest local run rebuilt a throwaway program copy,
+  deployed it only to an ephemeral localhost validator, and exercised immutable
+  rules, entry/refund claims, permissionless post-deadline funding expiry,
+  start admission, revive, and settlement guards. The script uses temporary
+  validator state and throwaway keys, then removes them. No controlled deployer
+  key, wallet, devnet deployment, or public-chain transaction exists.
 - Queried current package versions: Wallet Standard 1.1.1, Solana Wallet
   Standard features 1.4.0, Prisma 7.9.1, noble ed25519 3.1.0.
 - Extended packages/shared with native-USDC constants, explicit SKILL vs
@@ -280,10 +281,13 @@ explicit Rebuy Arena ruleset, not a hidden mechanic in standard Skill matches.
   governance authority, controller, result authority, and treasury must now
   be distinct roles.
 - Ran `cargo test --manifest-path programs/blob-escrow/Cargo.toml --locked`:
-  16 escrow host-side tests passed. The suite includes an exhaustive
+  22 escrow host-side tests passed. The suite includes an exhaustive
   conservation regression across every disclosed stake tier, six-to-32 player
   rosters, all valid one-per-player revive counts, and both permitted
-  payout-delivery-fee settings. Build output was kept in and removed from the
+  payout-delivery-fee settings. The validator-level suite also proves that an
+  expired, never-started funding round cannot be unlocked early, becomes
+  individually refundable only after its immutable deadline, and cannot refund
+  the same recorded entry twice. Build output was kept in and removed from the
   Windows temporary directory.
 - Added and passed `programs/blob-escrow/scripts/localnet-smoke.sh`: the
   program builds against Solana's SBF runtime and is deployed and queried on

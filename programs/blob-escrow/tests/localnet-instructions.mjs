@@ -231,7 +231,124 @@ async function run() {
   assert.equal((await getAccount(connection, escrowTokenAccount, "confirmed", TOKEN_PROGRAM_ID)).amount, 0n);
 
   await exerciseLiveRevivePath({ mint, platformConfig, playerTokenAccounts });
-  console.log("Localnet instruction test passed: platform init, immutable rules, funding refunds, start admission, authority-attested revive, and live refund/rebate/cancellation/early-settlement rejection.");
+  await exerciseFundingExpiryPath({ mint, platformConfig, playerTokenAccounts });
+  console.log("Localnet instruction test passed: platform init, immutable rules, funding refunds, permissionless funding expiry, start admission, authority-attested revive, and live refund/rebate/cancellation/early-settlement rejection.");
+}
+
+async function exerciseFundingExpiryPath({ mint, platformConfig, playerTokenAccounts }) {
+  const matchIdHash = digest("instruction-expiry-match");
+  const roundIdHash = digest("instruction-expiry-round");
+  const [matchEscrow] = PublicKey.findProgramAddressSync(
+    [Buffer.from("match"), matchIdHash],
+    programId
+  );
+  const escrowTokenAccount = getAssociatedTokenAddressSync(mint, matchEscrow, true, TOKEN_PROGRAM_ID);
+  // A deliberately short local-only funding window proves the permissionless
+  // expiry path without weakening the immutable ten-minute live-round rule.
+  const fundingDeadlineAt = BigInt(await unixTime()) + 12n;
+  const rulesHash = canonicalRulesHash({
+    matchIdHash,
+    roundIdHash,
+    nativeUsdcMint: mint,
+    platformAuthority: authority.publicKey,
+    controller: controller.publicKey,
+    resultAuthority: resultAuthority.publicKey,
+    treasury: treasury.publicKey,
+    entryAmount: ENTRY_AMOUNT,
+    payoutDeliveryFeeBps: 0,
+    reviveEnabled: false,
+    reviveAmount: 0n,
+    participationRebateBps: PARTICIPATION_REBATE_BPS,
+    payoutBps: PAYOUT_BPS,
+    minimumPlayers: MINIMUM_PLAYERS,
+    maximumPlayers: MAXIMUM_PLAYERS,
+    fundingDeadlineAt,
+    roundDurationSeconds: ROUND_DURATION_SECONDS,
+    reviveWindowSeconds: 0n,
+    reviveCutoffSeconds: 0n
+  });
+
+  await createMatch({
+    matchIdHash,
+    roundIdHash,
+    rulesHash,
+    fundingDeadlineAt,
+    mint,
+    platformConfig,
+    matchEscrow,
+    escrowTokenAccount
+  });
+
+  const player = players[5];
+  const [entry] = PublicKey.findProgramAddressSync(
+    [Buffer.from("entry"), matchEscrow.toBuffer(), player.publicKey.toBuffer()],
+    programId
+  );
+  const balanceBeforeEntry = (await getAccount(connection, playerTokenAccounts[5], "confirmed", TOKEN_PROGRAM_ID)).amount;
+  await program.methods
+    .enterMatch()
+    .accounts({
+      player: player.publicKey,
+      matchEscrow,
+      entry,
+      mint,
+      playerTokenAccount: playerTokenAccounts[5],
+      escrowTokenAccount,
+      systemProgram: SystemProgram.programId,
+      tokenProgram: TOKEN_PROGRAM_ID
+    })
+    .signers([player])
+    .rpc();
+
+  await assert.rejects(
+    () => program.methods.expireFunding().accounts({ matchEscrow }).rpc(),
+    /Transaction simulation failed|custom program error|FundingDeadlineNotReached|deadline/i,
+    "a funding escrow must not be made refundable before its disclosed deadline"
+  );
+
+  await waitForUnixTimeAtLeast(fundingDeadlineAt);
+  // No controller signer is supplied: an unavailable controller cannot strand
+  // a never-started escrow after the immutable deadline.
+  await program.methods.expireFunding().accounts({ matchEscrow }).rpc();
+
+  const expiredEscrow = await program.account.matchEscrow.fetch(matchEscrow);
+  assert.equal(Object.keys(expiredEscrow.lifecycle)[0], "refunding", "any caller can unlock a stale funding match");
+
+  await program.methods
+    .claimRefund()
+    .accounts({
+      player: player.publicKey,
+      matchEscrow,
+      entry,
+      mint,
+      playerTokenAccount: playerTokenAccounts[5],
+      escrowTokenAccount,
+      tokenProgram: TOKEN_PROGRAM_ID
+    })
+    .signers([player])
+    .rpc();
+
+  const balanceAfterRefund = (await getAccount(connection, playerTokenAccounts[5], "confirmed", TOKEN_PROGRAM_ID)).amount;
+  assert.equal(balanceAfterRefund, balanceBeforeEntry, "the expiry refund must return exactly the recorded entry contribution");
+
+  await assert.rejects(
+    () =>
+      program.methods
+        .claimRefund()
+        .accounts({
+          player: player.publicKey,
+          matchEscrow,
+          entry,
+          mint,
+          playerTokenAccount: playerTokenAccounts[5],
+          escrowTokenAccount,
+          tokenProgram: TOKEN_PROGRAM_ID
+        })
+        .signers([player])
+        .rpc(),
+    /Transaction simulation failed|custom program error|EntryRefunded|MatchNotRefunding|refunded/i,
+    "an expired-match refund remains a one-time player claim"
+  );
 }
 
 async function exerciseLiveRevivePath({ mint, platformConfig, playerTokenAccounts }) {
@@ -542,6 +659,17 @@ async function unixTime() {
     throw new Error("The local validator did not return a block time.");
   }
   return blockTime;
+}
+
+async function waitForUnixTimeAtLeast(timestamp) {
+  const timeoutAt = Date.now() + 30_000;
+  while (Date.now() < timeoutAt) {
+    if (BigInt(await unixTime()) >= timestamp) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  }
+  throw new Error(`The local validator did not reach timestamp ${timestamp.toString()} before timeout.`);
 }
 
 function canonicalRulesHash(input) {
