@@ -26,7 +26,7 @@
     "typecheck": "npm run typecheck --workspace=@blob/game-core && npm run typecheck --workspace=@blob/protocol && npm run typecheck --workspace=@blob/validation && npm run typecheck --workspace=@blob/shared && npm run typecheck --workspace=@blob/paid-admission-client && npm run typecheck --workspace=@blob/paid-match-runtime && npm run typecheck --workspace=@blob/game-server && npm run typecheck --workspace=@blob/web && npm run typecheck --workspace=@blob/platform-api"
   },
   "devDependencies": {
-    "concurrently": "10.0.5",
-    "vitest": "4.1.10"
+    "concurrently": "10.0.6",
+    "vitest": "5.0.3"
   }
 }
