@@ -11,5 +11,5 @@
     "@blob/shared": "file:../shared"
   },
   "scripts": { "typecheck": "tsc --noEmit -p tsconfig.json" },
-  "devDependencies": { "typescript": "5.7.2" }
+  "devDependencies": { "typescript": "7.0.2" }
 }
